@@ -38,12 +38,12 @@ class ADCScaling(MiniscopeConfig):
     battery_max_voltage: float = Field(
         10.0,
         description="Maximum voltage of the battery."
-          "Scaled battery voltage will be 0 if it is greater than this value",
+        "Scaled battery voltage will be 0 if it is greater than this value",
     )
     vin_max_voltage: float = Field(
         20.0,
         description="Maximum voltage of the Vin"
-          "Scaled Vin voltage will be 0 if it is greater than this value",
+        "Scaled Vin voltage will be 0 if it is greater than this value",
     )
 
     def scale_battery_voltage(self, voltage_raw: float) -> float:
