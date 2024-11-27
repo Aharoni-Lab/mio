@@ -35,6 +35,16 @@ class ADCScaling(MiniscopeConfig):
         11.3,
         description="Voltage divider factor for the Vin voltage",
     )
+    battery_max_voltage: float = Field(
+        10.0,
+        description="Maximum voltage of the battery."
+          "Scaled battery voltage will be 0 if it is greater than this value",
+    )
+    vin_max_voltage: float = Field(
+        20.0,
+        description="Maximum voltage of the Vin"
+          "Scaled Vin voltage will be 0 if it is greater than this value",
+    )
 
     def scale_battery_voltage(self, voltage_raw: float) -> float:
         """
@@ -113,7 +123,8 @@ class StreamBufferHeader(BufferHeader):
         if self._adc_scaling is None:
             return self.battery_voltage_raw
         else:
-            return self._adc_scaling.scale_battery_voltage(self.battery_voltage_raw)
+            battery_voltage = self._adc_scaling.scale_battery_voltage(self.battery_voltage_raw)
+            return battery_voltage if battery_voltage < self._adc_scaling.battery_max_voltage else 0
 
     @computed_field
     def input_voltage(self) -> float:
@@ -123,7 +134,8 @@ class StreamBufferHeader(BufferHeader):
         if self._adc_scaling is None:
             return self.input_voltage_raw
         else:
-            return self._adc_scaling.scale_input_voltage(self.input_voltage_raw)
+            vin_voltage = self._adc_scaling.scale_input_voltage(self.input_voltage_raw)
+            return vin_voltage if vin_voltage < self._adc_scaling.vin_max_voltage else 0
 
 
 class StreamDevRuntime(MiniscopeConfig):
