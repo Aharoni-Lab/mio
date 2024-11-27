@@ -57,8 +57,8 @@ def test_adc_scaling(scale, config_override):
     example = config_override(CONFIG_DIR / "stream_daq_test_200px.yml", {"adc_scale": adc_scale})
     instance_config = StreamDevConfig.from_yaml(example)
 
-    battery_voltage_raw = 200
-    input_voltage_raw = 250
+    battery_voltage_raw = 100
+    input_voltage_raw = 150
 
     instance_header = StreamBufferHeader(
         linked_list=0,
