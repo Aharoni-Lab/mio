@@ -1,4 +1,4 @@
-id: wireless-200px
+id: MSUS-test
 mio_model: mio.models.stream.StreamDevConfig
 mio_version: "v5.0.0"
 
@@ -16,16 +16,16 @@ baudrate: null
 preamble: 0x12345678
 
 # Image format. StreamDaq will calculate buffer size, etc. based on these parameters
-frame_width: 200
-frame_height: 200
-pix_depth: 8
+frame_width: 320
+frame_height: 320
+pix_depth: 12
 
 # Buffer data format. These have to match the firmware value
 header_len: 384 # 12 * 32 (in bits)
-buffer_block_length: 10
-block_size: 512
-num_buffers: 32
-dummy_words: 10
+buffer_block_length: 12
+block_size: 3988
+num_buffers: 12
+dummy_words: 12
 
 # Flags to flip bit/byte order when recovering headers and data. See model document for details.
 reverse_header_bits: True
