@@ -15,19 +15,18 @@
 # battery_voltage_raw: 9
 # input_voltage_raw: 10
 
-
 # MSUS
 id: stream-buffer-header
 mio_model: mio.models.stream.StreamBufferHeaderFormat
 mio_version: "v5.0.0"
-linked_list: 0
-frame_num: 1
-buffer_count: 2
+linked_list: 1 #0
+frame_num: 2 #1
+buffer_count: 4
 frame_buffer_count: 3
-write_buffer_count: 4
-dropped_buffer_count: 5
-timestamp: 6
+write_buffer_count: 5
+dropped_buffer_count: 6
+timestamp: 7
 write_timestamp: 8
-pixel_count: 7
+pixel_count: 0
 battery_voltage_raw: 9
 input_voltage_raw: 10
