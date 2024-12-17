@@ -19,14 +19,18 @@
 id: stream-buffer-header
 mio_model: mio.models.stream.StreamBufferHeaderFormat
 mio_version: "v5.0.0"
-linked_list: 1 #0
-frame_num: 2 #1
-buffer_count: 4
-frame_buffer_count: 3
-write_buffer_count: 5
-dropped_buffer_count: 6
-timestamp: 7
-write_timestamp: 8
-pixel_count: 0
-battery_voltage_raw: 9
-input_voltage_raw: 10
+linked_list: 5 ## first change for LL
+frame_num: 7 ## changed
+buffer_count: 5 ## changed
+frame_buffer_count: 3 # changed
+write_buffer_count: 4 #  changed
+dropped_buffer_count: 10 # changed
+timestamp: 2 # changed
+write_timestamp: 8 # not changed
+pixel_count: 7 # not chnaged not used
+battery_voltage_raw: 9 # not changed not used
+input_voltage_raw: 10 # not changed not used
+
+
+
+
