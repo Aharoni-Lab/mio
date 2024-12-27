@@ -7,6 +7,7 @@ device: "OK"
 
 # bitstream file to upload to Opal Kelly board
 bitstream: "XEM7310-A75/USBInterface-5mhz-J2_2-3v3-IEEE.bit"
+# bitstream: "XEM7310-A75/USBInterface-6_67mhz-J2_2-3v3-IEEE.bit"
 # bitstream: "XEM7310-A75/USBInterface-8_33mhz-J2_2-3v3-IEEE.bit" # original
 
 # COM port and baud rate is only required for UART mode
@@ -19,11 +20,11 @@ preamble: 0x12345678
 # Image format. StreamDaq will calculate buffer size, etc. based on these parameters
 frame_width: 320
 frame_height: 320
-pix_depth: 12
+pix_depth: 10
 
 # Buffer data format. These have to match the firmware value
 header_len: 384 # 12 * 32 (in bits)
-buffer_block_length: 12 # how many words per block lenght 
+buffer_block_length: 12 # how many words per block length 
 block_size: 4000 # 4000 # just buffer (header/data)
 num_buffers: 9 # num of data buffers inside mcu 
 dummy_words: 12 # num of dummy words before header file
