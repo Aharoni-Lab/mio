@@ -2,7 +2,7 @@ id: denoise_example
 mio_model: tests.test_mixins.LoaderModel
 mio_version: 0.6.1.dev16+g6436633.d20241211
 interactive_display:
-  enable: false
+  enable: true
   start_frame: 40
   end_frame: 140
 noise_patch:
@@ -20,10 +20,16 @@ frequency_masking:
   spatial_LPF_cutoff_radius: 15
   vertical_BEF_cutoff: 2
   horizontal_BEF_cutoff: 0
-  display_mask: false
+  display_mask: true
   output_mask: true
   output_result: true
   output_freq_domain: false
+butter_filter:
+  enable: false
+  order: 3
+  cutoff_frequency: 3
+  sampling_rate: 20
+
 end_frame: -1 #-1 means all frames
 output_result: true
 output_dir: user_dir/output

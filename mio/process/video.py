@@ -4,6 +4,7 @@ This module contains functions for pre-processing video data.
 
 from pathlib import Path
 from typing import Tuple
+from scipy.signal import butter, filtfilt
 
 import cv2
 import numpy as np
@@ -207,6 +208,20 @@ class FrameProcessor:
                     break
             cv2.destroyAllWindows()
         return mask
+    
+    def mean_intensity(self, frame: np.ndarray) -> float:
+        """"
+        Calculate the mean pixel intensity for each frame
+        
+        Paremeters:
+        frame (np.ndarray): The frame whose mean intensity is to be calculated on filtered data(broken frames replaced, spatial mask filter).
+
+        Returns:
+        float: The mean intensity of frames. 
+        """
+        return frame.mean()
+
+    
 
 
 class VideoProcessor:
@@ -238,6 +253,8 @@ class VideoProcessor:
         # Initialize lists to store frames
         raw_frames = []
         output_frames = []
+        mean_intensities = []
+
         if config.noise_patch.enable:
             patched_frames = []
             noise_patchs = []
@@ -297,7 +314,98 @@ class VideoProcessor:
                     freq_filtered_frames.append(freq_filtered_frame)
                     output_frame = freq_filtered_frame
                 output_frames.append(output_frame)
+
+                #calculate mean intensity on processed frames
+                mean_intensity= processor.mean_intensity(output_frame)
+                mean_intensities.append(mean_intensity)
+
         finally:
+            #save mean intensities and generate plot
+            mean_intensities_array = np.array(mean_intensities)
+            np.save(output_dir / f"{pathstem}_mean_intensities.npy", mean_intensities_array)
+
+            #trim mean intensity graph to start and end frame in config file
+            start_frame = config.interactive_display.start_frame or 0
+            end_frame = config.interactive_display.end_frame or len(mean_intensities_array)
+            mean_intensities_trimmed = mean_intensities_array[start_frame:end_frame]
+
+            if plt is not None:
+                
+                def butter_lowpass_filter(data, cutoff, fs, order):
+                    """
+                    apply butterworth filter
+                    """
+                    nyquist = 0.5 * fs  # Nyquist frequency
+                    normal_cutoff = cutoff / nyquist
+                    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+                    y = filtfilt(b, a, data)
+                    return y
+                
+                # Default to using the mean intensities (before filtering)
+                mean_intensities_filtered = mean_intensities
+
+                butterOrder = None
+                cutoffFreq = None
+                samplingRate = None
+
+                #check if butter filter is enabled
+                if hasattr(config, 'butter_filter') and getattr(config.butter_filter, 'enable', False):
+                    try:
+                        butterOrder = config.butter_filter.order
+                        cutoffFreq = config.butter_filter.cutoff_frequency
+                        samplingRate = config.butter_filter.sampling_rate
+                    except AttributeError as e:
+                        raise AttributeError(
+                            "Missing required parameter in 'butter_filter' section of the config"
+                        ) from e
+                    #apply filter
+                    mean_intensities_filtered = butter_lowpass_filter(
+                    mean_intensities_trimmed, cutoffFreq, samplingRate, butterOrder
+                    )
+                else:
+                    # Skip butter filter
+                    logger.info("Butterworth filter is disabled; skipping filtering.")
+                    mean_intensities_filtered = mean_intensities
+
+            if plt is not None:
+                plt.figure(figsize=(10, 6))  # Larger figure for readability
+    
+                # Plot the unfiltered mean intensities
+                plt.plot(
+                    range(start_frame, end_frame),
+                    mean_intensities_trimmed,
+                    label="Mean Intensity",
+                    color='blue'
+                    )
+
+                # Plot filtered mean if the butter filter enabled
+                if butterOrder is not None:
+                    plt.plot(
+                        range(start_frame, end_frame),
+                        mean_intensities_filtered,
+                        label=f"Filtered (Order={butterOrder})",
+                        color='orange'
+                        )
+                plt.xlabel("Frame Index", fontsize=12)
+                plt.ylabel("Mean Intensity", fontsize=12)
+                plt.title(f"Mean Intensity per Frame ({start_frame} to {end_frame})", fontsize=14)
+                plt.legend(fontsize=10)
+                plt.grid(True)
+
+                #save plot
+                mean_intensity_plot_path = output_dir / f"{pathstem}_mean_intensity_plot_start_end_frame.png"
+                plt.savefig(mean_intensity_plot_path, dpi=300)
+                plt.close()
+                logger.info(f"Mean intensity plot saved to {mean_intensity_plot_path}")
+
+                #show plot as separate window
+                mean_intensity_image = cv2.imread(str(mean_intensity_plot_path))
+                cv2.imshow("Mean Intensity Plot", mean_intensity_image)
+
+                while True:
+                    if cv2.waitKey(1) == 27:  # Wait for 'Esc' key to continue
+                        break
+
             reader.release()
             minimum_projection = VideoProcessor.get_minimum_projection(output_frames)
 
@@ -366,11 +474,13 @@ class VideoProcessor:
                     min_proj_frame,
                     freq_mask_frame,
                 ]
-                VideoPlotter.show_video_with_controls(
+                
+                if config.interactive_display.enable:
+                    VideoPlotter.show_video_with_controls(
                     videos,
                     start_frame=config.interactive_display.start_frame,
                     end_frame=config.interactive_display.end_frame,
-                )
+                    )
 
     @staticmethod
     def get_minimum_projection(image_list: list[np.ndarray]) -> np.ndarray:
