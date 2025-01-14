@@ -221,7 +221,24 @@ class FrameProcessor:
         """
         return frame.mean()
 
-    
+    def butter_lowpass_filter(self, data: np.ndarray, cutoff: float, fs: float, order: int) -> np.ndarray:
+        """
+        Apply a Butterworth lowpass filter to the data.
+
+        Parameters:
+        data (np.ndarray): The data to filter.
+        cutoff (float): The cutoff frequency of the filter.
+        fs (float): The sampling rate of the data.
+        order (int): The order of the filter.
+
+        Returns:
+        np.ndarray: The filtered data.
+        """
+        nyquist = 0.5 * fs  # Nyquist frequency
+        normal_cutoff = cutoff / nyquist
+        b, a = butter(order, normal_cutoff, btype='low', analog=False)
+        y = filtfilt(b, a, data)
+        return y
 
 
 class VideoProcessor:
@@ -250,10 +267,17 @@ class VideoProcessor:
         if not output_dir.exists():
             output_dir.mkdir(parents=True)
 
+         
+        # Initiate the frame processor
+        processor = FrameProcessor(
+            height=reader.height,
+            width=reader.width,
+        )
         # Initialize lists to store frames
         raw_frames = []
         output_frames = []
         mean_intensities = []
+        butter_filtered_frames = []
 
         if config.noise_patch.enable:
             patched_frames = []
@@ -263,11 +287,7 @@ class VideoProcessor:
             freq_domain_frames = []
             freq_filtered_frames = []
 
-        # Initiate the frame processor
-        processor = FrameProcessor(
-            height=reader.height,
-            width=reader.width,
-        )
+       
 
         if config.noise_patch.enable:
             freq_mask = processor.gen_freq_mask(
@@ -315,9 +335,13 @@ class VideoProcessor:
                     output_frame = freq_filtered_frame
                 output_frames.append(output_frame)
 
-                #calculate mean intensity on processed frames
-                mean_intensity= processor.mean_intensity(output_frame)
-                mean_intensities.append(mean_intensity)
+                #mean pixel intensity over each frames 
+                meanF = output_frame.mean()
+                mean_intensities.append(meanF)
+
+                raw_frames.append(raw_frame)
+                output_frames.append(output_frame)
+
 
         finally:
             #save mean intensities and generate plot
@@ -329,43 +353,68 @@ class VideoProcessor:
             end_frame = config.interactive_display.end_frame or len(mean_intensities_array)
             mean_intensities_trimmed = mean_intensities_array[start_frame:end_frame]
 
-            if plt is not None:
+            
                 
-                def butter_lowpass_filter(data, cutoff, fs, order):
-                    """
-                    apply butterworth filter
-                    """
-                    nyquist = 0.5 * fs  # Nyquist frequency
-                    normal_cutoff = cutoff / nyquist
-                    b, a = butter(order, normal_cutoff, btype='low', analog=False)
-                    y = filtfilt(b, a, data)
-                    return y
-                
-                # Default to using the mean intensities (before filtering)
-                mean_intensities_filtered = mean_intensities
+            def butter_lowpass_filter(data, cutoff, fs, order):
+                """
+                apply butterworth filter
+                """
+                nyquist = 0.5 * fs  # Nyquist frequency
+                normal_cutoff = cutoff / nyquist
+                b, a = butter(order, normal_cutoff, btype='low', analog=False)
+                y = filtfilt(b, a, data)
+                return y
 
-                butterOrder = None
-                cutoffFreq = None
-                samplingRate = None
+            butterOrder = None
+            cutoffFreq = None
+            samplingRate = None
 
-                #check if butter filter is enabled
-                if hasattr(config, 'butter_filter') and getattr(config.butter_filter, 'enable', False):
-                    try:
-                        butterOrder = config.butter_filter.order
-                        cutoffFreq = config.butter_filter.cutoff_frequency
-                        samplingRate = config.butter_filter.sampling_rate
-                    except AttributeError as e:
-                        raise AttributeError(
-                            "Missing required parameter in 'butter_filter' section of the config"
+            if hasattr(config, 'butter_filter') and getattr(config.butter_filter, 'enable', False):
+                try:
+                    butterOrder = config.butter_filter.order
+                    cutoffFreq = config.butter_filter.cutoff_frequency
+                    samplingRate = config.butter_filter.sampling_rate
+
+                    # Ensure the values are valid before applying the filter
+                    if butterOrder > 0 and cutoffFreq > 0 and samplingRate > 0:
+                    # Apply filter
+                        mean_intensities_filtered = butter_lowpass_filter(
+                            mean_intensities_trimmed, cutoffFreq, samplingRate, butterOrder
+                        )
+                    else:
+                        logger.warning(
+                            "Invalid Butterworth filter parameters (order, cutoff, or sampling rate are <= 0). Skipping filtering."
+                        )
+                    mean_intensities_filtered = mean_intensities_trimmed
+                except AttributeError as e:
+                    raise AttributeError(
+                        "Missing required parameter in 'butter_filter' section of the config"
                         ) from e
-                    #apply filter
-                    mean_intensities_filtered = butter_lowpass_filter(
-                    mean_intensities_trimmed, cutoffFreq, samplingRate, butterOrder
-                    )
+            else:
+                logger.info("Butterworth filter is disabled; skipping filtering.")
+                butterOrder = None  # Explicitly set butterOrder to None to avoid later errors
+                mean_intensities_filtered = mean_intensities_trimmed
+                
+            if butterOrder is not None:
+                if len(mean_intensities_array) > 3 * butterOrder:  # Ensure enough data for filtering
+                    #Proceed with filtering logic
+                    pass
                 else:
-                    # Skip butter filter
-                    logger.info("Butterworth filter is disabled; skipping filtering.")
-                    mean_intensities_filtered = mean_intensities
+                    logger.warning(
+                    "Not enough data for Butterworth filtering. Skipping the filter."
+                    )
+                    mean_intensities_filtered = mean_intensities_trimmed
+
+            mean_intensities_array = np.array(mean_intensities)
+            if butterOrder is not None and len(mean_intensities_array) > 3 * butterOrder:  # Ensure enough data for filtering
+                mean_intensities_filtered = processor.butter_lowpass_filter(
+                mean_intensities_array, cutoffFreq, samplingRate, butterOrder
+                )
+            else:
+                logger.warning("Insufficient data for Butterworth filtering. Skipping.")
+                mean_intensities_filtered = mean_intensities_array  # Use raw means if not enough data
+            
+            mean_intensities_filtered_trim = mean_intensities_filtered[start_frame:end_frame]
 
             if plt is not None:
                 plt.figure(figsize=(10, 6))  # Larger figure for readability
@@ -382,7 +431,7 @@ class VideoProcessor:
                 if butterOrder is not None:
                     plt.plot(
                         range(start_frame, end_frame),
-                        mean_intensities_filtered,
+                        mean_intensities_filtered_trim,
                         label=f"Filtered (Order={butterOrder})",
                         color='orange'
                         )
@@ -405,6 +454,15 @@ class VideoProcessor:
                 while True:
                     if cv2.waitKey(1) == 27:  # Wait for 'Esc' key to continue
                         break
+
+             # Apply scaling to each frame
+             #applies an intensity scaling to each frame, based on the Butterworth-filtered mean intensity
+            for index, frame in enumerate(freq_filtered_frames):
+                if index < len(mean_intensities_filtered):
+                    meanF = mean_intensities[index]
+                    scaling_factor = 1 + (mean_intensities_filtered[index] - meanF) / meanF
+                    scaled_frame = np.clip(frame * scaling_factor, 0, 255).astype(np.uint8)
+                    butter_filtered_frames.append(scaled_frame)
 
             reader.release()
             minimum_projection = VideoProcessor.get_minimum_projection(output_frames)
@@ -474,13 +532,31 @@ class VideoProcessor:
                     min_proj_frame,
                     freq_mask_frame,
                 ]
+
+            # Add scaled images if they exist
+            if hasattr(config, 'butter_filter') and getattr(config.butter_filter, 'enable', False):
+                if butter_filtered_frames:  # Add only if frames exist
+                    butter_filtered_video = NamedFrame(name="scaled_images", video_frame=butter_filtered_frames)
+                    videos.append(butter_filtered_video)
                 
-                if config.interactive_display.enable:
-                    VideoPlotter.show_video_with_controls(
-                    videos,
-                    start_frame=config.interactive_display.start_frame,
-                    end_frame=config.interactive_display.end_frame,
-                    )
+            if config.interactive_display.enable:
+                VideoPlotter.show_video_with_controls(
+                videos,
+                start_frame=config.interactive_display.start_frame,
+                end_frame=config.interactive_display.end_frame,
+                )
+        # Ensure both lists have the same length
+        assert len(freq_filtered_frames) == len(butter_filtered_frames), "Frame lists are not the same length!"
+
+        differences = []
+        for i, (freq_frame, scaled_frame) in enumerate(zip(freq_filtered_frames, butter_filtered_frames)):
+            diff = np.abs(freq_frame.astype(np.float32) - scaled_frame.astype(np.float32))
+            differences.append(diff.mean())  # Calculate mean difference for each frame
+
+        # Check summary statistics
+        logger.info(f"Average difference per frame freq_filtered vs scaled_images: {np.mean(differences)}")
+        logger.info(f"Maximum difference across all frames freq_filtered vs scaled_images: {np.max(differences)}")
+
 
     @staticmethod
     def get_minimum_projection(image_list: list[np.ndarray]) -> np.ndarray:

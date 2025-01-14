@@ -20,12 +20,12 @@ frequency_masking:
   spatial_LPF_cutoff_radius: 15
   vertical_BEF_cutoff: 2
   horizontal_BEF_cutoff: 0
-  display_mask: true
+  display_mask: false
   output_mask: true
   output_result: true
   output_freq_domain: false
 butter_filter:
-  enable: false
+  enable: true
   order: 3
   cutoff_frequency: 3
   sampling_rate: 20
