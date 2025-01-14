@@ -2,6 +2,7 @@
 ABC for 
 """
 
+import sys
 from abc import abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional, Union
@@ -10,6 +11,11 @@ from mio.models import MiniscopeConfig, Pipeline, PipelineConfig
 
 if TYPE_CHECKING:
     from mio.models.pipeline import Sink, Source, Transform
+
+if sys.version_info < (3, 11):
+    from typing_extensions import Self
+else:
+    from typing import Self
 
 
 class DeviceConfig(MiniscopeConfig):
@@ -140,3 +146,9 @@ class Device:
     def sinks(self) -> dict[str, "Sink"]:
         """Convenience method to access :attr:`.Pipeline.sinks`"""
         return self.pipeline.sinks
+
+    @classmethod
+    def from_config(cls, config: DeviceConfig) -> Self:
+        """
+        Instantiate a device from its (yaml) configuration.
+        """

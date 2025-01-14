@@ -4,9 +4,9 @@ Base ABCs for pipeline classes
 
 import sys
 from abc import abstractmethod
-from typing import ClassVar, Final, Generic, TypeVar, Union, final
+from typing import ClassVar, Final, Generic, TypeVar, Union, final, TypedDict, Optional
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from mio.exceptions import ConfigurationMismatchError
 from mio.models.models import MiniscopeConfig, PipelineModel
@@ -42,6 +42,8 @@ class NodeConfig(MiniscopeConfig):
     """List of Node IDs to be used as input"""
     outputs: list[str] = Field(default_factory=list)
     """List of Node IDs to be used as output"""
+    config: dict
+    """Additional configuration for this node, parameterized by a TypedDict for the class"""
 
 
 class PipelineConfig(MiniscopeConfig):
@@ -49,8 +51,22 @@ class PipelineConfig(MiniscopeConfig):
     Configuration for the nodes within a pipeline
     """
 
+    required_nodes: ClassVar[Optional[dict[str, str]]] = None
+    """
+    id: type mapping that a subclass can use to require a set of node types with specific IDs be present
+    """
+
     nodes: dict[str, NodeConfig] = Field(default_factory=dict)
     """The nodes that this pipeline configures"""
+
+    @model_validator(mode="after")
+    def validate_required_nodes(self) -> Self:
+        """Ensure required nodes are present, if any"""
+        if self.required_nodes is not None:
+            for id_, type_ in self.required_nodes.items():
+                assert id_ in self.nodes, f"Node ID {id_} not in {self.nodes.keys()}"
+                assert self.nodes[id_].type_ == type_, f"Node ID {id_} is not of type {type_}"
+        return self
 
 
 class Node(PipelineModel, Generic[T, U]):
@@ -63,24 +79,30 @@ class Node(PipelineModel, Generic[T, U]):
 
     id: str
     """Unique identifier of the node"""
-    config: NodeConfig
+    config: Optional[NodeConfig] = None
 
     input_type: ClassVar[type[T]]
     inputs: dict[str, Union["Source", "Transform"]] = Field(default_factory=dict)
     output_type: ClassVar[type[U]]
     outputs: dict[str, Union["Sink", "Transform"]] = Field(default_factory=dict)
 
-    @abstractmethod
     def start(self) -> None:
         """
-        Start producing, processing, or receiving data
-        """
+        Start producing, processing, or receiving data.
 
-    @abstractmethod
+        Default is a no-op.
+        Subclasses do not need to override if they have no initialization logic.
+        """
+        pass
+
     def stop(self) -> None:
         """
         Stop producing, processing, or receiving data
+
+        Default is a no-op.
+        Subclasses do not need to override if they have no deinit logic.
         """
+        pass
 
     @classmethod
     def from_config(cls, config: NodeConfig) -> Self:

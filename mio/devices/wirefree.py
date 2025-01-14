@@ -16,6 +16,7 @@ from mio.devices import DeviceConfig, Miniscope, RecordingCameraMixin
 from mio.exceptions import EndOfRecordingException, ReadHeaderException
 from mio.models.data import Frame
 from mio.models.sdcard import SDBufferHeader, SDConfig, SDLayout
+from mio.models.pipeline import PipelineConfig
 from mio.types import ConfigSource, Resolution
 
 
@@ -23,6 +24,12 @@ class WireFreeConfig(DeviceConfig):
     """Configuration for wire free miniscope"""
 
     pass
+
+
+class WireFreePipeline(PipelineConfig):
+    required_nodes = {
+        "sdcard": "sd-file-source",
+    }
 
 
 @dataclass(kw_only=True)
@@ -62,7 +69,6 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
 
         # Private attributes used when the file reading context is entered
         self._config = None  # type: Optional[SDConfig]
-        self._f = None  # type: Optional[BinaryIO]
         self._frame = None  # type: Optional[int]
         self._frame_count = None  # type: Optional[int]
         self._array = None  # type: Optional[np.ndarray]
@@ -158,47 +164,6 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
             for _ in range(frame - self.frame):
                 self.skip()
 
-    @property
-    def frame_count(self) -> int:
-        """
-        Total number of frames in recording.
-
-        Inferred from :class:`~.sdcard.SDConfig.n_buffers_recorded` and
-        reading a single frame to get the number of buffers per frame.
-        """
-        if self._frame_count is None:
-            if self._f is None:
-                with self as self_open:
-                    frame = self_open.read(return_header=True)
-                    headers = frame.headers
-
-            else:
-                # If we're already open, great, just return to the last frame
-                last_frame = self.frame
-                # Go one frame back in case we are at the end of the data
-                self.frame = max(last_frame - 1, 0)
-                frame = self.read(return_header=True)
-                headers = frame.headers
-                self.frame = last_frame
-
-            self._frame_count = int(
-                np.ceil(
-                    (self.config.n_buffers_recorded + self.config.n_buffers_dropped) / len(headers)
-                )
-            )
-
-        # if we have since read more frames than should be there, we update the
-        # frame count with a warning
-        max_pos = np.max(list(self.positions.keys()))
-        if max_pos > self._frame_count:
-            self.logger.warning(
-                "Got more frames than indicated in card header, expected "
-                f"{self._frame_count} but got {max_pos}"
-            )
-            self._frame_count = int(max_pos)
-
-        return self._frame_count
-
     # --------------------------------------------------
     # Context Manager methods
     # --------------------------------------------------
@@ -226,80 +191,6 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
         self._f.close()
         self._f = None
         self._frame = 0
-
-    # --------------------------------------------------
-    # read methods
-    # --------------------------------------------------
-    def _read_data_header(self, sd: BinaryIO) -> SDBufferHeader:
-        """
-        Given an already open file buffer opened in bytes mode,
-         seeked to the start of a frame, read the data header
-        """
-
-        # read one word first, I think to get the size of the rest of the header,
-        # that sort of breaks the abstraction
-        # (it assumes the buffer length is always at position 0)
-        # but we'll roll with it for now
-        dataHeader = np.frombuffer(sd.read(self.layout.word_size), dtype=np.uint32)
-        dataHeader = np.append(
-            dataHeader,
-            np.frombuffer(
-                sd.read((dataHeader[self.layout.buffer.length] - 1) * self.layout.word_size),
-                dtype=np.uint32,
-            ),
-        )
-
-        # use construct because we're already sure these are ints from the numpy casting
-        # https://docs.pydantic.dev/latest/usage/models/#creating-models-without-validation
-        try:
-            header = SDBufferHeader.from_format(dataHeader, self.layout.buffer, construct=True)
-        except IndexError as e:
-            raise ReadHeaderException(
-                "Could not read header, expected header to have "
-                f"{len(self.layout.buffer.model_dump().keys())} fields, "
-                f"got {len(dataHeader)}. Likely mismatch between specified "
-                "and actual SD Card layout or reached end of data.\n"
-                f"Header Data: {dataHeader}"
-            ) from e
-
-        return header
-
-    def _n_frame_blocks(self, header: SDBufferHeader) -> int:
-        """
-        Compute the number of blocks for a given frame buffer
-
-        Not sure how this works!
-        """
-        n_blocks = int(
-            (
-                header.data_length
-                + (header.length * self.layout.word_size)
-                + (self.layout.sectors.size - 1)
-            )
-            / self.layout.sectors.size
-        )
-        return n_blocks
-
-    def _read_size(self, header: SDBufferHeader) -> int:
-        """
-        Compute the number of bytes to read for a given buffer
-
-        Not sure how this works with :meth:`._n_frame_blocks`, but keeping
-        them separate in case they are separable actions for now
-        """
-        n_blocks = self._n_frame_blocks(header)
-        read_size = (n_blocks * self.layout.sectors.size) - (header.length * self.layout.word_size)
-        return read_size
-
-    def _read_buffer(self, sd: BinaryIO, header: SDBufferHeader) -> np.ndarray:
-        """
-        Read a single buffer from a frame.
-
-        Each frame has several buffers, so for a given frame we read them until we
-        get another that's zero!
-        """
-        data = np.frombuffer(sd.read(self._read_size(header)), dtype=np.uint8)
-        return data
 
     def _trim(self, data: np.ndarray, expected_size: int) -> np.ndarray:
         """
