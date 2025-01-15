@@ -7,7 +7,7 @@ from typing import List, Optional, TypeVar, Union
 
 import cv2
 import numpy as np
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mio.io import VideoWriter
 from mio.logging import init_logger
@@ -41,6 +41,9 @@ class NamedFrame(BaseModel):
     frame_type: Optional[str] = Field(
         None,
         description="Type of frame data.",
+    )
+    model_config = ConfigDict(
+        arbitrary_types_allowed = True,
     )
 
     @model_validator(mode="before")
@@ -127,11 +130,3 @@ class NamedFrame(BaseModel):
             raise NotImplementedError("Exporting video list frames is not yet supported.")
         else:
             raise ValueError("Unknown frame type or no frame data provided.")
-
-    class Config:
-        """
-        Pydantic config for allowing np.ndarray types.
-        Could be an Numpydantic situation so will look into it later.
-        """
-
-        arbitrary_types_allowed = True

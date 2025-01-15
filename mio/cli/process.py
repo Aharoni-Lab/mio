@@ -28,7 +28,7 @@ def process() -> None:
     "-c",
     "--denoise_config",
     required=True,
-    type=click.Path(exists=True, dir_okay=False),
+    type=str,
     help="Path to the YAML processing configuration file.",
 )
 def denoise(
@@ -38,5 +38,5 @@ def denoise(
     """
     Denoise a video file.
     """
-    denoise_config_parsed = DenoiseConfig.from_yaml(denoise_config)
+    denoise_config_parsed = DenoiseConfig.from_any(denoise_config)
     VideoProcessor.denoise(input, denoise_config_parsed)

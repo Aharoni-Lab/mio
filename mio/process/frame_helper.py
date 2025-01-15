@@ -264,6 +264,8 @@ class ZStackHelper:
         global_min = stacked_images.min()
         global_max = stacked_images.max()
 
+        range_val = max(global_max - global_min, 1e-5)  # Set an epsilon value for stability
+
         # Normalize each frame using the global min and max
         normalized_images = []
         for i in range(stacked_images.shape[0]):
@@ -275,10 +277,9 @@ class ZStackHelper:
                 cv2.NORM_MINMAX,
                 dtype=cv2.CV_32F,
             )
-            # Apply global normalization
             normalized_image = (
                 (stacked_images[i] - global_min)
-                / (global_max - global_min)
+                / range_val
                 * np.iinfo(np.uint8).max
             )
             normalized_images.append(normalized_image.astype(np.uint8))

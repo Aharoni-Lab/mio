@@ -6,7 +6,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from mio.models.mixins import YAMLMixin
+from mio.models import MiniscopeConfig
+from mio.models.mixins import ConfigYAMLMixin
 
 
 class InteractiveDisplayConfig(BaseModel):
@@ -134,7 +135,7 @@ class FreqencyMaskingConfig(BaseModel):
     )
 
 
-class DenoiseConfig(BaseModel, YAMLMixin):
+class DenoiseConfig(MiniscopeConfig, ConfigYAMLMixin):
     """
     Configuration for denoising a video.
     """
