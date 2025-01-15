@@ -102,11 +102,11 @@ class VideoReader:
         """
         while self.cap.isOpened():
             ret, frame = self.cap.read()
-            index = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
-            self.logger.debug(f"Reading frame {index}")
-
             if not ret:
                 break
+                
+            index = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
+            self.logger.debug(f"Reading frame {index}")
 
             yield index, frame
 
@@ -117,7 +117,10 @@ class VideoReader:
         self.cap.release()
 
     def __del__(self):
-        self.release()
+        try:
+            self.release()
+        except AttributeError:
+            pass
 
 
 class BufferedCSVWriter:

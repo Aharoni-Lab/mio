@@ -1,6 +1,6 @@
 id: denoise_example
-mio_model: tests.test_mixins.LoaderModel
-mio_version: 0.6.1.dev16+g6436633.d20241211
+mio_model: mio.models.process.DenoiseConfig
+mio_version: 0.6.1
 interactive_display:
   enable: false
   start_frame: 40

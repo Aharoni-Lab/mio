@@ -83,13 +83,13 @@ class NamedFrame(BaseModel):
         else:
             raise ValueError("Unknown frame type or no frame data provided.")
 
-    def export(self, output_path: Path, fps: int, suffix: bool) -> None:
+    def export(self, output_path: Union[Path, str], fps: int, suffix: bool) -> None:
         """
         Export the frame data to a file.
 
         Parameters
         ----------
-        output_path : str
+        output_path : Path, str
             Path to the output file.
         fps : int
             Frames per second for the
@@ -99,6 +99,7 @@ class NamedFrame(BaseModel):
         NotImplementedError
             If the frame type is video_list_frame.
         """
+        output_path = Path(output_path)
         if suffix:
             output_path = output_path.with_name(output_path.stem + f"_{self.name}")
         if self.frame_type == "static_frame":
