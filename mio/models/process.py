@@ -110,6 +110,27 @@ class FreqencyMaskingConfig(BaseModel):
         description="Whether to output the frequency domain.",
     )
 
+class ButterFilterConfig(BaseModel):
+    """
+    Configuration for Butterworth filter.
+    """
+
+    enable: bool = Field(
+        default=False,
+        description="Whether to apply a Butterworth filter to the mean intensity data.",
+    )
+    order: int = Field(
+        default=3,
+        description="Order of the Butterworth filter.",
+    )
+    cutoff_frequency: float = Field(
+        default=3,
+        description="Cutoff frequency for the Butterworth filter.",
+    )
+    sampling_rate: float = Field(
+        default=20,
+        description="Sampling rate (frames per second).",
+    )
 
 class DenoiseConfig(BaseModel, YAMLMixin):
     """
@@ -140,3 +161,8 @@ class DenoiseConfig(BaseModel, YAMLMixin):
         default=None,
         description="Directory to save the output in.",
     )
+    butter_filter: Optional[ButterFilterConfig] = Field(
+        default=None,
+        description="Configuration for Butterworth filter.",
+    )
+
