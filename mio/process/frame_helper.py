@@ -277,11 +277,7 @@ class ZStackHelper:
                 cv2.NORM_MINMAX,
                 dtype=cv2.CV_32F,
             )
-            normalized_image = (
-                (stacked_images[i] - global_min)
-                / range_val
-                * np.iinfo(np.uint8).max
-            )
+            normalized_image = (stacked_images[i] - global_min) / range_val * np.iinfo(np.uint8).max
             normalized_images.append(normalized_image.astype(np.uint8))
 
         return normalized_images

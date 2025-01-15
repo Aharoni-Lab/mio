@@ -27,6 +27,7 @@ try:
 except ImportError:
     plt = None
 
+
 class BaseVideoProcessor:
     """
     Base class for defining an abstract video processor.

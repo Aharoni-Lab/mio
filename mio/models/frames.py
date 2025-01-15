@@ -43,7 +43,7 @@ class NamedFrame(BaseModel):
         description="Type of frame data.",
     )
     model_config = ConfigDict(
-        arbitrary_types_allowed = True,
+        arbitrary_types_allowed=True,
     )
 
     @model_validator(mode="before")
