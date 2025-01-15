@@ -124,7 +124,7 @@ def test_cli_config_list():
     # by default paths and mio models should be truncated
     if sys.platform == "win32":
         assert "\u2502 .sdcard.SDLayout" in result.output
-        assert "\u2502 wirefree/" in result.output
+        assert "\u2502 wirefree\\\\" in result.output
     else:
         assert "│ .sdcard.SDLayout" in result.output
         assert "│ wirefree/" in result.output
