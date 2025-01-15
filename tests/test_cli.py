@@ -1,4 +1,5 @@
 import pdb
+import sys
 
 import pytest
 from click.testing import CliRunner
@@ -106,8 +107,13 @@ def test_cli_config_list():
     result = runner.invoke(_list, color=False)
 
     # not testing for the literal table structure, but we should have headers and some table characters
-    for header_substr in ("id", "mio_model", "path", "┏"):
+    for header_substr in ("id", "mio_model", "path"):
         assert header_substr in result.output
+
+    if sys.platform == 'win32':
+        assert '\u2500' in result.output
+    else:
+        assert "━━" in result.output
 
     # configs from the temporarily configured test config directory should be included
     assert "test-wireless-200px" in result.output
