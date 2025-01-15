@@ -3,7 +3,7 @@ Pydantic models for storing frames and videos.
 """
 
 from pathlib import Path
-from typing import List, Optional, TypeVar
+from typing import List, Optional, TypeVar, Union
 
 import cv2
 import numpy as np
