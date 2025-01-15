@@ -163,4 +163,3 @@ wirefree_example.avi
 user_dir/*
 !user_dir/.gitkeep
 
-~/.config/miniscope_io/logs/
