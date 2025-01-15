@@ -110,8 +110,8 @@ def test_cli_config_list():
     for header_substr in ("id", "mio_model", "path"):
         assert header_substr in result.output
 
-    if sys.platform == 'win32':
-        assert '\u2500' in result.output
+    if sys.platform == "win32":
+        assert "\u2500" in result.output
     else:
         assert "━━" in result.output
 
@@ -122,8 +122,12 @@ def test_cli_config_list():
     assert "wirefree-sd-layout" in result.output
 
     # by default paths and mio models should be truncated
-    assert "│ .sdcard.SDLayout" in result.output
-    assert "│ wirefree/" in result.output
+    if sys.platform == "win32":
+        assert "\u2502 .sdcard.SDLayout" in result.output
+        assert "\u2502 wirefree/" in result.output
+    else:
+        assert "│ .sdcard.SDLayout" in result.output
+        assert "│ wirefree/" in result.output
 
     # verbose should display the full values (though truncated in testing because console width is 80)
     result = runner.invoke(_list, ["-v"], color=False)
