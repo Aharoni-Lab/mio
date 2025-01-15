@@ -2,13 +2,18 @@
 CLI commands for configuration
 """
 
+import re
 from pathlib import Path
 
 import click
 import yaml
+from rich.console import Console
+from rich.table import Table
 
+from mio import CONFIG_DIR
 from mio.models import config as _config
 from mio.models.config import set_user_dir
+from mio.models.mixins import ConfigYAMLMixin
 
 
 @click.group(invoke_without_command=True)
@@ -146,3 +151,41 @@ def user_path() -> None:
     """Location of the current user config"""
     path = list(_config.Config().user_dir.glob("mio_config.*"))[0]
     click.echo(str(path))
+
+
+@config.command("list")
+@click.option(
+    "-v",
+    "--verbose",
+    count=True,
+    help="Display more verbose output\n" "-v: Display full model identifiers and config paths",
+)
+def _list(verbose: int) -> None:
+    """
+    Display the available configs in the user config directory and provided by mio.
+
+    By default, results are truncated for narrow consoles -
+    models within `mio.models` are displayed with only a leading `.`,
+    and paths of builtin configs are shown relative to the package config directory
+    """
+    config_headers = [cfg for cfg in ConfigYAMLMixin.iter_configs()]
+    config_headers = sorted(config_headers, key=lambda cfg: (cfg["mio_model"], cfg["id"]))
+
+    table = Table(title="mio configs")
+    table.add_column("id", style="yellow", no_wrap=True)
+    table.add_column("mio_model")
+    table.add_column("path")
+
+    for header in config_headers:
+        table.add_row(
+            header["id"],
+            re.sub(r"^mio.models", "", header["mio_model"]) if verbose < 1 else header["mio_model"],
+            (
+                str(header["path"].relative_to(CONFIG_DIR))
+                if verbose < 1 and CONFIG_DIR in header["path"].parents
+                else str(header["path"])
+            ),
+        )
+
+    console = Console()
+    console.print(table)

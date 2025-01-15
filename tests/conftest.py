@@ -42,10 +42,9 @@ def mock_config_source(monkeypatch_session):
     """
     Add the `tests/data/config` directory to the config sources for the entire testing session
     """
-    current_sources = ConfigYAMLMixin.config_sources
+    current_sources = ConfigYAMLMixin.config_sources()
 
     @classmethod
-    @property
     def _config_sources(cls: type[ConfigYAMLMixin]) -> list[Path]:
         return [CONFIG_DIR, *current_sources]
 
