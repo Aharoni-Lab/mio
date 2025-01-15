@@ -59,15 +59,14 @@ class NoiseDetectionHelper:
 
         return sub_arrays
 
-    def patch_noisy_buffer(
+    def detect_frame_with_noisy_buffer(
         self,
         current_frame: np.ndarray,
         previous_frame: np.ndarray,
         noise_patch_config: NoisePatchConfig,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[bool, np.ndarray]:
         """
-        Compare current frame with the previous frame to find noisy frames.
-        Replace noisy blocks with those from the previous frame.
+        Compare current frame with the previous frame to find noisy frames and drop them.
         The comparison is done in blocks of a specified size,
         defined by the buffer_size divided by buffer_split.
 
@@ -77,7 +76,8 @@ class NoiseDetectionHelper:
         noise_threshold (float): The threshold for mean error to consider a block noisy.
 
         Returns:
-        Tuple[np.ndarray, np.ndarray]: The processed frame and the noise patch.
+        Tuple[bool, np.ndarray]: A tuple of a boolean indicating if the frame is noisy
+        and a mask showing the noisy blocks.
         """
         serialized_current = current_frame.flatten().astype(np.int16)
         serialized_previous = previous_frame.flatten().astype(np.int16)
@@ -93,37 +93,34 @@ class NoiseDetectionHelper:
             noise_patch_config.buffer_size // noise_patch_config.buffer_split + 1,
         )
 
-        split_output = split_current.copy()
         noisy_parts = split_current.copy()
 
-        buffer_has_noise = False
+        any_buffer_has_noise = False
+        current_buffer_has_noise = False
         for buffer_index in range(buffer_per_frame):
             for split_index in range(noise_patch_config.buffer_split):
                 i = buffer_index * noise_patch_config.buffer_split + split_index
                 mean_error = abs(split_current[i] - split_previous[i]).mean()
                 logger.debug(f"Mean error for buffer {i}: {mean_error}")
                 if mean_error > noise_patch_config.threshold:
-                    logger.info(f"Replacing buffer {i} with mean error {mean_error}")
-                    buffer_has_noise = True
+                    logger.info(
+                        f"Buffer {i} exceeds threshold ({noise_patch_config.threshold}):"
+                        f" {mean_error}"
+                    )
+                    current_buffer_has_noise = True
+                    any_buffer_has_noise = True
                     break
                 else:
-                    split_output[i] = split_current[i]
                     noisy_parts[i] = np.zeros_like(split_current[i], np.uint8)
-            if buffer_has_noise:
+            if current_buffer_has_noise:
                 for split_index in range(noise_patch_config.buffer_split):
                     i = buffer_index * noise_patch_config.buffer_split + split_index
-                    split_output[i] = split_previous[i]
                     noisy_parts[i] = np.ones_like(split_current[i], np.uint8)
-                buffer_has_noise = False
+                current_buffer_has_noise = False
 
-        serialized_output = np.concatenate(split_output)[: self.height * self.width]
         noise_output = np.concatenate(noisy_parts)[: self.height * self.width]
-
-        # Deserialize processed frame
-        processed_frame = serialized_output.reshape(self.width, self.height)
         noise_patch = noise_output.reshape(self.width, self.height)
-
-        return np.uint8(processed_frame), np.uint8(noise_patch)
+        return any_buffer_has_noise, np.uint8(noise_patch)
 
 
 class FrequencyMaskHelper:

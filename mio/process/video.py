@@ -3,7 +3,7 @@ This module contains functions for pre-processing video data.
 """
 
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -130,44 +130,50 @@ class NoisePatchProcessor(BaseVideoProcessor):
         self.noise_patch_config: NoisePatchConfig = noise_patch_config
         self.previous_frame: Optional[np.ndarray] = None
         self.noise_patchs: list[np.ndarray] = []
+        self.noisy_frames: list[np.ndarray] = []
         self.diff_frames: list[np.ndarray] = []
+        self.dropped_frame_indices: list[int] = []
+
         self.output_enable: bool = noise_patch_config.output_result
 
-    def process_frame(self, input_frame: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def process_frame(self, input_frame: np.ndarray) -> Optional[np.ndarray]:
         """
         Process a single frame.
 
         Parameters:
         raw_frame (np.ndarray): The raw frame to process.
-        previous_frame (np.ndarray): The previous frame to compare against.
-        For the first frame, this is None.
 
         Returns:
-        Tuple[np.ndarray, np.ndarray]: The processed frame and the noise patch.
+        Optional[np.ndarray]: The processed frame. If the frame is noisy, a None is returned.
         """
 
+        if input_frame is None:
+            return None
         if self.noise_patch_config.enable and self.previous_frame is not None:
-            patched_frame, noise_patch = self.noise_detect_helper.patch_noisy_buffer(
+            broken, noise_patch = self.noise_detect_helper.detect_frame_with_noisy_buffer(
                 input_frame,
                 self.previous_frame,
                 self.noise_patch_config,
             )
-            self.append_output_frame(patched_frame)
-            self.noise_patchs.append(noise_patch * np.iinfo(np.uint8).max)
             self.diff_frames.append(
                 cv2.absdiff(input_frame, self.previous_frame)
                 * self.noise_patch_config.diff_multiply
             )
-
-            return patched_frame, noise_patch
+            if not broken:
+                self.append_output_frame(input_frame)
+                self.previous_frame = input_frame
+                return input_frame
+            else:
+                index = len(self.output_frames) + len(self.noise_patchs)
+                logger.info(f"Dropping frame {index} of original video due to noise.")
+                self.noise_patchs.append(noise_patch * np.iinfo(np.uint8).max)
+                self.noisy_frames.append(input_frame)
+                self.dropped_frame_indices.append(index)
+                return None
         if self.noise_patch_config.enable and self.previous_frame is None:
-            self.append_output_frame(input_frame)
-            self.noise_patchs.append(np.zeros_like(input_frame))
-            self.diff_frames.append(np.zeros_like(input_frame))
             self.previous_frame = input_frame
-            return input_frame, np.zeros_like(input_frame)
-        else:
-            return input_frame, np.zeros_like(input_frame)
+            self.append_output_frame(input_frame)
+            return input_frame
 
     @property
     def noise_patch_named_frame(self) -> NamedFrame:
@@ -184,6 +190,13 @@ class NoisePatchProcessor(BaseVideoProcessor):
         return NamedFrame(
             name=f"diff_{self.noise_patch_config.diff_multiply}x", frame=self.diff_frames
         )
+
+    @property
+    def noisy_frames_named_frame(self) -> NamedFrame:
+        """
+        Get the NamedFrame object for the noisy frames.
+        """
+        return NamedFrame(name="noisy_frames", frame=self.noisy_frames)
 
     def export_noise_patch(self) -> None:
         """
@@ -213,6 +226,24 @@ class NoisePatchProcessor(BaseVideoProcessor):
         else:
             logger.info(f"{self.name} difference frames output disabled.")
 
+    def export_noisy_frames(self) -> None:
+        """
+        Export the noisy frames to a file.
+        """
+        if self.noise_patch_config.output_noisy_frames:
+            logger.info(f"Exporting {self.name} noisy frames to {self.output_dir}")
+            self.noisy_frames_named_frame.export(
+                output_path=self.output_dir / f"{self.name}",
+                fps=20,
+                suffix=True,
+            )
+            # Can be anything. Just for now.
+            with open(self.output_dir / f"{self.name}_dropped_frames.txt", "w") as f:
+                for index in self.dropped_frame_indices:
+                    f.write(f"{index}\n")
+        else:
+            logger.info(f"{self.name} noisy frames output disabled.")
+
     def batch_export_videos(self) -> None:
         """
         Batch export the videos to a file. Whether to export or not is controlled in each method.
@@ -220,6 +251,7 @@ class NoisePatchProcessor(BaseVideoProcessor):
         self.export_output_video()
         self.export_noise_patch()
         self.export_diff_frames()
+        self.export_noisy_frames()
 
 
 class FreqencyMaskProcessor(BaseVideoProcessor):
@@ -274,7 +306,7 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
         """
         return NamedFrame(name="freq_domain", frame=self.freq_domain_frames)
 
-    def process_frame(self, frame: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def process_frame(self, input_frame: np.ndarray) -> Optional[np.ndarray]:
         """
         Process a single frame.
 
@@ -282,19 +314,22 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
         frame (np.ndarray): The frame to process.
 
         Returns:
-        Tuple[np.ndarray, np.ndarray]: The filtered frame and the frequency domain.
+        Optional[np.ndarray]: The processed frame. If the input is none, a None is returned.
+
         """
+        if input_frame is None:
+            return None
         if self.freq_mask_config.enable:
             freq_filtered_frame, frame_freq_domain = self.freq_mask_helper.apply_freq_mask(
-                img=frame,
+                img=input_frame,
                 mask=self.freq_mask,
             )
             self.append_output_frame(freq_filtered_frame)
             self.freq_domain_frames.append(frame_freq_domain)
 
-            return freq_filtered_frame, frame_freq_domain
+            return freq_filtered_frame
         else:
-            return frame, None
+            return input_frame
 
     def export_freq_domain_frames(self) -> None:
         """
@@ -368,6 +403,8 @@ class PassThroughProcessor(BaseVideoProcessor):
         Returns:
         np.ndarray: The processed frame.
         """
+        if input_frame is None:
+            return None
         self.append_output_frame(input_frame)
         return input_frame
 
@@ -401,6 +438,7 @@ class MinProjSubtractProcessor(BaseVideoProcessor):
         MinimumProjectionProcessor: A MinimumProjectionProcessor object.
         """
         super().__init__(name, output_dir)
+
         self.minimum_projection: np.ndarray = ZStackHelper.get_minimum_projection(video_frames)
         self.output_frames: list[np.ndarray] = [
             (frame - self.minimum_projection) for frame in video_frames
@@ -493,8 +531,8 @@ class VideoProcessor:
 
                 raw_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 input_frame = raw_frame_processor.process_frame(raw_frame)
-                patched_frame, _ = noise_patch_processor.process_frame(input_frame)
-                freq_masked_frame, _ = freq_mask_processor.process_frame(patched_frame)
+                patched_frame = noise_patch_processor.process_frame(input_frame)
+                freq_masked_frame = freq_mask_processor.process_frame(patched_frame)
                 _ = output_frame_processor.process_frame(freq_masked_frame)
 
         finally:
@@ -502,6 +540,11 @@ class VideoProcessor:
 
             output_frames = output_frame_processor.output_frames
 
+            if not isinstance(output_frames, list):
+                raise ValueError("Output frames must be a list.")
+            for frame in output_frames:
+                if not isinstance(frame, np.ndarray):
+                    logger.warning(f"Frame is not a numpy array: {type(frame)}")
             minimum_projection_processor = MinProjSubtractProcessor(
                 name=pathstem + "min_proj",
                 output_dir=output_dir,
@@ -516,11 +559,8 @@ class VideoProcessor:
 
             if config.interactive_display.enable:
                 videos = [
-                    raw_frame_processor.pass_through_named_frame,
-                    noise_patch_processor.noise_patch_named_frame,
                     noise_patch_processor.output_named_frame,
                     freq_mask_processor.output_named_frame,
-                    freq_mask_processor.freq_mask_named_frame,
                     minimum_projection_processor.min_proj_named_frame,
                     freq_mask_processor.freq_domain_named_frame,
                 ]

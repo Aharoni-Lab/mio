@@ -94,6 +94,10 @@ class NoisePatchConfig(BaseModel):
         default=False,
         description="Whether to output the difference.",
     )
+    output_noisy_frames: bool = Field(
+        default=True,
+        description="Whether to output the noisy frames as an independent video stream.",
+    )
 
 
 class FreqencyMaskingConfig(BaseModel):

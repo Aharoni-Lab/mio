@@ -3,11 +3,11 @@ Pydantic models for storing frames and videos.
 """
 
 from pathlib import Path
-from typing import List, Optional, TypeVar, Union
+from typing import List, Optional, Union
 
 import cv2
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from mio.io import VideoWriter
 from mio.logging import init_logger

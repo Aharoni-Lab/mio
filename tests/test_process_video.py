@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 from pathlib import Path
 import numpy as np
 
-from mio.process.video import NoisePatchProcessor, FreqencyMaskProcessor, PassThroughProcessor, MinProjSubtractProcessor, VideoProcessor
+from mio.process.video import NoisePatchProcessor, FreqencyMaskProcessor, PassThroughProcessor, MinProjSubtractProcessor
 from mio.models.process import DenoiseConfig
 
 class TestVideoProcessors(unittest.TestCase):
@@ -21,7 +21,7 @@ class TestVideoProcessors(unittest.TestCase):
         denoise_config.noise_patch.output_result = True
 
         processor = NoisePatchProcessor("denoise_example", denoise_config.noise_patch, self.width, self.height, self.test_dir)
-        processed_frame, _ = processor.process_frame(self.test_frame)
+        processed_frame = processor.process_frame(self.test_frame)
 
         self.assertIsInstance(processed_frame, np.ndarray)
         self.assertEqual(processor.name, "denoise_example")
@@ -33,10 +33,9 @@ class TestVideoProcessors(unittest.TestCase):
         denoise_config.frequency_masking.output_result = True
 
         processor = FreqencyMaskProcessor("test_freq_mask", denoise_config.frequency_masking, self.width, self.height, self.test_dir)
-        processed_frame, freq_domain = processor.process_frame(self.test_frame)
+        processed_frame = processor.process_frame(self.test_frame)
 
         self.assertIsInstance(processed_frame, np.ndarray)
-        self.assertIsInstance(freq_domain, np.ndarray)
         self.assertEqual(processor.name, "test_freq_mask")
         self.assertTrue(processor.output_enable)
 
