@@ -55,11 +55,9 @@ class VideoPlotter:
                 "install it manually or install miniscope-io with `pip install miniscope-io[plot]`"
             )
 
-        if any(frame.frame_type == "video_list_frame" for frame in videos):
-            raise NotImplementedError("Only single videos or frames are supported for now.")
         # Wrap static images in lists to handle them uniformly
         video_frames = [
-            frame.data if frame.frame_type == "video_frame" else [frame.data] for frame in videos
+            frame.frame if isinstance(frame.frame, list) else [frame.frame] for frame in videos
         ]
 
         titles = [video.name for video in videos]

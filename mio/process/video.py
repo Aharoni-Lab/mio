@@ -64,7 +64,7 @@ class BaseVideoProcessor:
         Returns:
         NamedFrame: The output NamedFrame object.
         """
-        return NamedFrame(name=self.name, video_frame=self.output_frames)
+        return NamedFrame(name=self.name, frame=self.output_frames)
 
     def append_output_frame(self, input_frame: np.ndarray) -> None:
         """
@@ -174,7 +174,7 @@ class NoisePatchProcessor(BaseVideoProcessor):
         """
         Get the NamedFrame object for the noise patch.
         """
-        return NamedFrame(name="patched_area", video_frame=self.noise_patchs)
+        return NamedFrame(name="patched_area", frame=self.noise_patchs)
 
     @property
     def diff_frames_named_frame(self) -> NamedFrame:
@@ -182,7 +182,7 @@ class NoisePatchProcessor(BaseVideoProcessor):
         Get the NamedFrame object for the difference frames.
         """
         return NamedFrame(
-            name=f"diff_{self.noise_patch_config.diff_multiply}x", video_frame=self.diff_frames
+            name=f"diff_{self.noise_patch_config.diff_multiply}x", frame=self.diff_frames
         )
 
     def export_noise_patch(self) -> None:
@@ -265,14 +265,14 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
         """
         Get the NamedFrame object for the frequency mask.
         """
-        return NamedFrame(name="freq_mask", static_frame=self.freq_mask * np.iinfo(np.uint8).max)
+        return NamedFrame(name="freq_mask", frame=self.freq_mask * np.iinfo(np.uint8).max)
 
     @property
     def freq_domain_named_frame(self) -> NamedFrame:
         """
         Get the NamedFrame object for the frequency domain.
         """
-        return NamedFrame(name="freq_domain", video_frame=self.freq_domain_frames)
+        return NamedFrame(name="freq_domain", frame=self.freq_domain_frames)
 
     def process_frame(self, frame: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -356,7 +356,7 @@ class PassThroughProcessor(BaseVideoProcessor):
         """
         Get the NamedFrame object for the pass through.
         """
-        return NamedFrame(name=self.name, video_frame=self.output_frames)
+        return NamedFrame(name=self.name, frame=self.output_frames)
 
     def process_frame(self, input_frame: np.ndarray) -> np.ndarray:
         """
@@ -413,7 +413,7 @@ class MinProjSubtractProcessor(BaseVideoProcessor):
         """
         Get the NamedFrame object for the minimum projection.
         """
-        return NamedFrame(name="min_proj", static_frame=self.output_frames[0])
+        return NamedFrame(name="min_proj", frame=self.output_frames[0])
 
     def normalize_stack(self) -> None:
         """

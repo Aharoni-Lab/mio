@@ -1,76 +1,65 @@
 import unittest
+from unittest.mock import patch, MagicMock
 import numpy as np
-from pydantic import ValidationError
+from pathlib import Path
 
 from mio.models.frames import NamedFrame
 
 class TestNamedFrame(unittest.TestCase):
 
     def setUp(self):
-        self.name = "test_frame"
-        self.static_frame = np.random.randint(0, 256, (100, 100), dtype=np.uint8)
-        self.video_frame = [np.random.randint(0, 256, (100, 100), dtype=np.uint8) for _ in range(10)]
-        self.video_list_frame = [[np.random.randint(0, 256, (100, 100), dtype=np.uint8) for _ in range(5)] for _ in range(3)]
+        # Create a single frame (image) and a list of frames (video)
+        self.image_frame = np.random.randint(0, 256, (100, 100), dtype=np.uint8)
+        self.video_frames = [np.random.randint(0, 256, (100, 100), dtype=np.uint8) for _ in range(10)]
+        self.name = "test"
 
-    def test_static_frame_initialization(self):
-        frame = NamedFrame(name=self.name, static_frame=self.static_frame)
-        self.assertEqual(frame.name, self.name)
-        self.assertEqual(frame.data.shape, self.static_frame.shape)
-        self.assertEqual(frame.data.dtype, self.static_frame.dtype)
+    @patch('cv2.imwrite')
+    def test_export_image_frame(self, mock_imwrite):
+        # Create instance of NamedFrame with a single image
+        named_frame = NamedFrame(name=self.name, frame=self.image_frame)
+        # Call the export method
+        named_frame.export("output_path", 20, True)
+        # Check that cv2.imwrite was called correctly
+        mock_imwrite.assert_called_once_with("output_path_test.png", self.image_frame)
 
-    def test_video_frame_initialization(self):
-        frame = NamedFrame(name=self.name, video_frame=self.video_frame)
-        self.assertEqual(frame.name, self.name)
-        self.assertEqual(len(frame.data), len(self.video_frame))
-        self.assertEqual(frame.data[0].shape, self.video_frame[0].shape)
+    @patch('mio.models.frames.VideoWriter.init_video')
+    def test_export_video_frame(self, mock_init_video):
+        # Create a mock writer instance
+        mock_writer = MagicMock()
+        mock_init_video.return_value = mock_writer
 
-    def test_video_list_frame_initialization(self):
-        frame = NamedFrame(name=self.name, video_list_frame=self.video_list_frame)
-        self.assertEqual(frame.name, self.name)
-        self.assertEqual(len(frame.data), len(self.video_list_frame))
-        self.assertEqual(len(frame.data[0]), len(self.video_list_frame[0]))
+        # Create instance of NamedFrame with a video
+        named_frame = NamedFrame(name=self.name, frame=self.video_frames)
+        # Call the export method
+        named_frame.export("output_path", 20, True)
 
-    def test_invalid_initialization_raises_error(self):
-        with self.assertRaises(ValidationError):
-            # No frame type provided
-            NamedFrame(name=self.name)
+        # Verify init_video was called with correct parameters
+        mock_init_video.assert_called_once_with(
+            path=Path("output_path_test.avi"),
+            width=self.video_frames[0].shape[1],
+            height=self.video_frames[0].shape[0],
+            fps=20
+        )
 
+        # Check that the writer's write method was called for each frame
+        self.assertEqual(mock_writer.write.call_count, len(self.video_frames))
+
+    @patch('cv2.imwrite')
+    @patch('mio.models.frames.VideoWriter.init_video')
+    def test_invalid_frame_type_raises_exception(self, mock_init_video, mock_imwrite):
+        # Test with an invalid type (e.g., integer)
         with self.assertRaises(ValueError):
-            # Providing more than one frame type should raise a ValueError
-            NamedFrame(name=self.name, static_frame=self.static_frame, video_frame=self.video_frame)
+            named_frame = NamedFrame(name=self.name, frame=12345)
+            named_frame.export("output_path", 20, True)
 
-    def test_export_static_frame(self):
-        # Mocking the actual write operation can be done using unittest.mock, but here I will just focus on invocation
-        frame = NamedFrame(name=self.name, static_frame=self.static_frame)
+        # Test with a list containing non-ndarray elements
+        with self.assertRaises(ValueError):
+            named_frame = NamedFrame(name=self.name, frame=[123, 456])
+            named_frame.export("output_path", 20, True)
 
-        # Patch the cv2.imwrite to test the export without actually writing to disk
-        from unittest.mock import patch
-
-        with patch('cv2.imwrite') as mocked_imwrite:
-            frame.export('output.png', 20, True)
-            mocked_imwrite.assert_called_once()
-
-    def test_export_video_frame(self):
-        frame = NamedFrame(name=self.name, video_frame=self.video_frame)
-
-        from unittest.mock import patch, MagicMock
-
-        with patch('cv2.VideoWriter') as MockVideoWriter:
-            writer_instance = MockVideoWriter.return_value
-            writer_instance.write = MagicMock()
-            writer_instance.release = MagicMock()
-
-            frame.export('output.avi', 20, True)
-
-            writer_instance.write.assert_called()
-            writer_instance.release.assert_called_once()
-
-    def test_export_video_list_frame_not_implemented(self):
-        frame = NamedFrame(name=self.name, video_list_frame=self.video_list_frame)
-        
-        with self.assertRaises(NotImplementedError):
-            frame.export('output.avi', 20, True)
-
+        # Ensure that no write methods are called
+        mock_imwrite.assert_not_called()
+        mock_init_video.assert_not_called()
 
 if __name__ == '__main__':
     unittest.main()
