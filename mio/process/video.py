@@ -364,6 +364,91 @@ class NoisePatchProcessor(BaseVideoProcessor):
             suffix=True,
         )
 
+class FreqencyMaskProcessor(BaseVideoProcessor):
+    """
+    A class to apply frequency masking to a video.
+    """
+    def __init__(
+            self, name: str,
+            freq_mask_config: FreqencyMaskingConfig,
+            width: int,
+            height: int,
+            output_dir: Path)-> None:
+        """
+        Initialize the FreqencyMaskProcessor object.
+
+        Parameters:
+        name (str): The name of the video processor.
+        freq_mask_config (FreqencyMaskingConfig): The frequency masking configuration.
+        """
+        super().__init__(name, width, height, output_dir)
+        self.freq_mask_config: FreqencyMaskingConfig = freq_mask_config
+        self.freq_domain_frames = []
+        self._freq_mask: np.ndarray = None
+        
+    @property
+    def freq_mask(self)-> np.ndarray:
+        """
+        Get the frequency mask.
+        """
+        if self._freq_mask is None:
+            self._freq_mask = self.processor.gen_freq_mask(
+                freq_mask_config=self.freq_mask_config,
+            )
+        return self._freq_mask
+
+    @property
+    def freq_mask_named_frame(self)-> NamedFrame:
+        """
+        Get the NamedFrame object for the frequency mask.
+        """
+        return NamedFrame(name="freq_mask", static_frame=self.freq_mask)
+
+    @property
+    def freq_domain_named_frame(self)-> NamedFrame:
+        """
+        Get the NamedFrame object for the frequency domain.
+        """
+        return NamedFrame(name="freq_domain", video_frame=self.freq_domain_frames)
+    
+    def process_frame(self, frame: np.ndarray)-> Tuple[np.ndarray, np.ndarray]:
+        """
+        Process a single frame.
+
+        Parameters:
+        frame (np.ndarray): The frame to process.
+
+        Returns:
+        Tuple[np.ndarray, np.ndarray]: The filtered frame and the frequency domain.
+        """
+        if self.freq_mask_config.enable:
+            freq_filtered_frame, frame_freq_domain = self.processor.apply_freq_mask(
+                img=frame,
+                mask=self.freq_mask,
+            )
+            self.append_output_frame(freq_filtered_frame)
+            self.freq_domain_frames.append(frame_freq_domain)
+            
+            return freq_filtered_frame, frame_freq_domain
+        else:
+            return frame, None
+        
+    def export_freq_domain_frames(self)-> None:
+        """
+        Export the frequency domain to a file.
+        """
+        self.freq_domain_named_frame.export(
+            output_path=self.output_dir / f"{self.name}",
+            fps=20,
+            suffix=True,
+        )
+    
+    def export_freq_mask(self)-> None:
+        """
+        Export the frequency mask to a file.
+        """
+        cv2.imwrite(str(self.output_dir / f"{self.name}_mask.png"), self.freq_mask)
+
 class VideoProcessor:
     """
     A class to process video files.
@@ -401,20 +486,14 @@ class VideoProcessor:
             width=reader.width,
             height=reader.height,
         )
-        
-        if config.frequency_masking.enable:
-            freq_domain_frames = []
-            freq_filtered_frames = []
 
-        processor = FrameProcessor(
-            height=reader.height,
+        freq_mask_processor = FreqencyMaskProcessor(
+            output_dir=output_dir,
+            name="freq_mask",
+            freq_mask_config=config.frequency_masking,
             width=reader.width,
+            height=reader.height,
         )
-
-        if config.frequency_masking.enable:
-            freq_mask = processor.gen_freq_mask(
-                freq_mask_config=config.frequency_masking,
-            )
 
         try:
             previous_frame = None
@@ -436,14 +515,10 @@ class VideoProcessor:
                     output_frame = patched_frame
 
                 if config.frequency_masking.enable:
-                    freq_filtered_frame, frame_freq_domain = processor.apply_freq_mask(
-                        img=patched_frame,
-                        mask=freq_mask,
-                    )
-                    freq_domain_frames.append(frame_freq_domain)
-                    freq_filtered_frames.append(freq_filtered_frame)
-                    output_frame = freq_filtered_frame
+                    output_frame, _ = freq_mask_processor.process_frame(output_frame)
+                
                 output_frames.append(output_frame)
+
         finally:
             reader.release()
             minimum_projection = VideoProcessor.get_minimum_projection(output_frames)
@@ -461,32 +536,9 @@ class VideoProcessor:
             if config.noise_patch.output_noise_patch:
                 noise_patch_processor.export_noise_patch()
             if config.frequency_masking.output_mask:
-                freq_mask_frame = NamedFrame(
-                    name="freq_mask", static_frame=freq_mask * np.iinfo(np.uint8).max
-                )
-                freq_mask_frame.export(
-                    output_dir / f"{pathstem}",
-                    suffix=True,
-                    fps=20,
-                )
-
+                freq_mask_processor.export_freq_mask()
             if config.frequency_masking.enable:
-                freq_domain_video = NamedFrame(name="freq_domain", video_frame=freq_domain_frames)
-                freq_filtered_video = NamedFrame(
-                    name="freq_filtered", video_frame=freq_filtered_frames
-                )
-                if config.frequency_masking.output_freq_domain:
-                    freq_domain_video.export(
-                        output_dir / f"{pathstem}",
-                        suffix=True,
-                        fps=20,
-                    )
-                if config.frequency_masking.output_result:
-                    freq_filtered_video.export(
-                        (output_dir / f"{pathstem}"),
-                        suffix=True,
-                        fps=20,
-                    )
+                freq_mask_processor.export_output_video()
 
             min_proj_frame = NamedFrame(name="min_proj", static_frame=minimum_projection)
 
@@ -495,10 +547,10 @@ class VideoProcessor:
                     raw_video,
                     noise_patch_processor.noise_patch_named_frame,
                     noise_patch_processor.output_named_frame,
-                    freq_filtered_video,
-                    freq_domain_video,
+                    freq_mask_processor.output_named_frame,
+                    freq_mask_processor.freq_domain_named_frame,
                     min_proj_frame,
-                    freq_mask_frame,
+                    freq_mask_processor.freq_domain_named_frame,
                 ]
                 VideoPlotter.show_video_with_controls(
                     videos,
