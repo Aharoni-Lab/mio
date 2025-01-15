@@ -28,6 +28,29 @@ class InteractiveDisplayConfig(BaseModel):
     )
 
 
+class MinimumProjectionConfig(BaseModel):
+    """
+    Configuration for minimum projection.
+    """
+
+    enable: bool = Field(
+        default=True,
+        description="Whether to use minimum projection.",
+    )
+    normalize: bool = Field(
+        default=True,
+        description="Whether to normalize the video using minimum projection.",
+    )
+    output_result: bool = Field(
+        default=False,
+        description="Whether to output the result.",
+    )
+    output_min_projection: bool = Field(
+        default=False,
+        description="Whether to output the minimum projection.",
+    )
+
+
 class NoisePatchConfig(BaseModel):
     """
     Configuration for patch based noise handling.
@@ -131,6 +154,10 @@ class DenoiseConfig(BaseModel, YAMLMixin):
     end_frame: Optional[int] = Field(
         default=None,
         description="Frame to end processing at.",
+    )
+    minimum_projection: Optional[MinimumProjectionConfig] = Field(
+        default=None,
+        description="Configuration for minimum projection.",
     )
     output_result: bool = Field(
         default=True,
