@@ -3,7 +3,7 @@ This module contains functions for pre-processing video data.
 """
 
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np
@@ -223,17 +223,32 @@ class BaseVideoProcessor:
 
         Parameters:
         name (str): The name of the video processor.
+        width (int): The width of the video frame.
+        height (int): The height of the video frame.
+        output_dir (Path): The output directory.
+
+        Returns:
+        BaseVideoProcessor: A BaseVideoProcessor object.
         """
         self.name: str = name
         self.output_dir: Path = output_dir
-        self.output_frames: list = []
-        self.output_named_frame = None
+        self.output_frames: list[np.ndarray] = []
         self.processor = FrameProcessor(
             height=height,
             width=width,
         )
 
-    def append_frame(self, frame: np.ndarray)-> None:
+    @property
+    def output_named_frame(self)-> NamedFrame:
+        """
+        Get the output NamedFrame object.
+
+        Returns:
+        NamedFrame: The output NamedFrame object.
+        """
+        return NamedFrame(name=self.name, video_frame=self.output_frames)
+
+    def append_output_frame(self, frame: np.ndarray)-> None:
         """
         Append a frame to the output_frames list.
 
@@ -245,32 +260,21 @@ class BaseVideoProcessor:
     def process_frame(self, frame: np.ndarray)-> None:
         """
         Process a single frame. This method should be implemented in the subclass.
-        """
-        pass
 
-    def _set_output_named_frame(self)-> None:
+        Parameters:
+        frame (np.ndarray): The frame to process.
         """
-        Set the named frame object.
-        """
-        self.output_named_frame = NamedFrame(name=self.name, video_frame=self.output_frames)
+        raise NotImplementedError("process_frame method must be implemented in the subclass.")
 
-    def export_video(self)-> None:
+    def export_output_video(self)-> None:
         """
         Export the video to a file.
         """
-        self._set_output_named_frame()
         self.output_named_frame.export(
             output_path=self.output_dir / "output",
             fps=20,
             suffix=True,
         )
-
-    def get_output_named_frames(self)-> NamedFrame:
-        """
-        Get a NamedFrame object from the output frames.
-        """
-        self._set_output_named_frame()
-        return self.output_named_frame
 
 class NoisePatchProcessor(BaseVideoProcessor):
     """
@@ -293,28 +297,30 @@ class NoisePatchProcessor(BaseVideoProcessor):
         self.noise_patch_config: NoisePatchConfig = noise_patch_config
         self.noise_patchs = []
         self.diff_frames = []
-        self.noise_patch_named_frame: NamedFrame = None
-        self.diff_frames_named_frame: NamedFrame = None
 
     def process_frame(
             self,
             raw_frame: np.ndarray,
-            previous_frame: np.ndarray)-> Tuple[np.ndarray, np.ndarray]:
+            previous_frame: Optional[np.ndarray])-> Tuple[np.ndarray, np.ndarray]:
         """
         Process a single frame.
 
         Parameters:
         raw_frame (np.ndarray): The raw frame to process.
         previous_frame (np.ndarray): The previous frame to compare against.
+        For the first frame, this is None.
+
+        Returns:
+        Tuple[np.ndarray, np.ndarray]: The processed frame and the noise patch.
         """
 
-        if self.noise_patch_config.enable:
+        if self.noise_patch_config.enable and previous_frame is not None:
             patched_frame, noise_patch = self.processor.patch_noisy_buffer(
                 raw_frame,
                 previous_frame,
                 self.noise_patch_config,
             )
-            self.append_frame(patched_frame)
+            self.append_output_frame(patched_frame)
             self.noise_patchs.append(noise_patch * np.iinfo(np.uint8).max)
             self.diff_frames.append(
                 cv2.absdiff(raw_frame, previous_frame) * self.noise_patch_config.diff_multiply)
@@ -323,40 +329,25 @@ class NoisePatchProcessor(BaseVideoProcessor):
         else:
             return raw_frame, None
         
-    def _set_noise_patch_named_frame(self)-> None:
+    @property
+    def noise_patch_named_frame(self)-> NamedFrame:
         """
-        Set the NamedFrame object for the noise patch.
+        Get the NamedFrame object for the noise patch.
         """
-        self.noise_patch_named_frame = NamedFrame(name="patched_area", video_frame=self.noise_patchs)
-
-    def _set_diff_frames_named_frame(self)-> None:
-        """
-        Set the NamedFrame object for the difference frames.
-        """
-        self.diff_frames_named_frame = NamedFrame(
-            name=f"diff_{self.noise_patch_config.diff_multiply}x",
-            video_frame=self.diff_frames,
-        )
-
-    def get_noise_patch_named_frame(self)-> NamedFrame:
-        """
-        Get a NamedFrame object for the noise patch.
-        """
-        self._set_noise_patch_named_frame()
-        return self.noise_patch_named_frame
+        return NamedFrame(name="patched_area", video_frame=self.noise_patchs)
     
-    def get_diff_frames_named_frame(self)-> NamedFrame:
+    @property
+    def diff_frames_named_frame(self)-> NamedFrame:
         """
-        Get a NamedFrame object for the difference frames.
+        Get the NamedFrame object for the difference frames.
         """
-        self._set_diff_frames_named_frame()
-        return self.diff_frames_named_frame
+        return NamedFrame(
+            name=f"diff_{self.noise_patch_config.diff_multiply}x", video_frame=self.diff_frames)
 
     def export_noise_patch(self)-> None:
         """
         Export the noise patch to a file.
         """
-        self._set_noise_patch_named_frame()
         self.noise_patch_named_frame.export(
             output_path=self.output_dir / f"{self.name}",
             fps=20,
@@ -367,7 +358,6 @@ class NoisePatchProcessor(BaseVideoProcessor):
         """
         Export the difference frames to a file.
         """
-        self._set_diff_frames_named_frame()
         self.diff_frames_named_frame.export(
             output_path=self.output_dir / f"{self.name}",
             fps=20,
@@ -416,7 +406,6 @@ class VideoProcessor:
             freq_domain_frames = []
             freq_filtered_frames = []
 
-        # Initiate the frame processor
         processor = FrameProcessor(
             height=reader.height,
             width=reader.width,
@@ -427,8 +416,8 @@ class VideoProcessor:
                 freq_mask_config=config.frequency_masking,
             )
 
-        # index for frame number in original video
         try:
+            previous_frame = None
             for index, frame in reader.read_frames():
                 if config.end_frame and config.end_frame != -1 and index > config.end_frame:
                     break
@@ -439,15 +428,11 @@ class VideoProcessor:
                 output_frame = raw_frame.copy()
 
                 if config.noise_patch.enable:
-                    if index == 1:
-                        previous_frame = raw_frame.copy()
-                    logger.debug(f"Processing frame {index}")
-
-                    patched_frame, noise_patch = noise_patch_processor.process_frame(
+                    patched_frame, _ = noise_patch_processor.process_frame(
                         raw_frame,
                         previous_frame,
                     )
-                    previous_frame = patched_frame
+                    previous_frame = patched_frame # keep this in instance?
                     output_frame = patched_frame
 
                 if config.frequency_masking.enable:
@@ -470,8 +455,7 @@ class VideoProcessor:
             raw_video = NamedFrame(name="RAW", video_frame=raw_frames)
 
             if config.noise_patch.enable:
-                patched_video = noise_patch_processor.get_output_named_frames()
-                noise_patch_processor.export_video()
+                noise_patch_processor.export_output_video()
             if config.noise_patch.output_diff:
                 noise_patch_processor.export_diff_frames()
             if config.noise_patch.output_noise_patch:
@@ -509,8 +493,8 @@ class VideoProcessor:
             if config.interactive_display.enable:
                 videos = [
                     raw_video,
-                    noise_patch_processor.get_noise_patch_named_frame(),
-                    noise_patch_processor.get_output_named_frames(),
+                    noise_patch_processor.noise_patch_named_frame,
+                    noise_patch_processor.output_named_frame,
                     freq_filtered_video,
                     freq_domain_video,
                     min_proj_frame,
