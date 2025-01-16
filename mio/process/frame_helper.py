@@ -66,110 +66,142 @@ class NoiseDetectionHelper:
         noise_patch_config: NoisePatchConfig,
     ) -> Tuple[bool, np.ndarray]:
         """
-        Compare current frame with the previous frame to find noisy frames and drop them.
-        The comparison is done in blocks of a specified size,
-        defined by the buffer_size divided by buffer_split.
+        Unified noise detection method that supports multiple detection algorithms
+        (mean_error, block_contrast, etc.).
 
         Parameters:
         current_frame (np.ndarray): The current frame to process.
-        previous_frame (np.ndarray): The previous frame to compare against.
-        noise_threshold (float): The threshold for mean error to consider a block noisy.
+        previous_frame (Optional[np.ndarray]): The previous frame to compare against.
+        noise_patch_config (NoisePatchConfig): Configuration for noise detection.
 
         Returns:
-        Tuple[bool, np.ndarray]: A tuple of a boolean indicating if the frame is noisy
-        and a mask showing the noisy blocks.
+        Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy, and a spatial mask showing noisy regions.
         """
+        logger.debug(f"Buffer size: {noise_patch_config.buffer_size}")
+
         serialized_current = current_frame.flatten().astype(np.int16)
-        serialized_previous = previous_frame.flatten().astype(np.int16)
+        logger.debug(f"Serialized current frame size: {len(serialized_current)}")
 
-        buffer_per_frame = len(serialized_current) // noise_patch_config.buffer_size + 1
+        if previous_frame is not None:
+            serialized_previous = previous_frame.flatten().astype(np.int16)
+            logger.debug(f"Serialized previous frame size: {len(serialized_previous)}")
+        else:
+            serialized_previous = None
+            logger.debug("Previous frame is None.")
 
-        split_current = self.split_by_length(
-            serialized_current,
-            noise_patch_config.buffer_size // noise_patch_config.buffer_split + 1,
-        )
-        split_previous = self.split_by_length(
-            serialized_previous,
-            noise_patch_config.buffer_size // noise_patch_config.buffer_split + 1,
-        )
+        buffer_size = noise_patch_config.buffer_size
+        split_current = self.split_by_length(serialized_current, buffer_size)
 
+        if previous_frame is not None:
+            split_previous = self.split_by_length(serialized_previous, buffer_size)
+            logger.debug(f"Split previous frame into {len(split_previous)} segments.")
+        if noise_patch_config.method == "mean_error" and previous_frame is not None:
+            return self._detect_with_mean_error(split_current, split_previous, noise_patch_config)
+        elif noise_patch_config.method == "block_contrast":
+            return self._detect_with_block_contrast_SD(split_current, current_frame, buffer_size, noise_patch_config)
+        else:
+            logger.error(f"Unsupported noise detection method: {noise_patch_config.method}")
+            raise ValueError(f"Unsupported noise detection method: {noise_patch_config.method}")
+
+
+    def _detect_with_mean_error(
+        self,
+        split_current: list[np.ndarray],
+        split_previous: list[np.ndarray],
+        config: NoisePatchConfig,
+    ) -> Tuple[bool, np.ndarray]:
+        """
+        Detect noise using mean error between current and previous buffers.
+
+        Returns:
+        Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy and the noise mask.
+        """
         noisy_parts = split_current.copy()
-
         any_buffer_has_noise = False
         current_buffer_has_noise = False
-        for buffer_index in range(buffer_per_frame):
-            for split_index in range(noise_patch_config.buffer_split):
-                i = buffer_index * noise_patch_config.buffer_split + split_index
+
+        logger.debug(f"Config buffer_split: {config.buffer_split}")
+        logger.debug(f"Actual total splits in current: {len(split_current)}, previous: {len(split_previous)}")
+
+        #buffer_split (splitting each block in smaller segments) cannot be greater than number of buffers in a frame
+        if config.buffer_split > len(split_current):
+            logger.warning(f"buffer_split ({config.buffer_split}) exceeds total splits ({len(split_current)}). Adjusting to {len(split_current)}.")
+            config.buffer_split = len(split_current)
+
+        # Iterate over buffers and split sections
+        buffer_size = config.buffer_size // config.buffer_split
+        logger.debug(f"Entering mean_error loop: Total splits: {len(split_current)}, Buffer split: {config.buffer_split}")
+        for buffer_index in range(len(split_current) // config.buffer_split):
+            for split_index in range(config.buffer_split):
+                i = buffer_index * config.buffer_split + split_index
+
+                # Calculate mean error for each split section
                 mean_error = abs(split_current[i] - split_previous[i]).mean()
-                logger.debug(f"Mean error for buffer {i}: {mean_error}")
-                if mean_error > noise_patch_config.threshold:
+                logger.debug(f"Mean error for buffer {i}: {mean_error}, Threshold: {config.threshold}")
+
+                if mean_error > config.threshold:
                     logger.info(
-                        f"Buffer {i} exceeds threshold ({noise_patch_config.threshold}):"
-                        f" {mean_error}"
+                        f"Buffer {i} exceeds threshold ({config.threshold}): {mean_error}"
                     )
                     current_buffer_has_noise = True
                     any_buffer_has_noise = True
                     break
                 else:
                     noisy_parts[i] = np.zeros_like(split_current[i], np.uint8)
+
+            # Mark noisy blocks
             if current_buffer_has_noise:
-                for split_index in range(noise_patch_config.buffer_split):
-                    i = buffer_index * noise_patch_config.buffer_split + split_index
+                for split_index in range(config.buffer_split):
+                    i = buffer_index * config.buffer_split + split_index
                     noisy_parts[i] = np.ones_like(split_current[i], np.uint8)
                 current_buffer_has_noise = False
 
+        # Create a noise mask for visualization
         noise_output = np.concatenate(noisy_parts)[: self.height * self.width]
-        noise_patch = noise_output.reshape(self.width, self.height)
-        return any_buffer_has_noise, np.uint8(noise_patch)
-    
-    def detect_frame_with_block_contrast(
+        noise_patch = noise_output.reshape((self.height, self.width))
+
+        return any_buffer_has_noise, noise_patch
+
+    def _detect_with_block_contrast_SD(
         self,
+        split_current: list[np.ndarray],
         current_frame: np.ndarray,
-        noise_patch_config: NoisePatchConfig,
+        buffer_size: int,
+        config: NoisePatchConfig,
     ) -> Tuple[bool, np.ndarray]:
         """
-        Detect noisy regions in the frame using block-based contrast detection.
-
-        Parameters:
-        current_frame (np.ndarray): The frame to analyze.
-        noise_patch_config (NoisePatchConfig): Configuration for block contrast detection.
+        Detect noise using block-based contrast detection.
 
         Returns:
-        Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy, and a spatial mask showing noisy blocks.
+        Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy and the noise mask.
         """
         height, width = current_frame.shape
 
-        # Use buffer_size to calculate the height of each block
-        block_height = noise_patch_config.buffer_size // width  # Block spans entire width
+        block_height = buffer_size // width  # Block spans the entire width
         block_height = max(1, block_height)  # Ensure at least one row per block
 
-        # Initialize the noisy mask
         noisy_mask = np.zeros_like(current_frame, dtype=np.uint8)
 
         # Slide through the frame vertically in block_height steps
         for y in range(0, height, block_height):
-            # Extract block (spanning the entire width)
             block = current_frame[y:y + block_height, :]
 
             # Skip blocks that exceed the frame boundary
             if block.shape[0] < block_height:
                 continue
 
-            # Calculate mean and standard deviation for the block
             mean_intensity = np.mean(block)
             std_intensity = np.std(block)
 
             # Flag block as noisy if contrast exceeds the threshold
-            if std_intensity > noise_patch_config.threshold:
-                noisy_mask[y:y + block_height, :] = 1  # Mark block as noisy
+            if std_intensity > config.threshold:
+                noisy_mask[y:y + block_height, :] = 1
 
         # Determine if the frame is noisy (if any blocks are marked as noisy)
         frame_is_noisy = noisy_mask.any()
 
-        return frame_is_noisy, noisy_mask
-
-
-
+        return frame_is_noisy, noisy_mask    
+        
 class FrequencyMaskHelper:
     """
     Helper class for frame operations.

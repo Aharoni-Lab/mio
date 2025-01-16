@@ -7,10 +7,10 @@ interactive_display:
   end_frame: 140
 noise_patch:
   enable: true
-  method: block_contrast #block_contrast #contrast_detection #mean_error
-  threshold: 50
+  method: block_contrast #block_contrast or mean_error
+  threshold: 50 #test avi mean_error: 20 block_contrast:50
   buffer_size: 5032
-  buffer_split: 10
+  buffer_split: 8
   diff_multiply: 1
   output_result: true
   output_noise_patch: true
