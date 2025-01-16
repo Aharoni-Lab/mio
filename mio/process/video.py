@@ -472,100 +472,98 @@ class MinProjSubtractProcessor(BaseVideoProcessor):
         self.export_minimum_projection()
 
 
-class VideoProcessor:
+def denoise_run(
+    video_path: str,
+    config: DenoiseConfig,
+) -> None:
     """
-    A class to process video files.
+    Preprocess a video file and display the results.
+
+    Parameters:
+    video_path (str): The path to the video file.
+    config (DenoiseConfig): The denoise configuration.
     """
+    if plt is None:
+        raise ModuleNotFoundError(
+            "matplotlib is not a required dependency of miniscope-io, to use it, "
+            "install it manually or install miniscope-io with `pip install miniscope-io[plot]`"
+        )
 
-    @staticmethod
-    def denoise(
-        video_path: str,
-        config: DenoiseConfig,
-    ) -> None:
-        """
-        Preprocess a video file and display the results.
-        """
-        if plt is None:
-            raise ModuleNotFoundError(
-                "matplotlib is not a required dependency of miniscope-io, to use it, "
-                "install it manually or install miniscope-io with `pip install miniscope-io[plot]`"
+    reader = VideoReader(video_path)
+    pathstem = Path(video_path).stem
+
+    output_dir = Path.cwd() / config.output_dir
+    if not output_dir.exists():
+        output_dir.mkdir(parents=True)
+
+    raw_frame_processor = PassThroughProcessor(
+        name=pathstem + "raw",
+        output_dir=output_dir,
+    )
+
+    output_frame_processor = PassThroughProcessor(
+        name=pathstem + "output",
+        output_dir=output_dir,
+    )
+
+    noise_patch_processor = NoisePatchProcessor(
+        output_dir=output_dir,
+        name=pathstem + "patch",
+        noise_patch_config=config.noise_patch,
+        width=reader.width,
+        height=reader.height,
+    )
+
+    freq_mask_processor = FreqencyMaskProcessor(
+        output_dir=output_dir,
+        name=pathstem + "freq_mask",
+        freq_mask_config=config.frequency_masking,
+        width=reader.width,
+        height=reader.height,
+    )
+
+    try:
+        for index, frame in reader.read_frames():
+            if config.end_frame and index > config.end_frame and config.end_frame != -1:
+                break
+
+            raw_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            input_frame = raw_frame_processor.process_frame(raw_frame)
+            patched_frame = noise_patch_processor.process_frame(input_frame)
+            freq_masked_frame = freq_mask_processor.process_frame(patched_frame)
+            _ = output_frame_processor.process_frame(freq_masked_frame)
+
+    finally:
+        reader.release()
+
+        output_frames = output_frame_processor.output_frames
+
+        if not isinstance(output_frames, list):
+            raise ValueError("Output frames must be a list.")
+        for frame in output_frames:
+            if not isinstance(frame, np.ndarray):
+                logger.warning(f"Frame is not a numpy array: {type(frame)}")
+        minimum_projection_processor = MinProjSubtractProcessor(
+            name=pathstem + "min_proj",
+            output_dir=output_dir,
+            video_frames=output_frames,
+            minimum_projection_config=config.minimum_projection,
+        )
+        minimum_projection_processor.normalize_stack()
+
+        noise_patch_processor.batch_export_videos()
+        freq_mask_processor.batch_export_videos()
+        minimum_projection_processor.batch_export_videos()
+
+        if config.interactive_display.enable:
+            videos = [
+                noise_patch_processor.output_named_frame,
+                freq_mask_processor.output_named_frame,
+                minimum_projection_processor.min_proj_named_frame,
+                freq_mask_processor.freq_domain_named_frame,
+            ]
+            VideoPlotter.show_video_with_controls(
+                videos,
+                start_frame=config.interactive_display.start_frame,
+                end_frame=config.interactive_display.end_frame,
             )
-
-        reader = VideoReader(video_path)
-        pathstem = Path(video_path).stem
-
-        output_dir = Path.cwd() / config.output_dir
-        if not output_dir.exists():
-            output_dir.mkdir(parents=True)
-
-        raw_frame_processor = PassThroughProcessor(
-            name=pathstem + "raw",
-            output_dir=output_dir,
-        )
-
-        output_frame_processor = PassThroughProcessor(
-            name=pathstem + "output",
-            output_dir=output_dir,
-        )
-
-        noise_patch_processor = NoisePatchProcessor(
-            output_dir=output_dir,
-            name=pathstem + "patch",
-            noise_patch_config=config.noise_patch,
-            width=reader.width,
-            height=reader.height,
-        )
-
-        freq_mask_processor = FreqencyMaskProcessor(
-            output_dir=output_dir,
-            name=pathstem + "freq_mask",
-            freq_mask_config=config.frequency_masking,
-            width=reader.width,
-            height=reader.height,
-        )
-
-        try:
-            for index, frame in reader.read_frames():
-                if config.end_frame and index > config.end_frame and config.end_frame != -1:
-                    break
-
-                raw_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                input_frame = raw_frame_processor.process_frame(raw_frame)
-                patched_frame = noise_patch_processor.process_frame(input_frame)
-                freq_masked_frame = freq_mask_processor.process_frame(patched_frame)
-                _ = output_frame_processor.process_frame(freq_masked_frame)
-
-        finally:
-            reader.release()
-
-            output_frames = output_frame_processor.output_frames
-
-            if not isinstance(output_frames, list):
-                raise ValueError("Output frames must be a list.")
-            for frame in output_frames:
-                if not isinstance(frame, np.ndarray):
-                    logger.warning(f"Frame is not a numpy array: {type(frame)}")
-            minimum_projection_processor = MinProjSubtractProcessor(
-                name=pathstem + "min_proj",
-                output_dir=output_dir,
-                video_frames=output_frames,
-                minimum_projection_config=config.minimum_projection,
-            )
-            minimum_projection_processor.normalize_stack()
-
-            noise_patch_processor.batch_export_videos()
-            freq_mask_processor.batch_export_videos()
-            minimum_projection_processor.batch_export_videos()
-
-            if config.interactive_display.enable:
-                videos = [
-                    noise_patch_processor.output_named_frame,
-                    freq_mask_processor.output_named_frame,
-                    minimum_projection_processor.min_proj_named_frame,
-                    freq_mask_processor.freq_domain_named_frame,
-                ]
-                VideoPlotter.show_video_with_controls(
-                    videos,
-                    start_frame=config.interactive_display.start_frame,
-                    end_frame=config.interactive_display.end_frame,
-                )

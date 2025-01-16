@@ -5,7 +5,7 @@ Command line interface for offline video pre-processing.
 import click
 
 from mio.models.process import DenoiseConfig
-from mio.process.video import VideoProcessor
+from mio.process.video import denoise_run
 
 
 @click.group()
@@ -39,4 +39,4 @@ def denoise(
     Denoise a video file.
     """
     denoise_config_parsed = DenoiseConfig.from_any(denoise_config)
-    VideoProcessor.denoise(input, denoise_config_parsed)
+    denoise_run(input, denoise_config_parsed)
