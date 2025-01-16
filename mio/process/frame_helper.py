@@ -122,36 +122,51 @@ class NoiseDetectionHelper:
         noise_patch = noise_output.reshape(self.width, self.height)
         return any_buffer_has_noise, np.uint8(noise_patch)
     
-    def detect_frame_with_contrast(
+    def detect_frame_with_block_contrast(
         self,
         current_frame: np.ndarray,
         noise_patch_config: NoisePatchConfig,
     ) -> Tuple[bool, np.ndarray]:
         """
-        Detect noisy regions in the frame using contrast detection.
-    
+        Detect noisy regions in the frame using block-based contrast detection.
+
         Parameters:
         current_frame (np.ndarray): The frame to analyze.
-        noise_patch_config (NoisePatchConfig): Configuration for contrast detection.
+        noise_patch_config (NoisePatchConfig): Configuration for block contrast detection.
 
         Returns:
-        Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy, and a spatial mask showing noisy regions.
+        Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy, and a spatial mask showing noisy blocks.
         """
-        # Calculate mean and standard deviation of pixel intensities
-        mean_intensity = np.mean(current_frame)
-        std_intensity = np.std(current_frame)
+        height, width = current_frame.shape
 
-        # Identify pixels with intensities that deviate beyond the threshold
-        deviation_threshold = noise_patch_config.threshold
-        noisy_mask = (np.abs(current_frame - mean_intensity) > deviation_threshold * std_intensity).astype(np.uint8)
+        # Use buffer_size to calculate the height of each block
+        block_height = noise_patch_config.buffer_size // width  # Block spans entire width
+        block_height = max(1, block_height)  # Ensure at least one row per block
 
-        # Determine if the frame is noisy (if any pixels are marked)
+        # Initialize the noisy mask
+        noisy_mask = np.zeros_like(current_frame, dtype=np.uint8)
+
+        # Slide through the frame vertically in block_height steps
+        for y in range(0, height, block_height):
+            # Extract block (spanning the entire width)
+            block = current_frame[y:y + block_height, :]
+
+            # Skip blocks that exceed the frame boundary
+            if block.shape[0] < block_height:
+                continue
+
+            # Calculate mean and standard deviation for the block
+            mean_intensity = np.mean(block)
+            std_intensity = np.std(block)
+
+            # Flag block as noisy if contrast exceeds the threshold
+            if std_intensity > noise_patch_config.threshold:
+                noisy_mask[y:y + block_height, :] = 1  # Mark block as noisy
+
+        # Determine if the frame is noisy (if any blocks are marked as noisy)
         frame_is_noisy = noisy_mask.any()
 
-        # Reshape the noisy mask to match the frame dimensions
-        noise_patch = noisy_mask.reshape(current_frame.shape)
-
-        return frame_is_noisy, noise_patch
+        return frame_is_noisy, noisy_mask
 
 
 

@@ -156,9 +156,9 @@ class NoisePatchProcessor(BaseVideoProcessor):
                 broken, noise_patch = self.noise_detect_helper.detect_frame_with_noisy_buffer(
                     input_frame, self.previous_frame, self.noise_patch_config
             )
-            elif self.noise_patch_config.method == "contrast_detection":
+            elif self.noise_patch_config.method == "block_contrast":
                 # Detect noisy buffers using contrast detection
-                broken, noise_patch = self.noise_detect_helper.detect_frame_with_contrast(
+                broken, noise_patch = self.noise_detect_helper.detect_frame_with_block_contrast(
                     input_frame, self.noise_patch_config
             )
             else:
