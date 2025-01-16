@@ -121,6 +121,38 @@ class NoiseDetectionHelper:
         noise_output = np.concatenate(noisy_parts)[: self.height * self.width]
         noise_patch = noise_output.reshape(self.width, self.height)
         return any_buffer_has_noise, np.uint8(noise_patch)
+    
+    def detect_frame_with_contrast(
+        self,
+        current_frame: np.ndarray,
+        noise_patch_config: NoisePatchConfig,
+    ) -> Tuple[bool, np.ndarray]:
+        """
+        Detect noisy regions in the frame using contrast detection.
+    
+        Parameters:
+        current_frame (np.ndarray): The frame to analyze.
+        noise_patch_config (NoisePatchConfig): Configuration for contrast detection.
+
+        Returns:
+        Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy, and a spatial mask showing noisy regions.
+        """
+        # Calculate mean and standard deviation of pixel intensities
+        mean_intensity = np.mean(current_frame)
+        std_intensity = np.std(current_frame)
+
+        # Identify pixels with intensities that deviate beyond the threshold
+        deviation_threshold = noise_patch_config.threshold
+        noisy_mask = (np.abs(current_frame - mean_intensity) > deviation_threshold * std_intensity).astype(np.uint8)
+
+        # Determine if the frame is noisy (if any pixels are marked)
+        frame_is_noisy = noisy_mask.any()
+
+        # Reshape the noisy mask to match the frame dimensions
+        noise_patch = noisy_mask.reshape(current_frame.shape)
+
+        return frame_is_noisy, noise_patch
+
 
 
 class FrequencyMaskHelper:

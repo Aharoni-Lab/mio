@@ -149,16 +149,22 @@ class NoisePatchProcessor(BaseVideoProcessor):
 
         if input_frame is None:
             return None
+
         if self.noise_patch_config.enable and self.previous_frame is not None:
-            broken, noise_patch = self.noise_detect_helper.detect_frame_with_noisy_buffer(
-                input_frame,
-                self.previous_frame,
-                self.noise_patch_config,
+            if self.noise_patch_config.method == "mean_error":
+                # Detect noisy buffers using mean error
+                broken, noise_patch = self.noise_detect_helper.detect_frame_with_noisy_buffer(
+                    input_frame, self.previous_frame, self.noise_patch_config
             )
-            self.diff_frames.append(
-                cv2.absdiff(input_frame, self.previous_frame)
-                * self.noise_patch_config.diff_multiply
+            elif self.noise_patch_config.method == "contrast_detection":
+                # Detect noisy buffers using contrast detection
+                broken, noise_patch = self.noise_detect_helper.detect_frame_with_contrast(
+                    input_frame, self.noise_patch_config
             )
+            else:
+                raise ValueError(f"Unsupported noise detection method: {self.noise_patch_config.method}")
+
+            # Handle noisy frames
             if not broken:
                 self.append_output_frame(input_frame)
                 self.previous_frame = input_frame
@@ -166,10 +172,13 @@ class NoisePatchProcessor(BaseVideoProcessor):
             else:
                 index = len(self.output_frames) + len(self.noise_patchs)
                 logger.info(f"Dropping frame {index} of original video due to noise.")
+                logger.debug(f"Adding noise patch for frame {index}.")
                 self.noise_patchs.append(noise_patch * np.iinfo(np.uint8).max)
                 self.noisy_frames.append(input_frame)
                 self.dropped_frame_indices.append(index)
-                return None
+            return None
+
+        # Initialize previous frame if it's the first frame
         if self.noise_patch_config.enable and self.previous_frame is None:
             self.previous_frame = input_frame
             self.append_output_frame(input_frame)
@@ -202,6 +211,10 @@ class NoisePatchProcessor(BaseVideoProcessor):
         """
         Export the noise patch to a file.
         """
+        if not self.noise_patchs:
+            logger.info(f"No noise patches to export for {self.name}.")
+            return
+
         if self.noise_patch_config.output_noise_patch:
             logger.info(f"Exporting {self.name} noise patch to {self.output_dir}")
             self.noise_patch_named_frame.export(
@@ -216,6 +229,10 @@ class NoisePatchProcessor(BaseVideoProcessor):
         """
         Export the difference frames to a file.
         """
+        if not self.diff_frames:
+            logger.info(f"No difference frames to export for {self.name}.")
+            return
+
         if self.noise_patch_config.output_diff:
             logger.info(f"Exporting {self.name} difference frames to {self.output_dir}")
             self.diff_frames_named_frame.export(

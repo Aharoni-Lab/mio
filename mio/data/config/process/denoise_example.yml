@@ -7,8 +7,8 @@ interactive_display:
   end_frame: 140
 noise_patch:
   enable: true
-  method: mean_error
-  threshold: 30
+  method: contrast_detection #contrast_detection #mean_error
+  threshold: 2.9
   buffer_size: 5032
   buffer_split: 10
   diff_multiply: 1
