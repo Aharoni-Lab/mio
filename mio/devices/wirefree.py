@@ -5,7 +5,7 @@ Wire-Free Miniscope that records data to an SD Card
 import contextlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, BinaryIO, Literal, Optional, Union, overload
+from typing import Any, Literal, Optional, Union, overload
 
 import cv2
 import numpy as np
@@ -15,8 +15,8 @@ from mio import init_logger
 from mio.devices import DeviceConfig, Miniscope, RecordingCameraMixin
 from mio.exceptions import EndOfRecordingException, ReadHeaderException
 from mio.models.data import Frame
-from mio.models.sdcard import SDBufferHeader, SDConfig, SDLayout
 from mio.models.pipeline import PipelineConfig
+from mio.models.sdcard import SDConfig, SDLayout
 from mio.types import ConfigSource, Resolution
 
 
@@ -27,6 +27,8 @@ class WireFreeConfig(DeviceConfig):
 
 
 class WireFreePipeline(PipelineConfig):
+    """Base skeleton pipeline for the wirefree miniscope"""
+
     required_nodes = {
         "sdcard": "sd-file-source",
     }

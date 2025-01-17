@@ -2,17 +2,15 @@
 File-based data sources
 """
 
-from io import BufferedReader, BytesIO
 from pathlib import Path
-from typing import BinaryIO, ClassVar, Optional
+from typing import BinaryIO, ClassVar, Optional, TypedDict
 
-from pydantic import Field
 import numpy as np
+from pydantic import Field
 
-from mio.models.buffer import BufferHeader, BufferHeaderFormat
-from mio.models.sdcard import SDLayout, SDConfig, SDBufferHeader
-from mio.models.pipeline import Source, U
 from mio.exceptions import EndOfRecordingException, ReadHeaderException
+from mio.models.pipeline import Source
+from mio.models.sdcard import SDBufferHeader, SDConfig, SDLayout
 
 
 class FileSource(Source):
@@ -20,12 +18,15 @@ class FileSource(Source):
     Generic parent class for file sources
     """
 
+    name = "file-source"
+
 
 class BinaryFileSource(FileSource):
     """
     A FileSource that yields blocks of binary data
     """
 
+    name = "binary-file-source"
     output_type: ClassVar[bytes]
 
     path: Path
@@ -45,7 +46,7 @@ class BinaryFileSource(FileSource):
         self._f = open(self.path, "rb")  # noqa: SIM115
         self._f.seek(self.offset, 0)
 
-    def stop(self):
+    def stop(self) -> None:
         """Close the file, remove the reference"""
         self._f.close()
         self._f = None
@@ -59,6 +60,13 @@ class BinaryFileSource(FileSource):
     def process(self) -> bytes:
         """Return a block of data"""
         return self._f.read(self.block_size)
+
+
+class SDFileSourceOutput(TypedDict):
+    """Output types returned by :meth:`.SDFileSource.process`"""
+
+    header: SDBufferHeader
+    buffer: np.ndarray
 
 
 class SDFileSource(FileSource):
@@ -78,8 +86,8 @@ class SDFileSource(FileSource):
 
     """
 
-    _type = "sd-file-source"
-    output_type = tuple[SDBufferHeader, np.ndarray]
+    name = "sd-file-source"
+    output_type = SDFileSourceOutput
 
     path: Path
     layout: SDLayout
@@ -119,6 +127,16 @@ class SDFileSource(FileSource):
             )
 
         return self._config
+
+    @property
+    def width(self) -> int:
+        """width of the captured video in pixels"""
+        return self.config.width
+
+    @property
+    def height(self) -> int:
+        """height of the captured video in pixels"""
+        return self.config.height
 
     @property
     def offset(self) -> int:
@@ -169,7 +187,7 @@ class SDFileSource(FileSource):
         self._f = open(self.path, "rb")  # noqa: SIM115
         self._f.seek(self.offset, 0)
 
-    def stop(self):
+    def stop(self) -> None:
         """Close the file, remove the reference"""
         self._f.close()
         self._f = None
@@ -180,7 +198,7 @@ class SDFileSource(FileSource):
             raise RuntimeError("File has not yet been opened with start")
         return self._f.tell()
 
-    def process(self) -> tuple[SDBufferHeader, np.ndarray]:
+    def process(self) -> SDFileSourceOutput:
         """
         Read a single data buffer, parsing its header and splitting it from the data
         """
@@ -195,7 +213,7 @@ class SDFileSource(FileSource):
 
         buffer = self._read_buffer(self._f, header)
         buffer = self._trim(buffer, header.data_length)
-        return header, buffer
+        return {"header": header, "buffer": buffer}
 
     def _read_header(self, sd: BinaryIO) -> SDBufferHeader:
         """

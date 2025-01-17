@@ -4,9 +4,9 @@ Base ABCs for pipeline classes
 
 import sys
 from abc import abstractmethod
-from typing import ClassVar, Final, Generic, TypeVar, Union, final, TypedDict, Optional
+from typing import ClassVar, Final, Generic, Optional, TypedDict, TypeVar, Union, final
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from mio.exceptions import ConfigurationMismatchError
 from mio.models.models import MiniscopeConfig, PipelineModel
@@ -26,8 +26,24 @@ Output Type typevar
 """
 
 
-class NodeConfig(MiniscopeConfig):
-    """Configuration for a single processing node"""
+class _NodeMap(TypedDict):
+    source: str
+    target: str
+
+
+class NodeConfig(TypedDict):
+    """
+    Abstract parent TypedDict that each node inherits from to define
+    what fields it needs to be configured.
+    """
+
+
+class NodeSpecification(MiniscopeConfig):
+    """
+    Specification for a single processing node within a pipeline .yaml file.
+    Distinct from a :class:`.NodeConfig`, which is a generic TypedDict that each
+    node defines to declare its parameterization.
+    """
 
     type_: str = Field(..., alias="type")
     """
@@ -35,15 +51,55 @@ class NodeConfig(MiniscopeConfig):
     
     Subclasses should override this with a default.
     """
-
     id: str
     """The unique identifier of the node"""
-    inputs: list[str] = Field(default_factory=list)
-    """List of Node IDs to be used as input"""
-    outputs: list[str] = Field(default_factory=list)
+    outputs: Optional[list[_NodeMap]] = None
     """List of Node IDs to be used as output"""
-    config: dict
+    config: Optional[NodeConfig] = None
     """Additional configuration for this node, parameterized by a TypedDict for the class"""
+    passed: Optional[list[str]] = None
+    """
+    List of config values that must be passed when the pipeline is instantiated
+    """
+    fill: Optional[dict[str, str]] = None
+    """
+    Values in the node config that should be dynamically filled from other nodes in the pipeline.
+    
+    Specified as {node_id}.{attribute}, these specify attributes and properties
+    on the instantiated node class, not the config values for that node.
+    
+    This is useful for accessing some properties that might not be known until runtime
+    like width and height of an input image.
+    
+    Examples:
+    
+        For a node class `camera` that has property `frame_width`,
+        and node class `process` that has config value `width`,
+        we would fill the config value like this: 
+        
+        .. code-block:: yaml
+        
+            nodes:
+              cam:
+                type: camera
+              proc:
+                type: process
+                fill:
+                  width: cam.frame_width
+                  
+        The Pipeline class will then do something like this on instantiation:
+        
+        .. code-block:: python
+        
+            pipeline = PipelineConfig(**the_above_values)
+            
+            cam = CameraNode(config=pipeline.nodes['cam'].config)
+            
+            proc_config = pipeline.nodes['proc'].config
+            proc_config['width'] = cam.frame_width
+            proc = ProcessingNode(config=proc_config)    
+    
+    """
 
 
 class PipelineConfig(MiniscopeConfig):
@@ -53,10 +109,11 @@ class PipelineConfig(MiniscopeConfig):
 
     required_nodes: ClassVar[Optional[dict[str, str]]] = None
     """
-    id: type mapping that a subclass can use to require a set of node types with specific IDs be present
+    id: type mapping that a subclass can use to require a set of node types 
+    with specific IDs be present
     """
 
-    nodes: dict[str, NodeConfig] = Field(default_factory=dict)
+    nodes: dict[str, NodeSpecification] = Field(default_factory=dict)
     """The nodes that this pipeline configures"""
 
     @model_validator(mode="after")
@@ -68,11 +125,23 @@ class PipelineConfig(MiniscopeConfig):
                 assert self.nodes[id_].type_ == type_, f"Node ID {id_} is not of type {type_}"
         return self
 
+    @field_validator("nodes", mode="before")
+    @classmethod
+    def fill_node_ids(cls, value: dict[str, dict]) -> dict[str, dict]:
+        """
+        Roll down the `id` from the key in the `nodes` dictionary into the node config
+        """
+        assert isinstance(value, dict)
+        for id, node in value.items():
+            if "id" not in node:
+                node["id"] = id
+        return value
+
 
 class Node(PipelineModel, Generic[T, U]):
     """A node within a processing pipeline"""
 
-    type_: ClassVar[str]
+    name: ClassVar[str]
     """
     Shortname for this type of node to match configs to node types
     """
@@ -105,7 +174,7 @@ class Node(PipelineModel, Generic[T, U]):
         pass
 
     @classmethod
-    def from_config(cls, config: NodeConfig) -> Self:
+    def from_config(cls, config: NodeSpecification) -> Self:
         """
         Create a node from its config
         """
@@ -115,18 +184,18 @@ class Node(PipelineModel, Generic[T, U]):
     @final
     def node_types(cls) -> dict[str, type["Node"]]:
         """
-        Map of all imported :attr:`.Node.type_` names to node classes
+        Map of all imported :attr:`.Node.name` names to node classes
         """
         node_types = {}
         to_check = cls.__subclasses__()
         while to_check:
             node = to_check.pop()
-            if node.type_ in node_types:
+            if node.name in node_types:
                 raise ValueError(
-                    f"Repeated node type_ identifier: {node.type_}, found in:\n"
-                    f"- {node_types[node.type_]}\n- {node}"
+                    f"Repeated node name identifier: {node.name}, found in:\n"
+                    f"- {node_types[node.name]}\n- {node}"
                 )
-            node_types[node.type_] = node
+            node_types[node.name] = node
             to_check.extend(node.__subclasses__())
         return node_types
 
@@ -193,6 +262,10 @@ class Transform(Node, Generic[T, U]):
 class Pipeline(PipelineModel):
     """
     A graph of nodes transforming some input source(s) to some output sink(s)
+
+    The Pipeline model is a container for a set of nodes that are fully instantiated
+    (e.g. have their "passed" and "fill" keys processed) and connected.
+    It does not handle running the pipeline -- that is handled by a PipelineRunner.
     """
 
     nodes: dict[str, Node] = Field(default_factory=dict)
@@ -214,29 +287,6 @@ class Pipeline(PipelineModel):
     def sinks(self) -> dict[str, "Sink"]:
         """All :class:`.Sink` nodes in the processing graph"""
         return {k: v for k, v in self.nodes.items() if isinstance(v, Sink)}
-
-    @abstractmethod
-    def process(self) -> None:
-        """
-        Process one step of data from each of the sources,
-        passing intermediate data to any subscribed nodes in a chain.
-
-        The `process` method should not return anything except a to-be-implemented
-        result/status object, as any data intended to be received/processed by
-        downstream objects should be accessed via a :class:`.Sink` .
-        """
-
-    @abstractmethod
-    def start(self) -> None:
-        """
-        Start processing data with the pipeline graph
-        """
-
-    @abstractmethod
-    def stop(self) -> None:
-        """
-        Stop processing data with the pipeline graph
-        """
 
     @classmethod
     def from_config(cls, config: PipelineConfig) -> Self:

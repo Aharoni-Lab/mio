@@ -4,9 +4,7 @@ specific values. This allows for the model to be reused across different minisco
 for consuming code to use a consistent, introspectable API
 """
 
-from typing import Optional, TYPE_CHECKING, Literal
-
-from pydantic import computed_field
+from typing import Literal, Optional
 
 from mio.models import MiniscopeConfig
 from mio.models.buffer import BufferHeader, BufferHeaderFormat

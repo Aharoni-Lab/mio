@@ -1,0 +1,28 @@
+id: wirefree-pipeline
+mio_model: mio.devices.wirefree.WireFreePipeline
+mio_version: v0.6.0
+
+nodes:
+  file:
+    type: "sd-file-source"
+    config:
+      layout: "wirefree-sd-layout"
+    passed:
+      - path
+    outputs:
+      - source: header
+        target: merge
+      - source: buffer
+        target: merge
+  merge:
+    type: "merge-buffers"
+    fill:
+      width: file.width
+      height: file.height
+    outputs:
+      - source: frame
+        target: data
+  return:
+    config:
+      key: frame
+    type: "return"
