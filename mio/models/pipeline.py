@@ -4,7 +4,8 @@ Base ABCs for pipeline classes
 
 import sys
 from abc import abstractmethod
-from typing import ClassVar, Final, Generic, Optional, TypedDict, TypeVar, Union, final
+from graphlib import TopologicalSorter
+from typing import Any, ClassVar, Final, Generic, Optional, TypedDict, TypeVar, Union, final
 
 from pydantic import Field, field_validator, model_validator
 
@@ -57,9 +58,36 @@ class NodeSpecification(MiniscopeConfig):
     """List of Node IDs to be used as output"""
     config: Optional[NodeConfig] = None
     """Additional configuration for this node, parameterized by a TypedDict for the class"""
-    passed: Optional[list[str]] = None
+    passed: Optional[dict[str, str]] = None
     """
-    List of config values that must be passed when the pipeline is instantiated
+    Mapping of config values that must be passed when the pipeline is instantiated.
+    
+    Keys are the key in the config dictionary to be filled by passing, and values are a key that
+    those values should be passed as.
+    
+    Examples:
+    
+        For a node with config field `height` , one can specify that it must be passed 
+        on instantiation like this:
+        
+        .. code-block:: yaml
+        
+            nodes:
+              node1:
+                type: a_node 
+                passed:
+                  height: height_1
+              node2:
+                type: a_node
+                passed:
+                  height: height_2
+                  
+        The pipeline should then be instantiated like:
+        
+        .. code-block:: python
+        
+            Pipeline.from_config(above_config, passed={'height_1': 1, 'height_2': 2})
+    
     """
     fill: Optional[dict[str, str]] = None
     """
@@ -137,6 +165,58 @@ class PipelineConfig(MiniscopeConfig):
                 node["id"] = id
         return value
 
+    # TODO: Implement these validators
+    # @field_validator("nodes", mode="after")
+    # @classmethod
+    # def valid_passed_and_fill_keys(
+    #   cls, value: dict[str, NodeSpecification]
+    # ) -> dict[str, NodeSpecification]:
+    #     """
+    #     Passed and fill keys refer to values within the node's config type
+    #     """
+    #
+    # @field_validator("nodes", mode="after")
+    # @classmethod
+    # def unique_passed_values(
+    #   cls, value: dict[str, NodeSpecification]
+    # ) -> dict[str, NodeSpecification]:
+    #     """
+    #     All passed values (
+    #     """
+    #
+    # @field_validator("nodes", mode="after")
+    # @classmethod
+    # def fill_sources_present(
+    #     cls, value: dict[str, NodeSpecification]
+    #   # ) -> dict[str, NodeSpecification]:
+    #     """
+    #     Fill values refer to nodes that are present in the node graph
+    #     """
+    #
+    # @field_validator("nodes", mode="after")
+    # @classmethod
+    # def fill_values_dotted(
+    #     cls, value: dict[str, NodeSpecification]
+    # ) -> dict[str, NodeSpecification]:
+    #     """
+    #     Fill values refer to a property or attribute of a node (i.e. have at least one dot)
+    #     """
+
+    def graph(self) -> TopologicalSorter:
+        """
+        For the node specifications in :attr:`.PipelineConfig.nodes`,
+        produce a :class:`.TopologicalSorter` that accounts for the dependencies between nodes
+        induced by :attr:`.NodeSpecification.fill`
+        """
+        sorter = TopologicalSorter()
+        for node_id, node in self.nodes.items():
+            if node.fill is None:
+                sorter.add(node_id)
+            else:
+                dependents = {v.split(".")[0] for v in node.fill}
+                sorter.add(node_id, *dependents)
+        return sorter
+
 
 class Node(PipelineModel, Generic[T, U]):
     """A node within a processing pipeline"""
@@ -174,11 +254,11 @@ class Node(PipelineModel, Generic[T, U]):
         pass
 
     @classmethod
-    def from_config(cls, config: NodeSpecification) -> Self:
+    def from_specification(cls, config: NodeSpecification) -> Self:
         """
         Create a node from its config
         """
-        return cls(id=config.id, config=config)
+        return cls(id=config.id, config=config.config)
 
     @classmethod
     @final
@@ -289,15 +369,108 @@ class Pipeline(PipelineModel):
         return {k: v for k, v in self.nodes.items() if isinstance(v, Sink)}
 
     @classmethod
-    def from_config(cls, config: PipelineConfig) -> Self:
+    def from_config(cls, config: PipelineConfig, passed: Optional[dict[str, Any]] = None) -> Self:
         """
         Instantiate a pipeline model from its configuration
+
+        Args:
+            config (PipelineConfig): the pipeline config to instantiate
+            passed (dict[str, Any]): If any nodes in the
+        """
+        cls._validate_passed(config, passed)
+
+        nodes = cls._init_nodes(config, passed)
+
+        return cls(nodes=nodes)
+
+    @classmethod
+    def passed_values(cls, config: PipelineConfig) -> dict[str, type]:
+        """
+        Dictionary containing the keys that must be passed as specified by the `passed` field
+        of a node specification and their types.
+
+        Args:
+            config (:class:`.PipelineConfig`): Pipeline configuration to get passed values for
         """
         types = Node.node_types()
+        passed = {}
+        for node_id, node in config.nodes.items():
+            if not node.passed:
+                continue
 
-        nodes = {k: types[v.type_].from_config(v) for k, v in config.nodes.items()}
-        nodes = connect_nodes(nodes)
-        return cls(nodes=nodes)
+            for cfg_key, pass_key in node.passed.items():
+                # get type of config key that needs to be passed
+                config_type = types[node.type_].model_fields["config"].annotation
+                try:
+                    passed[pass_key] = config_type.__annotations__[cfg_key]
+                except KeyError as e:
+                    raise ConfigurationMismatchError(
+                        f"Node {node_id} requested {cfg_key} be passed as {pass_key}, "
+                        f"but node type {node.type_}'s config has no field {cfg_key}! "
+                        f"Possible keys: {list(config_type.__annotations__.keys())}"
+                    ) from e
+
+        return passed
+
+    @classmethod
+    def _init_nodes(
+        cls, config: PipelineConfig, passed: Optional[dict[str, Any]] = None
+    ) -> dict[str, Node]:
+        """
+        Initialize nodes, filling in any computed values from `fill` and `passed`
+        """
+        if passed is None:
+            passed = {}
+
+        types = Node.node_types()
+        graph = config.graph()
+        graph.prepare()
+
+        nodes = {}
+        while graph.is_active():
+            for node in graph.get_ready():
+                complete_cfg = cls._complete_node(config.nodes[node], nodes, passed)
+                nodes[node] = types[complete_cfg.type_].from_specification(complete_cfg)
+                graph.done(node)
+
+        return nodes
+
+    @classmethod
+    def _complete_node(
+        cls, node: NodeSpecification, context: dict[str, Node], passed: dict
+    ) -> NodeSpecification:
+        """
+        Given the context of already-instantiated nodes and passed values,
+        complete the configuration.
+        """
+        if node.passed:
+            for cfg_key, passed_key in node.passed.items():
+                node.config[cfg_key] = passed[passed_key]
+        if node.fill:
+            for cfg_key, fill_key in node.fill.items():
+                parts = fill_key.split(".")
+                val = context[parts[0]]
+                for part in parts[1:]:
+                    val = getattr(val, part)
+                node.config[cfg_key] = val
+        return node
+
+    @classmethod
+    def _validate_passed(cls, config: PipelineConfig, passed: dict[str, Any]) -> None:
+        """
+        Ensure that the passed values required by the pipeline config are in fact passed
+
+        Raise ConfigurationMismatchError if missing keys, otherwise do nothing
+        """
+        required = cls.passed_values(config)
+        for key in required:
+            if key not in passed:
+                raise ConfigurationMismatchError(
+                    f"Pipeline config requires these values to be passed:\n"
+                    f"{required}\n"
+                    f"But received passed values:\n"
+                    f"{passed}"
+                )
 
 
 def connect_nodes(nodes: dict[str, Node]) -> dict[str, Node]:

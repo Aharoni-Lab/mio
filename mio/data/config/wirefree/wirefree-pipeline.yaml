@@ -8,7 +8,7 @@ nodes:
     config:
       layout: "wirefree-sd-layout"
     passed:
-      - path
+      path: sd_path
     outputs:
       - source: header
         target: merge
