@@ -25,11 +25,11 @@ class NoiseDetectionHelper:
         Block size/buffer size will be set by dev config later.
 
         Parameters:
-        height (int): Height of the video frame.
-        width (int): Width of the video frame.
+            height (int): Height of the video frame.
+            width (int): Width of the video frame.
 
         Returns:
-        NoiseDetectionHelper: A NoiseDetectionHelper object
+            NoiseDetectionHelper: A NoiseDetectionHelper object
         """
         self.height = height
         self.width = width
@@ -40,11 +40,11 @@ class NoiseDetectionHelper:
         Last sub-array may be shorter if the array length is not a multiple of the segment length.
 
         Parameters:
-        array (np.ndarray): The array to split.
-        segment_length (int): The length of each sub-array.
+            array (np.ndarray): The array to split.
+            segment_length (int): The length of each sub-array.
 
         Returns:
-        list[np.ndarray]: A list of sub-arrays.
+            list[np.ndarray]: A list of sub-arrays.
         """
         num_segments = len(array) // segment_length
 
@@ -70,12 +70,13 @@ class NoiseDetectionHelper:
         (mean_error, block_contrast, etc.).
 
         Parameters:
-        current_frame (np.ndarray): The current frame to process.
-        previous_frame (Optional[np.ndarray]): The previous frame to compare against.
-        noise_patch_config (NoisePatchConfig): Configuration for noise detection.
+            current_frame (np.ndarray): The current frame to process.
+            previous_frame (Optional[np.ndarray]): The previous frame to compare against.
+            noise_patch_config (NoisePatchConfig): Configuration for noise detection.
 
         Returns:
-        Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy, and a spatial mask showing noisy regions.
+            Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy,
+                and a spatial mask showing noisy regions.
         """
         logger.debug(f"Buffer size: {noise_patch_config.buffer_size}")
 
@@ -98,11 +99,12 @@ class NoiseDetectionHelper:
         if noise_patch_config.method == "mean_error" and previous_frame is not None:
             return self._detect_with_mean_error(split_current, split_previous, noise_patch_config)
         elif noise_patch_config.method == "block_contrast":
-            return self._detect_with_block_contrast_SD(split_current, current_frame, buffer_size, noise_patch_config)
+            return self._detect_with_block_contrast_sd(
+                split_current, current_frame, buffer_size, noise_patch_config
+            )
         else:
             logger.error(f"Unsupported noise detection method: {noise_patch_config.method}")
             raise ValueError(f"Unsupported noise detection method: {noise_patch_config.method}")
-
 
     def _detect_with_mean_error(
         self,
@@ -114,35 +116,43 @@ class NoiseDetectionHelper:
         Detect noise using mean error between current and previous buffers.
 
         Returns:
-        Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy and the noise mask.
+            Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy and the noise mask.
         """
         noisy_parts = split_current.copy()
         any_buffer_has_noise = False
         current_buffer_has_noise = False
 
         logger.debug(f"Config buffer_split: {config.buffer_split}")
-        logger.debug(f"Actual total splits in current: {len(split_current)}, previous: {len(split_previous)}")
+        logger.debug(
+            f"Actual total splits in current: {len(split_current)}, previous: {len(split_previous)}"
+        )
 
-        #buffer_split (splitting each block in smaller segments) cannot be greater than number of buffers in a frame
+        # buffer_split (splitting each block in smaller segments) cannot be greater than
+        # number of buffers in a frame
         if config.buffer_split > len(split_current):
-            logger.warning(f"buffer_split ({config.buffer_split}) exceeds total splits ({len(split_current)}). Adjusting to {len(split_current)}.")
+            logger.warning(
+                f"buffer_split ({config.buffer_split}) exceeds total splits "
+                f"({len(split_current)}). Adjusting to {len(split_current)}."
+            )
             config.buffer_split = len(split_current)
 
         # Iterate over buffers and split sections
-        buffer_size = config.buffer_size // config.buffer_split
-        logger.debug(f"Entering mean_error loop: Total splits: {len(split_current)}, Buffer split: {config.buffer_split}")
+        logger.debug(
+            f"Entering mean_error loop: Total splits: {len(split_current)}, "
+            f"Buffer split: {config.buffer_split}"
+        )
         for buffer_index in range(len(split_current) // config.buffer_split):
             for split_index in range(config.buffer_split):
                 i = buffer_index * config.buffer_split + split_index
 
                 # Calculate mean error for each split section
                 mean_error = abs(split_current[i] - split_previous[i]).mean()
-                logger.debug(f"Mean error for buffer {i}: {mean_error}, Threshold: {config.threshold}")
+                logger.debug(
+                    f"Mean error for buffer {i}: {mean_error}, Threshold: {config.threshold}"
+                )
 
                 if mean_error > config.threshold:
-                    logger.info(
-                        f"Buffer {i} exceeds threshold ({config.threshold}): {mean_error}"
-                    )
+                    logger.info(f"Buffer {i} exceeds threshold ({config.threshold}): {mean_error}")
                     current_buffer_has_noise = True
                     any_buffer_has_noise = True
                     break
@@ -162,7 +172,7 @@ class NoiseDetectionHelper:
 
         return any_buffer_has_noise, noise_patch
 
-    def _detect_with_block_contrast_SD(
+    def _detect_with_block_contrast_sd(
         self,
         split_current: list[np.ndarray],
         current_frame: np.ndarray,
@@ -173,7 +183,7 @@ class NoiseDetectionHelper:
         Detect noise using block-based contrast detection.
 
         Returns:
-        Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy and the noise mask.
+            Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy and the noise mask.
         """
         height, width = current_frame.shape
 
@@ -184,24 +194,24 @@ class NoiseDetectionHelper:
 
         # Slide through the frame vertically in block_height steps
         for y in range(0, height, block_height):
-            block = current_frame[y:y + block_height, :]
+            block = current_frame[y : y + block_height, :]
 
             # Skip blocks that exceed the frame boundary
             if block.shape[0] < block_height:
                 continue
 
-            mean_intensity = np.mean(block)
             std_intensity = np.std(block)
 
             # Flag block as noisy if contrast exceeds the threshold
             if std_intensity > config.threshold:
-                noisy_mask[y:y + block_height, :] = 1
+                noisy_mask[y : y + block_height, :] = 1
 
         # Determine if the frame is noisy (if any blocks are marked as noisy)
         frame_is_noisy = noisy_mask.any()
 
-        return frame_is_noisy, noisy_mask    
-        
+        return frame_is_noisy, noisy_mask
+
+
 class FrequencyMaskHelper:
     """
     Helper class for frame operations.
@@ -215,11 +225,11 @@ class FrequencyMaskHelper:
         Block size/buffer size will be set by dev config later.
 
         Parameters:
-        height (int): Height of the video frame.
-        width (int): Width of the video frame.
+            height (int): Height of the video frame.
+            width (int): Width of the video frame.
 
         Returns:
-        FrequencyMaskHelper: A FrequencyMaskHelper object.
+            FrequencyMaskHelper: A FrequencyMaskHelper object.
         """
         self.height = height
         self.width = width
@@ -229,11 +239,11 @@ class FrequencyMaskHelper:
         Perform FFT/IFFT to remove horizontal stripes from a single frame.
 
         Parameters:
-        img (np.ndarray): The image to process.
-        mask (np.ndarray): The frequency mask to apply.
+            img (np.ndarray): The image to process.
+            mask (np.ndarray): The frequency mask to apply.
 
         Returns:
-        np.ndarray: The filtered image
+            np.ndarray: The filtered image
         """
         f = np.fft.fft2(img)
         fshift = np.fft.fftshift(f)
@@ -311,10 +321,10 @@ class ZStackHelper:
         Get the minimum projection of a list of images.
 
         Parameters:
-        image_list (list[np.ndarray]): A list of images to project.
+            image_list (list[np.ndarray]): A list of images to project.
 
         Returns:
-        np.ndarray: The minimum projection of the images.
+            np.ndarray: The minimum projection of the images.
         """
         stacked_images = np.stack(image_list, axis=0)
         min_projection = np.min(stacked_images, axis=0)
@@ -327,10 +337,10 @@ class ZStackHelper:
         Return a list of images.
 
         Parameters:
-        image_list (list[np.ndarray]): A list of images to normalize.
+            image_list (list[np.ndarray]): A list of images to normalize.
 
         Returns:
-        list[np.ndarray]: The normalized images as a list.
+            list[np.ndarray]: The normalized images as a list.
         """
 
         # Stack images along a new axis (axis=0)

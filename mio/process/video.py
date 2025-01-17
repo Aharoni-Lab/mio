@@ -80,7 +80,9 @@ class BaseVideoProcessor:
         Export the video to a file.
         """
         if not self.output_frames:
-            logger.warning(f"No output frames available for export in {self.name}. Skipping export.")
+            logger.warning(
+                f"No output frames available for export in {self.name}. Skipping export."
+            )
             return
 
         if self.output_enable:
@@ -158,7 +160,9 @@ class NoisePatchProcessor(BaseVideoProcessor):
             # Call the unified detection method
             broken, noise_patch = self.noise_detect_helper.detect_frame_with_noisy_buffer(
                 current_frame=input_frame,
-                previous_frame=self.previous_frame if self.noise_patch_config.method == "mean_error" else None,
+                previous_frame=(
+                    self.previous_frame if self.noise_patch_config.method == "mean_error" else None
+                ),
                 noise_patch_config=self.noise_patch_config,
             )
 
@@ -463,7 +467,7 @@ class MinProjSubtractProcessor(BaseVideoProcessor):
             self.output_frames: list[np.ndarray] = [
                 (frame - self.minimum_projection) for frame in video_frames
             ]
-        
+
         self.minimum_projection_config: MinimumProjectionConfig = minimum_projection_config
         self.output_enable: bool = minimum_projection_config.output_result
 
@@ -479,7 +483,9 @@ class MinProjSubtractProcessor(BaseVideoProcessor):
         Normalize the stack of images.
         """
         if not self.output_frames:
-            logger.warning("No frames available in output_frames for normalization. Skipping normalization.")
+            logger.warning(
+                "No frames available in output_frames for normalization. Skipping normalization."
+            )
             return
 
         self.output_frames = ZStackHelper.normalize_video_stack(self.output_frames)
