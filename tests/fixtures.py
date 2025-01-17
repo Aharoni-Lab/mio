@@ -52,10 +52,9 @@ def tmp_config_source(tmp_path, monkeypatch) -> Path:
 
     path = tmp_path / "configs"
     path.mkdir(exist_ok=True)
-    current_sources = ConfigYAMLMixin.config_sources
+    current_sources = ConfigYAMLMixin.config_sources()
 
     @classmethod
-    @property
     def _config_sources(cls: type[ConfigYAMLMixin]) -> list[Path]:
         return [path, *current_sources]
 
