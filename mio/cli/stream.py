@@ -26,7 +26,8 @@ def _common_options(fn: Callable) -> Callable:
         "--device_config",
         required=True,
         help=(
-            "Either a config `id` or a path to device config YAML file for streamDaq "
+            "Either a config `id` or a path to device config YAML file for streamDaq. "
+            "If you aren't using `id` you can ignore them."
             "(see models.stream.StreamDevConfig). If path is relative, treated as "
             "relative to the current directory, and then if no matching file is found, "
             "relative to the user `config_dir` (see `mio config --help`)."

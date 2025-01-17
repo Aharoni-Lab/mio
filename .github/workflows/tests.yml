@@ -6,8 +6,6 @@ on:
       - main
   workflow_dispatch:
   pull_request:
-    branches:
-      - main
 
 # Don't run duplicates - eg. if pushing to an open PR
 #concurrency:
