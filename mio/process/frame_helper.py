@@ -191,7 +191,8 @@ class NoiseDetectionHelper:
 
         # Slide through the frame vertically in block_height steps
         for y in range(0, height, block_height):
-            block = current_frame[y : y + block_height, :]
+            # select block and cast to int16 to avoid diffs wrapping around 0
+            block = current_frame[y : y + block_height, :].astype(np.int16)
 
             # Skip blocks that exceed the frame boundary
             if block.shape[0] < block_height:

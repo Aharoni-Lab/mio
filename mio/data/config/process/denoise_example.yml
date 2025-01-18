@@ -8,7 +8,7 @@ interactive_display:
 noise_patch:
   enable: true
   method: block_contrast #block_contrast or mean_error
-  threshold: 133 #test avi mean_error: 20 block_contrast:>130
+  threshold: 20 #test avi mean_error: 20 block_contrast:>130
   buffer_size: 5032
   buffer_split: 8
   diff_multiply: 1
