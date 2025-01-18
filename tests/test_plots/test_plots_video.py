@@ -1,0 +1,53 @@
+import unittest
+from unittest.mock import patch, MagicMock
+import numpy as np
+
+from mio.models.frames import NamedFrame
+from mio.plots.video import VideoPlotter
+
+class TestVideoPlotter(unittest.TestCase):
+
+    def setUp(self):
+        # Create a list of NamedFrame instances with dummy data
+        self.named_frames = [
+            NamedFrame(name="Video1", frame=[np.random.rand(64, 64) * 255 for _ in range(50)]),
+            NamedFrame(name="Video2", frame=[np.random.rand(64, 64) * 255 for _ in range(50)]),
+        ]
+
+    def test_no_matplotlib_raises_exception(self):
+        with patch('mio.plots.video.plt', None):
+            with self.assertRaises(ModuleNotFoundError):
+                VideoPlotter.show_video_with_controls(self.named_frames, 0, 10)
+
+    @patch('mio.plots.video.plt.show')
+    @patch('mio.plots.video.plt.subplots')
+    @patch('mio.plots.video.Slider')
+    @patch('mio.plots.video.Button')
+    def test_show_video_with_controls(self, MockButton, MockSlider, mock_subplots, mock_show):
+        # Create mock axes and figures
+        mock_axes = [MagicMock() for _ in range(len(self.named_frames))]
+        mock_figure = MagicMock()
+        mock_subplots.return_value = (mock_figure, mock_axes)
+        
+        # Call the method under test
+        VideoPlotter.show_video_with_controls(self.named_frames, 0, 10)
+
+        # Ensure subplots were created
+        mock_subplots.assert_called_once()
+
+        # Verify the number of axes matches the number of videos
+        self.assertEqual(len(mock_axes), len(self.named_frames))
+
+        # Ensure that sliders and buttons are initialized
+        MockSlider.assert_called_once()
+        MockButton.assert_called_once()
+
+        # Check that imshow and initial frame setup are done
+        for mock_ax in mock_axes:
+            mock_ax.imshow.assert_called_once()
+
+        # Verify that plt.show() is called to display the plot
+        mock_show.assert_called_once()
+
+if __name__ == '__main__':
+    unittest.main()

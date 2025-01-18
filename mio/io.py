@@ -6,7 +6,7 @@ import atexit
 import contextlib
 import csv
 from pathlib import Path
-from typing import Any, BinaryIO, List, Literal, Optional, Union, overload
+from typing import Any, BinaryIO, Iterator, List, Literal, Optional, Tuple, Union, overload
 
 import cv2
 import numpy as np
@@ -17,6 +17,108 @@ from mio.logging import init_logger
 from mio.models.data import Frame
 from mio.models.sdcard import SDBufferHeader, SDConfig, SDLayout
 from mio.types import ConfigSource
+
+
+class VideoWriter:
+    """
+    Write data to a video file using OpenCV.
+    """
+
+    @staticmethod
+    def init_video(
+        path: Union[Path, str],
+        width: int,
+        height: int,
+        fps: int,
+        fourcc: str = "Y800",
+        **kwargs: dict,
+    ) -> cv2.VideoWriter:
+        """
+        Create a parameterized video writer
+
+        Parameters
+        ----------
+        frame_buffer_queue : multiprocessing.Queue[list[bytes]]
+            Input buffer queue.
+        path : Union[Path, str]
+            Video file to write to
+        width : int
+            Width of video
+        height : int
+            Height of video
+        frame_rate : int
+            Frame rate of video
+        fourcc : str
+            Fourcc code to use
+        kwargs : dict
+            passed to :class:`cv2.VideoWriter`
+
+        Returns:
+        ---------
+            :class:`cv2.VideoWriter`
+        """
+        if isinstance(path, str):
+            path = Path(path)
+
+        fourcc = cv2.VideoWriter_fourcc(*fourcc)
+        frame_rate = fps
+        frame_size = (width, height)
+        out = cv2.VideoWriter(str(path), fourcc, frame_rate, frame_size, **kwargs)
+        return out
+
+
+class VideoReader:
+    """
+    A class to read video files.
+    """
+
+    def __init__(self, video_path: str):
+        """
+        Initialize the VideoReader object.
+
+        Parameters:
+        video_path (str): The path to the video file.
+
+        Raises:
+        ValueError: If the video file cannot be opened.
+        """
+        self.video_path = video_path
+        self.cap = cv2.VideoCapture(str(video_path))
+        self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.logger = init_logger("VideoReader")
+
+        if not self.cap.isOpened():
+            raise ValueError(f"Could not open video at {video_path}")
+
+        self.logger.info(f"Opened video at {video_path}")
+
+    def read_frames(self) -> Iterator[Tuple[int, np.ndarray]]:
+        """
+        Read frames from the video file along with their index.
+
+        Yields:
+        Tuple[int, np.ndarray]: The index and the next frame in the video.
+        """
+        while self.cap.isOpened():
+            ret, frame = self.cap.read()
+            if not ret:
+                break
+
+            index = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
+            self.logger.debug(f"Reading frame {index}")
+
+            yield index, frame
+
+    def release(self) -> None:
+        """
+        Release the video capture object.
+        """
+        self.cap.release()
+
+    def __del__(self):
+        with contextlib.suppress(AttributeError):
+            self.release()
 
 
 class BufferedCSVWriter:
