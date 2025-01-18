@@ -63,7 +63,7 @@ class NoiseDetectionHelper:
         self,
         current_frame: np.ndarray,
         previous_frame: np.ndarray,
-        noise_patch_config: NoisePatchConfig,
+        config: NoisePatchConfig,
     ) -> Tuple[bool, np.ndarray]:
         """
         Unified noise detection method that supports multiple detection algorithms
@@ -78,7 +78,7 @@ class NoiseDetectionHelper:
             Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy,
                 and a spatial mask showing noisy regions.
         """
-        logger.debug(f"Buffer size: {noise_patch_config.buffer_size}")
+        logger.debug(f"Buffer size: {config.buffer_size}")
 
         serialized_current = current_frame.flatten().astype(np.int16)
         logger.debug(f"Serialized current frame size: {len(serialized_current)}")
@@ -90,21 +90,18 @@ class NoiseDetectionHelper:
             serialized_previous = None
             logger.debug("Previous frame is None.")
 
-        buffer_size = noise_patch_config.buffer_size
-        split_current = self.split_by_length(serialized_current, buffer_size)
+        split_current = self.split_by_length(serialized_current, config.buffer_size)
 
         if previous_frame is not None:
-            split_previous = self.split_by_length(serialized_previous, buffer_size)
+            split_previous = self.split_by_length(serialized_previous, config.buffer_size)
             logger.debug(f"Split previous frame into {len(split_previous)} segments.")
-        if noise_patch_config.method == "mean_error" and previous_frame is not None:
-            return self._detect_with_mean_error(split_current, split_previous, noise_patch_config)
-        elif noise_patch_config.method == "block_contrast":
-            return self._detect_with_block_contrast_sd(
-                split_current, current_frame, buffer_size, noise_patch_config
-            )
+        if config.method == "mean_error" and previous_frame is not None:
+            return self._detect_with_mean_error(split_current, split_previous, config)
+        elif config.method == "block_contrast":
+            return self._detect_with_block_contrast_sd(current_frame, config)
         else:
-            logger.error(f"Unsupported noise detection method: {noise_patch_config.method}")
-            raise ValueError(f"Unsupported noise detection method: {noise_patch_config.method}")
+            logger.error(f"Unsupported noise detection method: {config.method}")
+            raise ValueError(f"Unsupported noise detection method: {config.method}")
 
     def _detect_with_mean_error(
         self,
@@ -174,23 +171,23 @@ class NoiseDetectionHelper:
 
     def _detect_with_block_contrast_sd(
         self,
-        split_current: list[np.ndarray],
         current_frame: np.ndarray,
-        buffer_size: int,
         config: NoisePatchConfig,
     ) -> Tuple[bool, np.ndarray]:
         """
-        Detect noise using block-based contrast detection.
+        Detect noise using local contrast (second derivative) within blocks.
 
         Returns:
             Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy and the noise mask.
         """
         height, width = current_frame.shape
 
-        block_height = buffer_size // width  # Block spans the entire width
+        block_height = config.buffer_size // width  # Block spans the entire width
         block_height = max(1, block_height)  # Ensure at least one row per block
 
         noisy_mask = np.zeros_like(current_frame, dtype=np.uint8)
+
+        block_index = 0  # used for debug logging
 
         # Slide through the frame vertically in block_height steps
         for y in range(0, height, block_height):
@@ -200,11 +197,21 @@ class NoiseDetectionHelper:
             if block.shape[0] < block_height:
                 continue
 
-            std_intensity = np.std(block)
+            # second derivative in x & y for local contrast
+            diff_x = np.diff(block, axis=1)
+            diff_y = np.diff(block, axis=0)
+            # second derivative (change of gradients)
+            second_diff_x = np.diff(diff_x, axis=1)
+            second_diff_y = np.diff(diff_y, axis=0)
+
+            mean_second_diff = (np.abs(second_diff_x).mean() + np.abs(second_diff_y).mean()) / 2
+            logger.debug(f"Mean second derivative for block {block_index}: {mean_second_diff}")
 
             # Flag block as noisy if contrast exceeds the threshold
-            if std_intensity > config.threshold:
+            if mean_second_diff > config.threshold:
                 noisy_mask[y : y + block_height, :] = 1
+
+            block_index += 1  # used for debug logging
 
         # Determine if the frame is noisy (if any blocks are marked as noisy)
         frame_is_noisy = noisy_mask.any()

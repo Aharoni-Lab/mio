@@ -159,11 +159,9 @@ class NoisePatchProcessor(BaseVideoProcessor):
         if self.noise_patch_config.enable and self.previous_frame is not None:
             # Call the unified detection method
             broken, noise_patch = self.noise_detect_helper.detect_frame_with_noisy_buffer(
-                current_frame=input_frame,
-                previous_frame=(
-                    self.previous_frame if self.noise_patch_config.method == "mean_error" else None
-                ),
-                noise_patch_config=self.noise_patch_config,
+                input_frame,
+                self.previous_frame if self.noise_patch_config.method == "mean_error" else None,
+                self.noise_patch_config,
             )
 
             # Handle noisy frames
