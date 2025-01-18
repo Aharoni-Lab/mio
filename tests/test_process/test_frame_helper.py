@@ -8,6 +8,7 @@ from mio.process.frame_helper import NoiseDetectionHelper
 
 from ..conftest import DATA_DIR
 
+
 @pytest.mark.parametrize(
     "noise_detection_method",
     [
@@ -20,7 +21,13 @@ def test_noise_detection_contrast(noise_detection_method):
     Contrast method of noise detection should correctly label frames corrupted
     by speckled noise
     """
-    global_config: DenoiseConfig = DenoiseConfig.from_id("denoise_example")
+    if noise_detection_method == "gradient":
+        global_config: DenoiseConfig = DenoiseConfig.from_id("denoise_example")
+    elif noise_detection_method == "mean_error":
+        global_config: DenoiseConfig = DenoiseConfig.from_id("denoise_example_mean_error")
+    else:
+        raise ValueError("Invalid noise detection method")
+
     config: NoisePatchConfig = global_config.noise_patch
     config.method = noise_detection_method
 
@@ -45,16 +52,14 @@ def test_noise_detection_contrast(noise_detection_method):
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         if noise_detection_method == "gradient":
             is_noisy, mask = detector.detect_frame_with_noisy_buffer(
-                current_frame = frame,
-                previous_frame = None,
-                config = config)
+                current_frame=frame, previous_frame=None, config=config
+            )
         if noise_detection_method == "mean_error":
             if previous_frame is None:
                 previous_frame = frame
             is_noisy, mask = detector.detect_frame_with_noisy_buffer(
-                current_frame = frame,
-                previous_frame = previous_frame,
-                config = config)
+                current_frame=frame, previous_frame=previous_frame, config=config
+            )
             if not is_noisy:
                 previous_frame = frame
         frames.append(is_noisy)

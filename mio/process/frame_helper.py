@@ -90,8 +90,9 @@ class NoiseDetectionHelper:
             serialized_previous = previous_frame.flatten().astype(np.int16)
             logger.debug(f"Serialized previous frame size: {len(serialized_previous)}")
 
-            split_previous = self.split_by_length(serialized_previous, config.buffer_size)
-            split_current = self.split_by_length(serialized_current, config.buffer_size)
+            split_size = config.buffer_size // config.buffer_split + 1
+            split_previous = self.split_by_length(serialized_previous, split_size)
+            split_current = self.split_by_length(serialized_current, split_size)
 
             return self._detect_with_mean_error(split_current, split_previous, config)
 
@@ -121,7 +122,6 @@ class NoiseDetectionHelper:
         logger.debug(
             f"Actual total splits in current: {len(split_current)}, previous: {len(split_previous)}"
         )
-
 
         # Iterate over buffers and split sections
         logger.debug(
