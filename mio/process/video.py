@@ -79,6 +79,12 @@ class BaseVideoProcessor:
         """
         Export the video to a file.
         """
+        if not self.output_frames:
+            logger.warning(
+                f"No output frames available for export in {self.name}. Skipping export."
+            )
+            return
+
         if self.output_enable:
             logger.info(f"Exporting {self.name} video to {self.output_dir}")
             self.output_named_frame.export(
@@ -149,16 +155,16 @@ class NoisePatchProcessor(BaseVideoProcessor):
 
         if input_frame is None:
             return None
+
         if self.noise_patch_config.enable and self.previous_frame is not None:
+            # Call the unified detection method
             broken, noise_patch = self.noise_detect_helper.detect_frame_with_noisy_buffer(
                 input_frame,
-                self.previous_frame,
+                self.previous_frame if self.noise_patch_config.method == "mean_error" else None,
                 self.noise_patch_config,
             )
-            self.diff_frames.append(
-                cv2.absdiff(input_frame, self.previous_frame)
-                * self.noise_patch_config.diff_multiply
-            )
+
+            # Handle noisy frames
             if not broken:
                 self.append_output_frame(input_frame)
                 self.previous_frame = input_frame
@@ -166,10 +172,13 @@ class NoisePatchProcessor(BaseVideoProcessor):
             else:
                 index = len(self.output_frames) + len(self.noise_patchs)
                 logger.info(f"Dropping frame {index} of original video due to noise.")
+                logger.debug(f"Adding noise patch for frame {index}.")
                 self.noise_patchs.append(noise_patch * np.iinfo(np.uint8).max)
                 self.noisy_frames.append(input_frame)
                 self.dropped_frame_indices.append(index)
-                return None
+            return None
+
+        # Initialize previous frame if it's the first frame
         if self.noise_patch_config.enable and self.previous_frame is None:
             self.previous_frame = input_frame
             self.append_output_frame(input_frame)
@@ -202,6 +211,10 @@ class NoisePatchProcessor(BaseVideoProcessor):
         """
         Export the noise patch to a file.
         """
+        if not self.noise_patchs:
+            logger.info(f"No noise patches to export for {self.name}.")
+            return
+
         if self.noise_patch_config.output_noise_patch:
             logger.info(f"Exporting {self.name} noise patch to {self.output_dir}")
             self.noise_patch_named_frame.export(
@@ -216,6 +229,10 @@ class NoisePatchProcessor(BaseVideoProcessor):
         """
         Export the difference frames to a file.
         """
+        if not self.diff_frames:
+            logger.info(f"No difference frames to export for {self.name}.")
+            return
+
         if self.noise_patch_config.output_diff:
             logger.info(f"Exporting {self.name} difference frames to {self.output_dir}")
             self.diff_frames_named_frame.export(
@@ -439,10 +456,16 @@ class MinProjSubtractProcessor(BaseVideoProcessor):
         """
         super().__init__(name, output_dir)
 
-        self.minimum_projection: np.ndarray = ZStackHelper.get_minimum_projection(video_frames)
-        self.output_frames: list[np.ndarray] = [
-            (frame - self.minimum_projection) for frame in video_frames
-        ]
+        if not video_frames:
+            logger.warning("No frames provided for minimum projection. Skipping processing.")
+            self.minimum_projection = None
+            self.output_frames = []
+        else:
+            self.minimum_projection: np.ndarray = ZStackHelper.get_minimum_projection(video_frames)
+            self.output_frames: list[np.ndarray] = [
+                (frame - self.minimum_projection) for frame in video_frames
+            ]
+
         self.minimum_projection_config: MinimumProjectionConfig = minimum_projection_config
         self.output_enable: bool = minimum_projection_config.output_result
 
@@ -457,6 +480,12 @@ class MinProjSubtractProcessor(BaseVideoProcessor):
         """
         Normalize the stack of images.
         """
+        if not self.output_frames:
+            logger.warning(
+                "No frames available in output_frames for normalization. Skipping normalization."
+            )
+            return
+
         self.output_frames = ZStackHelper.normalize_video_stack(self.output_frames)
 
     def export_minimum_projection(self) -> None:

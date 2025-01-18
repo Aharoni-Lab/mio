@@ -1,4 +1,4 @@
-id: denoise_example
+id: denoise_example_mean_error
 mio_model: mio.models.process.DenoiseConfig
 mio_version: 0.6.1
 interactive_display:
@@ -7,8 +7,8 @@ interactive_display:
   end_frame: 140
 noise_patch:
   enable: true
-  method: gradient # gradient or mean_error
-  threshold: 20
+  method: mean_error
+  threshold: 30
   buffer_size: 5032
   buffer_split: 8
   diff_multiply: 1
