@@ -122,14 +122,6 @@ class NoiseDetectionHelper:
             f"Actual total splits in current: {len(split_current)}, previous: {len(split_previous)}"
         )
 
-        # buffer_split (splitting each block in smaller segments) cannot be greater than
-        # number of buffers in a frame
-        if config.buffer_split > len(split_current):
-            logger.warning(
-                f"buffer_split ({config.buffer_split}) exceeds total splits "
-                f"({len(split_current)}). Adjusting to {len(split_current)}."
-            )
-            config.buffer_split = len(split_current)
 
         # Iterate over buffers and split sections
         logger.debug(
