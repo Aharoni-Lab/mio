@@ -3,7 +3,7 @@ This module contains a helper class for frame operations.
 It should be organized in a different way to make it more readable and maintainable.
 """
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np
@@ -62,7 +62,7 @@ class NoiseDetectionHelper:
     def detect_frame_with_noisy_buffer(
         self,
         current_frame: np.ndarray,
-        previous_frame: np.ndarray,
+        previous_frame: Optional[np.ndarray],
         config: NoisePatchConfig,
     ) -> Tuple[bool, np.ndarray]:
         """
@@ -72,7 +72,7 @@ class NoiseDetectionHelper:
         Parameters:
             current_frame (np.ndarray): The current frame to process.
             previous_frame (Optional[np.ndarray]): The previous frame to compare against.
-            noise_patch_config (NoisePatchConfig): Configuration for noise detection.
+            config (NoisePatchConfig): Configuration for noise detection.
 
         Returns:
             Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy,
@@ -80,23 +80,21 @@ class NoiseDetectionHelper:
         """
         logger.debug(f"Buffer size: {config.buffer_size}")
 
-        serialized_current = current_frame.flatten().astype(np.int16)
-        logger.debug(f"Serialized current frame size: {len(serialized_current)}")
+        if config.method == "mean_error":
+            if previous_frame is None:
+                raise ValueError("mean_error requires a previous frame to compare against")
 
-        if previous_frame is not None:
+            serialized_current = current_frame.flatten().astype(np.int16)
+            logger.debug(f"Serialized current frame size: {len(serialized_current)}")
+
             serialized_previous = previous_frame.flatten().astype(np.int16)
             logger.debug(f"Serialized previous frame size: {len(serialized_previous)}")
-        else:
-            serialized_previous = None
-            logger.debug("Previous frame is None.")
 
-        split_current = self.split_by_length(serialized_current, config.buffer_size)
-
-        if previous_frame is not None:
             split_previous = self.split_by_length(serialized_previous, config.buffer_size)
-            logger.debug(f"Split previous frame into {len(split_previous)} segments.")
-        if config.method == "mean_error" and previous_frame is not None:
+            split_current = self.split_by_length(serialized_current, config.buffer_size)
+
             return self._detect_with_mean_error(split_current, split_previous, config)
+
         elif config.method == "gradient":
             return self._detect_with_gradient(current_frame, config)
         else:
@@ -187,32 +185,21 @@ class NoiseDetectionHelper:
 
         noisy_mask = np.zeros_like(current_frame, dtype=np.uint8)
 
-        block_index = 0  # used for debug logging
-
         # Slide through the frame vertically in block_height steps
-        for y in range(0, height, block_height):
+        for i, y in enumerate(range(0, height, block_height)):
             # select block and cast to int16 to avoid diffs wrapping around 0
             block = current_frame[y : y + block_height, :].astype(np.int16)
 
-            # Skip blocks that exceed the frame boundary
-            if block.shape[0] < block_height:
-                continue
-
             # second derivative in x & y for local contrast
-            diff_x = np.diff(block, axis=1)
-            diff_y = np.diff(block, axis=0)
-            # second derivative (change of gradients)
-            second_diff_x = np.diff(diff_x, axis=1)
-            second_diff_y = np.diff(diff_y, axis=0)
+            diff_x = np.diff(block, n=2, axis=1)
+            diff_y = np.diff(block, n=2, axis=0)
 
-            mean_second_diff = (np.abs(second_diff_x).mean() + np.abs(second_diff_y).mean()) / 2
-            logger.debug(f"Mean second derivative for block {block_index}: {mean_second_diff}")
+            mean_second_diff = (np.abs(diff_x).mean() + np.abs(diff_y).mean()) / 2
+            logger.debug(f"Mean second derivative for block {i}: {mean_second_diff}")
 
             # Flag block as noisy if contrast exceeds the threshold
             if mean_second_diff > config.threshold:
                 noisy_mask[y : y + block_height, :] = 1
-
-            block_index += 1  # used for debug logging
 
         # Determine if the frame is noisy (if any blocks are marked as noisy)
         frame_is_noisy = noisy_mask.any()
@@ -242,7 +229,7 @@ class FrequencyMaskHelper:
         self.height = height
         self.width = width
 
-    def apply_freq_mask(self, img: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    def apply_freq_mask(self, img: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """
         Perform FFT/IFFT to remove horizontal stripes from a single frame.
 
