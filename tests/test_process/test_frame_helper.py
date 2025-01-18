@@ -15,7 +15,7 @@ def test_noise_detection_contrast():
     """
     global_config: DenoiseConfig = DenoiseConfig.from_id("denoise_example")
     config: NoisePatchConfig = global_config.noise_patch
-    config.method = "block_contrast"
+    config.method = "gradient"
 
     with open(DATA_DIR / "wireless_corrupted.yaml") as yfile:
         expected = yaml.safe_load(yfile)

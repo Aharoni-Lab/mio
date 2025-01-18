@@ -67,7 +67,7 @@ class NoiseDetectionHelper:
     ) -> Tuple[bool, np.ndarray]:
         """
         Unified noise detection method that supports multiple detection algorithms
-        (mean_error, block_contrast, etc.).
+        (mean_error, gradient, etc.).
 
         Parameters:
             current_frame (np.ndarray): The current frame to process.
@@ -97,8 +97,8 @@ class NoiseDetectionHelper:
             logger.debug(f"Split previous frame into {len(split_previous)} segments.")
         if config.method == "mean_error" and previous_frame is not None:
             return self._detect_with_mean_error(split_current, split_previous, config)
-        elif config.method == "block_contrast":
-            return self._detect_with_block_contrast_sd(current_frame, config)
+        elif config.method == "gradient":
+            return self._detect_with_gradient(current_frame, config)
         else:
             logger.error(f"Unsupported noise detection method: {config.method}")
             raise ValueError(f"Unsupported noise detection method: {config.method}")
@@ -169,7 +169,7 @@ class NoiseDetectionHelper:
 
         return any_buffer_has_noise, noise_patch
 
-    def _detect_with_block_contrast_sd(
+    def _detect_with_gradient(
         self,
         current_frame: np.ndarray,
         config: NoisePatchConfig,

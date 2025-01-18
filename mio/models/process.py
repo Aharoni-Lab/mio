@@ -2,7 +2,7 @@
 Module for preprocessing data.
 """
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -61,7 +61,7 @@ class NoisePatchConfig(BaseModel):
         default=True,
         description="Whether to use patch based noise handling.",
     )
-    method: str = Field(
+    method: Literal["mean_error", "gradient"] = Field(
         default="mean_error",
         description="Method for handling noise.",
     )
