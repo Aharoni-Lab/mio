@@ -11,9 +11,9 @@ nodes:
       path: sd_path
     outputs:
       - source: header
-        target: merge
+        target: merge.header
       - source: buffer
-        target: merge
+        target: merge.buffer
   merge:
     type: "merge-buffers"
     fill:
@@ -21,7 +21,7 @@ nodes:
       height: file.height
     outputs:
       - source: frame
-        target: data
+        target: return
   return:
     config:
       key: frame

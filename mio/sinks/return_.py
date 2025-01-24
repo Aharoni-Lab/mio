@@ -2,7 +2,7 @@
 Special Return sink that pipeline runners use to return values from :meth:`.PipelineRunner.process`
 """
 
-from typing import Any, TypedDict
+from typing import Any, Optional, TypedDict
 
 from mio.models.pipeline import Sink, T
 
@@ -28,14 +28,23 @@ class Return(Sink):
 
     _value: Any = None
 
-    def process(self, data: T) -> None:
+    def process(self, value: T) -> None:
         """
         Store the incoming value to retrieve later with :meth:`.get`
         """
-        self._value = data
+        self._value = value
 
-    def get(self) -> dict[str, T]:
+    def get(self, keep: bool = False) -> Optional[dict[str, T]]:
         """
         Get the stored value from the process call
+
+        Args:
+            keep (bool): If ``True``, keep the stored value, otherwise clear it, consume it
         """
-        return {self.config["key"]: self._value}
+        if self._value is None:
+            return None
+        else:
+            val = {self.config["key"]: self._value}
+            if not keep:
+                self._value = None
+            return val
