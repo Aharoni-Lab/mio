@@ -2,23 +2,28 @@
 ABC for 
 """
 
+import sys
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional
 
 from mio.models import MiniscopeConfig, Pipeline, PipelineConfig
+from mio.models.mixins import ConfigYAMLMixin
 
 if TYPE_CHECKING:
     from mio.models.pipeline import Sink, Source, Transform
 
+if sys.version_info < (3, 11):
+    from typing_extensions import Self
+else:
+    from typing import Self
 
-class DeviceConfig(MiniscopeConfig):
+
+class DeviceConfig(MiniscopeConfig, ConfigYAMLMixin):
     """
     Abstract base class for device configuration
     """
 
-    id: Union[str, int]
-    """(Locally) unique identifier for this device"""
     pipeline: PipelineConfig = PipelineConfig()
 
 
@@ -30,8 +35,9 @@ class Device:
     Currently a placeholder to allow room for expansion/renaming in the future
     """
 
-    pipeline: Optional[Pipeline] = None
-    # config: Optional[DeviceConfig] = None
+    config: Optional[DeviceConfig] = None
+
+    _pipeline: Optional[Pipeline] = None
 
     @abstractmethod
     def init(self) -> None:
@@ -140,3 +146,16 @@ class Device:
     def sinks(self) -> dict[str, "Sink"]:
         """Convenience method to access :attr:`.Pipeline.sinks`"""
         return self.pipeline.sinks
+
+    @property
+    def pipeline(self) -> Pipeline:
+        """Instantiated Pipeline from pipeline config"""
+        if self._pipeline is None:
+            self._pipeline = Pipeline.from_config(self.config.pipeline)
+        return self._pipeline
+
+    @classmethod
+    def from_config(cls, config: DeviceConfig) -> Self:
+        """
+        Instantiate a device from its (yaml) configuration.
+        """

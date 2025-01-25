@@ -4,7 +4,7 @@ specific values. This allows for the model to be reused across different minisco
 for consuming code to use a consistent, introspectable API
 """
 
-from typing import Optional
+from typing import Literal, Optional
 
 from mio.models import MiniscopeConfig
 from mio.models.buffer import BufferHeader, BufferHeaderFormat
@@ -19,7 +19,7 @@ class SectorConfig(MiniscopeConfig):
 
     Examples:
 
-        >>> sectors = SectorConfig(header=1023, config=1024, data=1025, size=512)
+        >>> sectors = SectorConfig(header=1023, metadata=1024, data=1025, size=512)
         >>> sectors.header
         1023
         >>> # should be 1023 * 512
@@ -33,7 +33,7 @@ class SectorConfig(MiniscopeConfig):
     """
     Holds user settings to configure Miniscope and recording
     """
-    config: int = 1024
+    metadata: int = 1024
     """
     Holds final settings of the actual recording
     """
@@ -46,22 +46,25 @@ class SectorConfig(MiniscopeConfig):
     The size of an individual sector
     """
 
-    def __getattr__(self, item: str) -> int:
-        """
-        Get positions by multiplying by sector size
-        (__getattr__ is only called if the name can't be found, so we don't need to handle
-        the base case of the existing attributes)
-        """
-        split = item.split("_")
-        if len(split) == 2 and split[1] == "pos":
-            return getattr(self, split[0]) * self.size
-        else:
-            raise AttributeError()
+    @property
+    def header_pos(self) -> int:
+        """header * sector size"""
+        return self.header * self.size
+
+    @property
+    def config_pos(self) -> int:
+        """metadata * sector size"""
+        return self.metadata * self.size
+
+    @property
+    def data_pos(self) -> int:
+        """data * sector size"""
+        return self.data * self.size
 
 
-class ConfigPositions(MiniscopeConfig):
+class MetadataPositions(MiniscopeConfig):
     """
-    Image acquisition configuration positions
+    Image acquisition metadata positions
     """
 
     width: int = 0
@@ -94,7 +97,7 @@ class SDBufferHeaderFormat(BufferHeaderFormat):
 
     id: str = "sd-buffer-header"
 
-    length: int = 0
+    length: Literal[0] = 0
     linked_list: int = 1
     frame_num: int = 2
     buffer_count: int = 3
@@ -114,32 +117,30 @@ class SDLayout(MiniscopeConfig, ConfigYAMLMixin):
     Used by the :class:`.io.WireFreeMiniscope` class to tell it how data on the SD card is laid out.
     """
 
-    sectors: SectorConfig
-    write_key0: int = 0x0D7CBA17
-    write_key1: int = 0x0D7CBA17
-    write_key2: int = 0x0D7CBA17
-    write_key3: int = 0x0D7CBA17
-    """
-    These don't seem to actually be used in the existing reading/writing code, 
-    but we will leave them here for continuity's sake :)
-    """
     word_size: int = 4
     """
-    I'm actually not sure what this is, but 4 is hardcoded a few times in the 
-    existing notebook and it appears to be used as a word size when
-    reading from the SD card.
+    Size of each header word in bytes
     """
 
+    sectors: SectorConfig
     header: SDHeaderPositions = SDHeaderPositions()
-    config: ConfigPositions = ConfigPositions()
+    metadata: MetadataPositions = MetadataPositions()
     buffer: SDBufferHeaderFormat = SDBufferHeaderFormat()
-
-
-class SDConfig(MiniscopeConfig):
+    header_dtype: str = "uint32"
     """
-    The configuration of a recording taken on this SD card.
+    String form of the numpy dtype that the global and buffer headers are encoded in 
+    """
+    buffer_dtype: str = "uint8"
+    """
+    String form of the numpy dtype that each frame buffer is encoded in
+    """
 
-    Read from the locations given in :class:`.ConfigPositions`
+
+class SDMetadata(MiniscopeConfig):
+    """
+    The metadata of a recording taken on this SD card.
+
+    Read from the locations given in :class:`.MetadataPositions`
     for an SD card with a given :class:`.SDLayout`
     """
 

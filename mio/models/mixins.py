@@ -11,11 +11,20 @@ from pathlib import Path
 from typing import Any, ClassVar, List, Literal, Optional, Type, TypeVar, Union, overload
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    GetCoreSchemaHandler,
+    ValidationError,
+    field_validator,
+)
+from pydantic_core import core_schema
 
 from mio.types import ConfigID, ConfigSource, PythonIdentifier, valid_config_id
 
 T = TypeVar("T")
+"""Generic type of ConfigYamlMixin subclass"""
 
 
 class YamlDumper(yaml.SafeDumper):
@@ -79,6 +88,8 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
 
      at the top of the file.
     """
+
+    model_config = ConfigDict(validate_default=True)
 
     id: ConfigID
     mio_model: PythonIdentifier = Field(None, validate_default=True)
@@ -257,6 +268,29 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
                 yaml.dump(data, yfile, Dumper=YamlDumper, sort_keys=False)
 
         return data
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> core_schema.CoreSchema:
+        """
+        Add before_validator to allow instantiation from id
+        """
+
+        def _from_id(value: Any) -> cls:
+            if isinstance(value, str):
+                return cls.from_id(value)
+            else:
+                return value
+
+        return core_schema.no_info_before_validator_function(
+            _from_id,
+            handler(source_type),
+            # TODO: add this when updating pydantic floor to 2.10
+            # json_schema_input_schema=core_schema.union_schema(
+            #     [handler(source_type), handler(ConfigID)]
+            # ),
+        )
 
 
 @overload
