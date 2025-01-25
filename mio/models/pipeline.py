@@ -6,7 +6,7 @@ import sys
 from abc import abstractmethod
 from datetime import datetime
 from graphlib import TopologicalSorter
-from typing import Any, ClassVar, Generic, Optional, TypedDict, TypeVar, Union, Unpack, final
+from typing import Any, ClassVar, Generic, Optional, TypeVar, Union, Unpack, final
 
 from pydantic import Field, field_validator, model_validator
 
@@ -14,9 +14,13 @@ from mio.exceptions import ConfigurationMismatchError
 from mio.models.models import MiniscopeConfig, PipelineModel
 
 if sys.version_info < (3, 11):
-    from typing_extensions import Self
-else:
+    from typing_extensions import Self, TypedDict
+elif sys.version_info < (3, 12):
     from typing import Self
+
+    from typing_extensions import TypedDict
+else:
+    from typing import Self, TypedDict
 
 T = TypeVar("T")
 """

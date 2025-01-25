@@ -1,14 +1,19 @@
 """
 Nodes that receive and emit frames
 """
-
-from typing import Optional, TypedDict
+import sys
+from typing import Optional
 
 import numpy as np
 
 from mio.models.buffer import BufferHeader
 from mio.models.data import Frame
 from mio.models.pipeline import Transform
+
+if sys.version_info < (3, 12):
+    from typing_extensions import TypedDict
+else:
+    from typing import TypedDict
 
 
 class MergeBuffersConfig(TypedDict):

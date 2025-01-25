@@ -2,9 +2,15 @@
 Special Return sink that pipeline runners use to return values from :meth:`.PipelineRunner.process`
 """
 
-from typing import Any, Optional, TypedDict
+import sys
+from typing import Any, Optional
 
 from mio.models.pipeline import Sink, T
+
+if sys.version_info < (3, 12):
+    from typing_extensions import TypedDict
+else:
+    from typing import TypedDict
 
 
 class ReturnConfig(TypedDict):

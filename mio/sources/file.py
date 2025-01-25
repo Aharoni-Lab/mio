@@ -1,9 +1,9 @@
 """
 File-based data sources
 """
-
+import sys
 from pathlib import Path
-from typing import BinaryIO, ClassVar, Optional, TypedDict
+from typing import BinaryIO, ClassVar, Optional
 
 import numpy as np
 from pydantic import Field
@@ -11,6 +11,11 @@ from pydantic import Field
 from mio.exceptions import EndOfRecordingException, ReadHeaderException
 from mio.models.pipeline import Source
 from mio.models.sdcard import SDBufferHeader, SDConfig, SDLayout
+
+if sys.version_info < (3, 12):
+    from typing_extensions import TypedDict
+else:
+    from typing import TypedDict
 
 
 class FileSource(Source):
