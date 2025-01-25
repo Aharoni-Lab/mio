@@ -155,3 +155,25 @@ def test_peek_yaml(key, expected, root, first, yaml_config):
             _ = yaml_peek(key, yaml_file, root=root, first=first)
     else:
         assert yaml_peek(key, yaml_file, root=root, first=first) == expected
+
+
+def test_yamlmixin_core_schema():
+    """
+    The __get_pydantic_core_schema__ method in the ConfigYamlMixin
+    lets us use ids for keys everywhere
+    """
+
+    class B(ConfigYAMLMixin):
+        value: list[int]
+
+    class A(ConfigYAMLMixin):
+        value: list[str]
+        config: B
+
+    class Container(BaseModel):
+        model: A
+
+    instance = Container(model="reference-a")
+    assert isinstance(instance.model.config, B)
+    assert instance.model.value == ["hey", "sup"]
+    assert instance.model.config.value == [1, 2, 3]

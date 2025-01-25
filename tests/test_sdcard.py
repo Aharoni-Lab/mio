@@ -8,7 +8,7 @@ import numpy as np
 def random_sectorconfig():
     return SectorConfig(
         header=np.random.randint(0, 2048),
-        config=np.random.randint(0, 2048),
+        metadata=np.random.randint(0, 2048),
         data=np.random.randint(0, 2048),
         size=np.random.randint(0, 2048),
     )
@@ -20,7 +20,7 @@ def test_get_sector_position(random_sectorconfig):
     """
     sectors = random_sectorconfig
     assert sectors.header_pos == sectors.header * sectors.size
-    assert sectors.config_pos == sectors.config * sectors.size
+    assert sectors.config_pos == sectors.metadata * sectors.size
     assert sectors.data_pos == sectors.data * sectors.size
 
     # We should raise an attribute error if we try and get a nonexistent one

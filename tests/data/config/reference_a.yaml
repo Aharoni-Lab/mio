@@ -1,0 +1,3 @@
+id: reference-a
+value: ["hey", "sup"]
+config: reference-b

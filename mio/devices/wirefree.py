@@ -16,14 +16,9 @@ from mio.devices import DeviceConfig, Miniscope, RecordingCameraMixin
 from mio.exceptions import EndOfRecordingException, ReadHeaderException
 from mio.models.data import Frame
 from mio.models.pipeline import PipelineConfig
-from mio.models.sdcard import SDConfig, SDLayout
-from mio.types import ConfigSource, Resolution
-
-
-class WireFreeConfig(DeviceConfig):
-    """Configuration for wire free miniscope"""
-
-    pass
+from mio.models.sdcard import SDLayout, SDMetadata
+from mio.sources import SDFileSource
+from mio.types import Resolution
 
 
 class WireFreePipeline(PipelineConfig):
@@ -32,6 +27,13 @@ class WireFreePipeline(PipelineConfig):
     required_nodes = {
         "sdcard": "sd-file-source",
     }
+
+
+class WireFreeConfig(DeviceConfig):
+    """Configuration for wire free miniscope"""
+
+    pipeline: WireFreePipeline = "wirefree-pipeline"
+    layout: SDLayout = "wirefree-sd-layout"
 
 
 @dataclass(kw_only=True)
@@ -45,15 +47,15 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
 
     Args:
         drive (str, :class:`pathlib.Path`): Path to the SD card drive
-        layout (:class:`.sdcard.SDLayout`): A layout configuration for an SD card
+        config (:class:`.WireFreeConfig`): Configuration,
+            including data layout and pipeline configs
 
     """
 
     drive: Path
     """The path to the SD card drive"""
-    # config: WireFreeConfig
-    # """Configuration """
-    layout: Union[SDLayout, ConfigSource] = "wirefree-sd-layout"
+    config: WireFreeConfig = field(default_factory=WireFreeConfig)
+
     positions: dict[int, int] = field(default_factory=dict)
     """
     A mapping between frame number and byte position in the video that makes for 
@@ -66,11 +68,11 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
 
     def __post_init__(self) -> None:
         """post-init create private vars"""
-        self.layout = SDLayout.from_any(self.layout)
+        self.layout = SDLayout.from_any(self.config.layout)
         self.logger = init_logger("WireFreeMiniscope")
 
         # Private attributes used when the file reading context is entered
-        self._config = None  # type: Optional[SDConfig]
+        self._metadata = None  # type: Optional[SDMetadata]
         self._frame = None  # type: Optional[int]
         self._frame_count = None  # type: Optional[int]
         self._array = None  # type: Optional[np.ndarray]
@@ -83,24 +85,24 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
     # --------------------------------------------------
 
     @property
-    def config(self) -> SDConfig:
+    def metadata(self) -> SDMetadata:
         """
-        Read configuration from SD Card
+        Read metadata from SD Card
         """
-        if self._config is None:
+        if self._metadata is None:
             with open(self.drive, "rb") as sd:
                 sd.seek(self.layout.sectors.config_pos, 0)
                 configSectorData = np.frombuffer(sd.read(self.layout.sectors.size), dtype=np.uint32)
 
-            self._config = SDConfig(
+            self._metadata = SDMetadata(
                 **{
                     k: configSectorData[v]
-                    for k, v in self.layout.config.model_dump().items()
+                    for k, v in self.layout.metadata.model_dump().items()
                     if v is not None
                 }
             )
 
-        return self._config
+        return self._metadata
 
     @classmethod
     def configure(cls, drive: Union[str, Path], config: WireFreeConfig) -> None:
@@ -166,6 +168,34 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
             for _ in range(frame - self.frame):
                 self.skip()
 
+    @property
+    def buffers_per_frame(self) -> int:
+        """
+        Number of buffers per frame!
+
+        References:
+            https://github.com/Aharoni-Lab/Miniscope-v4-Wire-Free/blob/786663781a4bece89c89e00fc3ac9d95912faba4/Miniscope-v4-Wire-Free-MCU-Firmware/Miniscope-v4-Wire-Free/Miniscope-v4-Wire-Free/main.c#L680
+        """
+        n_pix = self.metadata.width * self.metadata.height
+        return int(np.ceil((n_pix + self._source.header_size) / (self.metadata.buffer_size)))
+
+    @property
+    def frame_count(self) -> int:
+        """
+        Total number of frames in the recording
+        """
+        return int(
+            np.ceil(
+                (self.metadata.n_buffers_recorded + self.metadata.n_buffers_dropped)
+                / self.buffers_per_frame
+            )
+        )
+
+    @property
+    def _source(self) -> SDFileSource:
+        """The SDFileSource node in the pipeline"""
+        return self.pipeline.nodes["sdcard"]
+
     # --------------------------------------------------
     # Context Manager methods
     # --------------------------------------------------
@@ -176,7 +206,7 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
 
         # init private attrs
         # create an empty frame to hold our data!
-        self._array = np.zeros((self.config.width * self.config.height, 1), dtype=np.uint8)
+        self._array = np.zeros((self.metadata.width * self.metadata.height, 1), dtype=np.uint8)
         self._pixel_count = 0
         self._last_buffer_n = 0
         self._frame = 0
@@ -193,27 +223,6 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
         self._f.close()
         self._f = None
         self._frame = 0
-
-    def _trim(self, data: np.ndarray, expected_size: int) -> np.ndarray:
-        """
-        Trim or pad an array to match an expected size
-        """
-        if data.shape[0] != expected_size:
-            self.logger.warning(
-                f"Frame: {self._frame}: Expected buffer data length: {expected_size}, "
-                f"got data with shape {data.shape}. "
-                "Padding to expected length",
-                stacklevel=1,
-            )
-
-            # trim if too long
-            if data.shape[0] > expected_size:
-                data = data[0:expected_size]
-            # pad if too short
-            else:
-                data = np.pad(data, (0, expected_size - data.shape[0]))
-
-        return data
 
     @overload
     def read(self, return_header: Literal[True] = True) -> Frame: ...
@@ -279,7 +288,7 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
                 self._f.seek(last_position, 0)
                 self._frame += 1
                 self.positions[self._frame] = last_position
-                frame = np.reshape(self._array, (self.config.width, self.config.height))
+                frame = np.reshape(self._array, (self.metadata.width, self.metadata.height))
                 if return_header:
                     return Frame.model_construct(frame=frame, headers=headers)
                 else:
@@ -344,8 +353,8 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
         writer = cv2.VideoWriter(
             str(path),
             cv2.VideoWriter_fourcc(*fourcc),
-            self.config.fs,
-            (self.config.width, self.config.height),
+            self.metadata.fs,
+            (self.metadata.width, self.metadata.height),
             isColor=isColor,
         )
 
@@ -542,12 +551,12 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
     @property
     def fps(self) -> int:
         """FPS"""
-        return self.config.fs
+        return self.metadata.fs
 
     @property
     def resolution(self) -> Resolution:
         """Resolution of recorded video"""
-        return Resolution(self.config.width, self.config.height)
+        return Resolution(self.metadata.width, self.metadata.height)
 
     def get(self, key: str) -> Any:
         """get a configuration value by its name"""

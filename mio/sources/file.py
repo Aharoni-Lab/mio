@@ -1,6 +1,7 @@
 """
 File-based data sources
 """
+
 import sys
 from pathlib import Path
 from typing import BinaryIO, ClassVar, Optional
@@ -10,7 +11,7 @@ from pydantic import Field
 
 from mio.exceptions import EndOfRecordingException, ReadHeaderException
 from mio.models.pipeline import Source
-from mio.models.sdcard import SDBufferHeader, SDConfig, SDLayout
+from mio.models.sdcard import SDBufferHeader, SDLayout
 
 if sys.version_info < (3, 12):
     from typing_extensions import TypedDict
@@ -78,7 +79,7 @@ class SDFileSource(FileSource):
     """
     Structured binary file that has
 
-    * a global header with config values
+    * a global header with metadata values
     * a series of buffers, each containing a
 
         * buffer header - with metadata for that buffer and
@@ -86,7 +87,7 @@ class SDFileSource(FileSource):
 
     The source thus has two configurations
 
-    * the ``config`` - getter and setter for the actual configuration values of the source
+    * the ``metadata`` - getter and setter for the actual configuration values of the source
     * the ``layout`` - how the configuration and data are laid out within the file.
 
     """
@@ -98,7 +99,6 @@ class SDFileSource(FileSource):
     layout: SDLayout
 
     _f: Optional[BinaryIO] = None
-    _config: SDConfig = None
     _positions: dict[int, int] = Field(default_factory=dict)
     """
     A mapping between frame number and byte position in the video that makes for 
@@ -110,28 +110,6 @@ class SDFileSource(FileSource):
     """
     _last_buffer: int = None
     _frame: int = 0
-
-    @property
-    def config(self) -> SDConfig:
-        """
-        Global configuration of the whole SD card
-        """
-        if self._config is None:
-            with open(self.path, "rb") as sd:
-                sd.seek(self.layout.sectors.config_pos, 0)
-                configSectorData = np.frombuffer(
-                    sd.read(self.layout.sectors.size), dtype=np.dtype(self.layout.header_dtype)
-                )
-
-            self._config = SDConfig(
-                **{
-                    k: configSectorData[v]
-                    for k, v in self.layout.config.model_dump().items()
-                    if v is not None
-                }
-            )
-
-        return self._config
 
     @property
     def width(self) -> int:
@@ -161,29 +139,6 @@ class SDFileSource(FileSource):
         return (
             max([v for v in self.layout.buffer.model_dump().values() if v is not None]) + 1
         ) * self.layout.word_size
-
-    @property
-    def buffers_per_frame(self) -> int:
-        """
-        Number of buffers per frame!
-
-        References:
-            https://github.com/Aharoni-Lab/Miniscope-v4-Wire-Free/blob/786663781a4bece89c89e00fc3ac9d95912faba4/Miniscope-v4-Wire-Free-MCU-Firmware/Miniscope-v4-Wire-Free/Miniscope-v4-Wire-Free/main.c#L680
-        """
-        n_pix = self.config.width * self.config.height
-        return int(np.ceil((n_pix + self.header_size) / (self.config.buffer_size)))
-
-    @property
-    def frame_count(self) -> int:
-        """
-        Total number of frames in the recording
-        """
-        return int(
-            np.ceil(
-                (self.config.n_buffers_recorded + self.config.n_buffers_dropped)
-                / self.buffers_per_frame
-            )
-        )
 
     def start(self) -> None:
         """Open the file, seek to the offset"""

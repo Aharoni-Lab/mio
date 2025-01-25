@@ -1,6 +1,7 @@
 """
 Nodes that receive and emit frames
 """
+
 import sys
 from typing import Optional
 

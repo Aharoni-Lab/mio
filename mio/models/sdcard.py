@@ -19,7 +19,7 @@ class SectorConfig(MiniscopeConfig):
 
     Examples:
 
-        >>> sectors = SectorConfig(header=1023, config=1024, data=1025, size=512)
+        >>> sectors = SectorConfig(header=1023, metadata=1024, data=1025, size=512)
         >>> sectors.header
         1023
         >>> # should be 1023 * 512
@@ -33,7 +33,7 @@ class SectorConfig(MiniscopeConfig):
     """
     Holds user settings to configure Miniscope and recording
     """
-    config: int = 1024
+    metadata: int = 1024
     """
     Holds final settings of the actual recording
     """
@@ -53,8 +53,8 @@ class SectorConfig(MiniscopeConfig):
 
     @property
     def config_pos(self) -> int:
-        """config * sector size"""
-        return self.config * self.size
+        """metadata * sector size"""
+        return self.metadata * self.size
 
     @property
     def data_pos(self) -> int:
@@ -62,9 +62,9 @@ class SectorConfig(MiniscopeConfig):
         return self.data * self.size
 
 
-class ConfigPositions(MiniscopeConfig):
+class MetadataPositions(MiniscopeConfig):
     """
-    Image acquisition configuration positions
+    Image acquisition metadata positions
     """
 
     width: int = 0
@@ -124,7 +124,7 @@ class SDLayout(MiniscopeConfig, ConfigYAMLMixin):
 
     sectors: SectorConfig
     header: SDHeaderPositions = SDHeaderPositions()
-    config: ConfigPositions = ConfigPositions()
+    metadata: MetadataPositions = MetadataPositions()
     buffer: SDBufferHeaderFormat = SDBufferHeaderFormat()
     header_dtype: str = "uint32"
     """
@@ -136,11 +136,11 @@ class SDLayout(MiniscopeConfig, ConfigYAMLMixin):
     """
 
 
-class SDConfig(MiniscopeConfig):
+class SDMetadata(MiniscopeConfig):
     """
-    The configuration of a recording taken on this SD card.
+    The metadata of a recording taken on this SD card.
 
-    Read from the locations given in :class:`.ConfigPositions`
+    Read from the locations given in :class:`.MetadataPositions`
     for an SD card with a given :class:`.SDLayout`
     """
 
