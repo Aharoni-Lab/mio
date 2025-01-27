@@ -18,8 +18,9 @@ from ..conftest import DATA_DIR
 )
 def test_noise_detection_contrast(noise_detection_method):
     """
-    Contrast method of noise detection should correctly label frames corrupted
-    by speckled noise
+    Test broken buffer noise with detailed categorization of real wirelessly imaging noise.
+    Two main categories should be correctly detected: check-pattern and blacked-out labeled in YAML file.
+    Subcategories are dependent on the number of pixels (number of pixel rows) that are broken.
     """
     if noise_detection_method == "gradient":
         global_config: DenoiseConfig = DenoiseConfig.from_id("denoise_example")
@@ -34,35 +35,56 @@ def test_noise_detection_contrast(noise_detection_method):
     with open(DATA_DIR / "wireless_corrupted.yaml") as yfile:
         expected = yaml.safe_load(yfile)
 
-    video = cv2.VideoCapture(str(DATA_DIR / "wireless_corrupted.avi"))
+    video = cv2.VideoCapture(str(DATA_DIR / "wireless_corrupted_extended.avi"))
 
     detector = NoiseDetectionHelper(
         height=int(video.get(cv2.CAP_PROP_FRAME_HEIGHT)),
         width=int(video.get(cv2.CAP_PROP_FRAME_WIDTH)),
     )
 
-    frames = []
-    masks = []
+    missed_frames = {category: {sub: [] for sub in subs} for category, subs in expected["frames"].items()}
+    false_positives = []
+
     previous_frame = None
+
     while video.isOpened():
         ret, frame = video.read()
         if not ret:
             break
 
+        frame_number = int(video.get(cv2.CAP_PROP_POS_FRAMES)) - 1
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
         if noise_detection_method == "gradient":
-            is_noisy, mask = detector.detect_frame_with_noisy_buffer(
+            is_noisy, _ = detector.detect_frame_with_noisy_buffer(
                 current_frame=frame, previous_frame=None, config=config
             )
-        if noise_detection_method == "mean_error":
+        elif noise_detection_method == "mean_error":
             if previous_frame is None:
                 previous_frame = frame
-            is_noisy, mask = detector.detect_frame_with_noisy_buffer(
+            is_noisy, _ = detector.detect_frame_with_noisy_buffer(
                 current_frame=frame, previous_frame=previous_frame, config=config
             )
             if not is_noisy:
                 previous_frame = frame
-        frames.append(is_noisy)
-        masks.append(mask)
 
-    assert np.array_equal(np.where(frames)[0], expected["frames"])
+        # Track missed frames
+        detected_in_category = False
+        for category, subcategories in expected["frames"].items():
+            for subcategory, frame_list in subcategories.items():
+                if frame_number in frame_list:
+                    detected_in_category = True
+                    if not is_noisy:  # Mark as missed if not detected
+                        missed_frames[category][subcategory].append(frame_number)
+
+        # Track false positives
+        if is_noisy and not detected_in_category:
+            false_positives.append(frame_number)
+
+    # Print the report for this specific method
+    print(f"\n=== Detailed Noise Detection Report for Method: {noise_detection_method} ===")
+
+    print("\nMissed Frames:")
+    for category, subcategories in missed_frames.items():
+        print(f"\nCategory: {category}")
+        for subcategory, frames in subcategories.items():

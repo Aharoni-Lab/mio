@@ -33,6 +33,7 @@ api/utils
 api/stream_daq
 api/bit_operation
 api/vendor/index
+api/noise_detection
 ```
 
 ```{toctree}
