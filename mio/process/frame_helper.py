@@ -165,7 +165,8 @@ class NoiseDetectionHelper:
         config: NoisePatchConfig,
     ) -> Tuple[bool, np.ndarray]:
         """
-        Detect noise using local contrast (second derivative) in the x-dimension (along rows, across columns)
+        Detect noise using local contrast (second derivative) in the x-dimension
+        (along rows, across columns)
 
         Returns:
             Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy and the noise mask.
@@ -175,7 +176,7 @@ class NoiseDetectionHelper:
         diff_x = np.diff(current_frame.astype(np.int16), n=2, axis=1)
         mean_second_diff = np.abs(diff_x).mean(axis=1)
         noisy_mask[mean_second_diff > config.threshold, :] = 1
-        logger.debug(f"Row-wise means of second derivative: %s", mean_second_diff)
+        logger.debug("Row-wise means of second derivative: %s", mean_second_diff)
 
         # Determine if the frame is noisy (if any rows are marked as noisy)
         frame_is_noisy = noisy_mask.any()
