@@ -1,21 +1,12 @@
 frames:
-  # 0-indexed
-  - 7
-  - 21
-  - 23
-  - 24
-  - 32
-  - 33
-  - 34
-  - 35
-
-mask_ranges:
-  # we probably actually want to label the pixel ranges that are corrupted
-  # rather than just the frame to make this more precise,
-  # but since we haven't landed on a single segmentation method yet this is just an example
-
-  # for a given frame...
-  0:
-    # these ranges of pixels (after frame is flattened) are corrupted
-    - [1, 5]
-    - [100, 125]
+  check_pattern:
+    several_rows:
+      - 7
+      - 21
+      - 23
+      - 24
+      - 32
+      - 34
+    several_blocks:
+      - 33
+      - 35
