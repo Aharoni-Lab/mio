@@ -139,7 +139,7 @@ class NoiseDetectionHelper:
                 )
 
                 if mean_error > config.threshold:
-                    logger.info(f"Buffer {i} exceeds threshold ({config.threshold}): {mean_error}")
+                    logger.debug(f"Buffer {i} exceeds threshold ({config.threshold}): {mean_error}")
                     current_buffer_has_noise = True
                     any_buffer_has_noise = True
                     break
