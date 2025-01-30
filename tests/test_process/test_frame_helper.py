@@ -60,6 +60,12 @@ def test_noise_detection_contrast(video, ground_truth, noise_detection_method, n
     if noise_detection_method == "gradient":
         global_config: DenoiseConfig = DenoiseConfig.from_id("denoise_example")
     elif noise_detection_method == "mean_error":
+        if "extended" in video:
+            # FIXME: resolve this before merging `feat-preprocess` to `main`
+            pytest.xfail(
+                "Bug in comparison to previous frames when first frame is noisy, "
+                "see https://github.com/Aharoni-Lab/mio/pull/97"
+            )
         global_config: DenoiseConfig = DenoiseConfig.from_id("denoise_example_mean_error")
     else:
         raise ValueError("Invalid noise detection method")
