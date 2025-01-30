@@ -5,7 +5,7 @@ Wire-Free Miniscope that records data to an SD Card
 import contextlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, BinaryIO, Literal, Optional, Union, overload
+from typing import Any, Literal, Optional, Union, overload
 
 import cv2
 import numpy as np
@@ -14,15 +14,28 @@ from tqdm import tqdm
 from mio import init_logger
 from mio.devices import DeviceConfig, Miniscope, RecordingCameraMixin
 from mio.exceptions import EndOfRecordingException, ReadHeaderException
+from mio.models import Pipeline
 from mio.models.data import Frame
-from mio.models.sdcard import SDBufferHeader, SDConfig, SDLayout
-from mio.types import ConfigSource, Resolution
+from mio.models.pipeline import PipelineConfig
+from mio.models.sdcard import SDLayout, SDMetadata
+from mio.sources import SDFileSource
+from mio.types import Resolution
+
+
+class WireFreePipeline(PipelineConfig):
+    """Base skeleton pipeline for the wirefree miniscope"""
+
+    required_nodes = {
+        "sdcard": {"type": "sd-file-source"},
+        "return": {"type": "return", "config": {"key": "frame"}},
+    }
 
 
 class WireFreeConfig(DeviceConfig):
     """Configuration for wire free miniscope"""
 
-    pass
+    pipeline: WireFreePipeline = "wirefree-pipeline"
+    layout: SDLayout = "wirefree-sd-layout"
 
 
 @dataclass(kw_only=True)
@@ -36,15 +49,15 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
 
     Args:
         drive (str, :class:`pathlib.Path`): Path to the SD card drive
-        layout (:class:`.sdcard.SDLayout`): A layout configuration for an SD card
+        config (:class:`.WireFreeConfig`): Configuration,
+            including data layout and pipeline configs
 
     """
 
     drive: Path
     """The path to the SD card drive"""
-    # config: WireFreeConfig
-    # """Configuration """
-    layout: Union[SDLayout, ConfigSource] = "wirefree-sd-layout"
+    config: WireFreeConfig = field(default_factory=WireFreeConfig)
+
     positions: dict[int, int] = field(default_factory=dict)
     """
     A mapping between frame number and byte position in the video that makes for 
@@ -57,12 +70,14 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
 
     def __post_init__(self) -> None:
         """post-init create private vars"""
-        self.layout = SDLayout.from_any(self.layout)
+        if isinstance(self.config, str):
+            self.config = WireFreeConfig.from_any(self.config)
+
+        self.layout = SDLayout.from_any(self.config.layout)
         self.logger = init_logger("WireFreeMiniscope")
 
         # Private attributes used when the file reading context is entered
-        self._config = None  # type: Optional[SDConfig]
-        self._f = None  # type: Optional[BinaryIO]
+        self._metadata = None  # type: Optional[SDMetadata]
         self._frame = None  # type: Optional[int]
         self._frame_count = None  # type: Optional[int]
         self._array = None  # type: Optional[np.ndarray]
@@ -75,24 +90,24 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
     # --------------------------------------------------
 
     @property
-    def config(self) -> SDConfig:
+    def metadata(self) -> SDMetadata:
         """
-        Read configuration from SD Card
+        Read metadata from SD Card
         """
-        if self._config is None:
+        if self._metadata is None:
             with open(self.drive, "rb") as sd:
                 sd.seek(self.layout.sectors.config_pos, 0)
                 configSectorData = np.frombuffer(sd.read(self.layout.sectors.size), dtype=np.uint32)
 
-            self._config = SDConfig(
+            self._metadata = SDMetadata(
                 **{
                     k: configSectorData[v]
-                    for k, v in self.layout.config.model_dump().items()
+                    for k, v in self.layout.metadata.model_dump().items()
                     if v is not None
                 }
             )
 
-        return self._config
+        return self._metadata
 
     @classmethod
     def configure(cls, drive: Union[str, Path], config: WireFreeConfig) -> None:
@@ -107,10 +122,7 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
         When entered as context manager, the current position of the internal file
         descriptor
         """
-        if self._f is None:
-            return None
-
-        return self._f.tell()
+        return self._source.position
 
     @property
     def frame(self) -> Optional[int]:
@@ -159,246 +171,56 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
                 self.skip()
 
     @property
+    def buffers_per_frame(self) -> int:
+        """
+        Number of buffers per frame!
+
+        References:
+            https://github.com/Aharoni-Lab/Miniscope-v4-Wire-Free/blob/786663781a4bece89c89e00fc3ac9d95912faba4/Miniscope-v4-Wire-Free-MCU-Firmware/Miniscope-v4-Wire-Free/Miniscope-v4-Wire-Free/main.c#L680
+        """
+        n_pix = self.metadata.width * self.metadata.height
+        return int(np.ceil((n_pix + self._source.header_size) / (self.metadata.buffer_size)))
+
+    @property
     def frame_count(self) -> int:
         """
-        Total number of frames in recording.
-
-        Inferred from :class:`~.sdcard.SDConfig.n_buffers_recorded` and
-        reading a single frame to get the number of buffers per frame.
+        Total number of frames in the recording
         """
-        if self._frame_count is None:
-            if self._f is None:
-                with self as self_open:
-                    frame = self_open.read(return_header=True)
-                    headers = frame.headers
-
-            else:
-                # If we're already open, great, just return to the last frame
-                last_frame = self.frame
-                # Go one frame back in case we are at the end of the data
-                self.frame = max(last_frame - 1, 0)
-                frame = self.read(return_header=True)
-                headers = frame.headers
-                self.frame = last_frame
-
-            self._frame_count = int(
-                np.ceil(
-                    (self.config.n_buffers_recorded + self.config.n_buffers_dropped) / len(headers)
-                )
+        return int(
+            np.ceil(
+                (self.metadata.n_buffers_recorded + self.metadata.n_buffers_dropped)
+                / self.buffers_per_frame
             )
+        )
 
-        # if we have since read more frames than should be there, we update the
-        # frame count with a warning
-        max_pos = np.max(list(self.positions.keys()))
-        if max_pos > self._frame_count:
-            self.logger.warning(
-                "Got more frames than indicated in card header, expected "
-                f"{self._frame_count} but got {max_pos}"
-            )
-            self._frame_count = int(max_pos)
-
-        return self._frame_count
+    @property
+    def _source(self) -> SDFileSource:
+        """The SDFileSource node in the pipeline"""
+        return self.pipeline.nodes["sdcard"]
 
     # --------------------------------------------------
     # Context Manager methods
     # --------------------------------------------------
 
     def __enter__(self) -> "WireFreeMiniscope":
-        if self._f is not None:
-            raise RuntimeError("Cant enter context, and open the file twice!")
-
-        # init private attrs
-        # create an empty frame to hold our data!
-        self._array = np.zeros((self.config.width * self.config.height, 1), dtype=np.uint8)
-        self._pixel_count = 0
-        self._last_buffer_n = 0
-        self._frame = 0
-
-        self._f = open(self.drive, "rb")  # noqa: SIM115 - this is a context handler
-        # seek to the start of the data
-        self._f.seek(self.layout.sectors.data_pos, 0)
-        # store the 0th frame position
-        self.positions[0] = self.layout.sectors.data_pos
-
+        self.runner.start()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):  # noqa: ANN001
-        self._f.close()
-        self._f = None
-        self._frame = 0
+        self.runner.stop()
 
-    # --------------------------------------------------
-    # read methods
-    # --------------------------------------------------
-    def _read_data_header(self, sd: BinaryIO) -> SDBufferHeader:
+    def read(self) -> Frame:
         """
-        Given an already open file buffer opened in bytes mode,
-         seeked to the start of a frame, read the data header
+        Read a single :class:`.Frame`
         """
+        if not self.runner.running:
+            self.logger.debug("Starting runner implicitly by calling read")
+            self.runner.start()
 
-        # read one word first, I think to get the size of the rest of the header,
-        # that sort of breaks the abstraction
-        # (it assumes the buffer length is always at position 0)
-        # but we'll roll with it for now
-        dataHeader = np.frombuffer(sd.read(self.layout.word_size), dtype=np.uint32)
-        dataHeader = np.append(
-            dataHeader,
-            np.frombuffer(
-                sd.read((dataHeader[self.layout.buffer.length] - 1) * self.layout.word_size),
-                dtype=np.uint32,
-            ),
-        )
-
-        # use construct because we're already sure these are ints from the numpy casting
-        # https://docs.pydantic.dev/latest/usage/models/#creating-models-without-validation
-        try:
-            header = SDBufferHeader.from_format(dataHeader, self.layout.buffer, construct=True)
-        except IndexError as e:
-            raise ReadHeaderException(
-                "Could not read header, expected header to have "
-                f"{len(self.layout.buffer.model_dump().keys())} fields, "
-                f"got {len(dataHeader)}. Likely mismatch between specified "
-                "and actual SD Card layout or reached end of data.\n"
-                f"Header Data: {dataHeader}"
-            ) from e
-
-        return header
-
-    def _n_frame_blocks(self, header: SDBufferHeader) -> int:
-        """
-        Compute the number of blocks for a given frame buffer
-
-        Not sure how this works!
-        """
-        n_blocks = int(
-            (
-                header.data_length
-                + (header.length * self.layout.word_size)
-                + (self.layout.sectors.size - 1)
-            )
-            / self.layout.sectors.size
-        )
-        return n_blocks
-
-    def _read_size(self, header: SDBufferHeader) -> int:
-        """
-        Compute the number of bytes to read for a given buffer
-
-        Not sure how this works with :meth:`._n_frame_blocks`, but keeping
-        them separate in case they are separable actions for now
-        """
-        n_blocks = self._n_frame_blocks(header)
-        read_size = (n_blocks * self.layout.sectors.size) - (header.length * self.layout.word_size)
-        return read_size
-
-    def _read_buffer(self, sd: BinaryIO, header: SDBufferHeader) -> np.ndarray:
-        """
-        Read a single buffer from a frame.
-
-        Each frame has several buffers, so for a given frame we read them until we
-        get another that's zero!
-        """
-        data = np.frombuffer(sd.read(self._read_size(header)), dtype=np.uint8)
-        return data
-
-    def _trim(self, data: np.ndarray, expected_size: int) -> np.ndarray:
-        """
-        Trim or pad an array to match an expected size
-        """
-        if data.shape[0] != expected_size:
-            self.logger.warning(
-                f"Frame: {self._frame}: Expected buffer data length: {expected_size}, "
-                f"got data with shape {data.shape}. "
-                "Padding to expected length",
-                stacklevel=1,
-            )
-
-            # trim if too long
-            if data.shape[0] > expected_size:
-                data = data[0:expected_size]
-            # pad if too short
-            else:
-                data = np.pad(data, (0, expected_size - data.shape[0]))
-
-        return data
-
-    @overload
-    def read(self, return_header: Literal[True] = True) -> Frame: ...
-
-    @overload
-    def read(self, return_header: Literal[False] = False) -> np.ndarray: ...
-
-    def read(self, return_header: bool = False) -> Union[np.ndarray, Frame]:
-        """
-        Read a single frame
-
-        Arguments:
-            return_header (bool): If `True`, return headers from individual buffers
-                (default `False`)
-
-        Return:
-            :class:`numpy.ndarray` ,
-            or a tuple(ndarray, List[:class:`~.SDBufferHeader`]) if `return_header`
-            is `True`
-        """
-        if self._f is None:
-            raise RuntimeError(
-                "File is not open! Try entering the reader context by using it like "
-                "`with sdcard:`"
-            )
-
-        self._array[:] = 0
-        pixel_count = 0
-        last_buffer_n = 0
-        headers = []
-        while True:
-            # stash position before reading header
-            last_position = self._f.tell()
-            try:
-                header = self._read_data_header(self._f)
-            except ValueError as e:
-                if "read length must be non-negative" in str(e):
-                    # end of file! Value error thrown because the dataHeader will be
-                    # blank,  and thus have a value of 0 for the header size, and we
-                    # can't read 0 from the card.
-                    self._f.seek(last_position, 0)
-                    raise EndOfRecordingException("Reached the end of the video!") from None
-                else:
-                    raise e
-            except IndexError as e:
-                if "index 0 is out of bounds for axis 0 with size 0" in str(e):
-                    # end of file if we are reading from a disk image without any
-                    # additional space on disk
-                    raise EndOfRecordingException("Reached the end of the video!") from None
-                else:
-                    raise e
-            except ReadHeaderException as e:
-                # if we are on the last frame, normal! signal end of iteration
-                if self._frame == self.frame_count - 1:
-                    raise EndOfRecordingException("Reached the end of the video!") from None
-                else:
-                    raise e
-
-            if header.frame_buffer_count == 0 and last_buffer_n > 0:
-                # we are in the next frame!
-                # rewind to the beginning of the header, and return
-                # the last_position is the start of the header for this frame
-                self._f.seek(last_position, 0)
-                self._frame += 1
-                self.positions[self._frame] = last_position
-                frame = np.reshape(self._array, (self.config.width, self.config.height))
-                if return_header:
-                    return Frame.model_construct(frame=frame, headers=headers)
-                else:
-                    return frame
-
-            # grab buffer data and stash
-            headers.append(header)
-            data = self._read_buffer(self._f, header)
-            data = self._trim(data, header.data_length)
-            self._array[pixel_count : pixel_count + header.data_length, 0] = data
-            pixel_count += header.data_length
-            last_buffer_n = header.frame_buffer_count
+        res = None
+        while res is None:
+            res: Optional[dict[Literal["frame"], Frame]] = self.runner.process()
+        return res["frame"]
 
     # --------------------------------------------------
     # Write methods
@@ -451,8 +273,8 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
         writer = cv2.VideoWriter(
             str(path),
             cv2.VideoWriter_fourcc(*fourcc),
-            self.config.fs,
-            (self.config.width, self.config.height),
+            self.metadata.fs,
+            (self.metadata.width, self.metadata.height),
             isColor=isColor,
         )
 
@@ -465,8 +287,8 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
                     while True:
                         # this is sort of an awkward stack, should probably make a
                         # generator version of `read`
-                        frame = self.read(return_header=False)
-                        writer.write(frame)
+                        frame = self.read()
+                        writer.write(frame.frame)
 
                         if progress:
                             pbar.update()
@@ -631,15 +453,24 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
 
     def start(self) -> None:
         """start pipeline"""
-        raise NotImplementedError()
+        self.runner.start()
 
     def stop(self) -> None:
         """stop pipeline"""
-        raise NotImplementedError()
+        self.runner.stop()
 
     def join(self) -> None:
         """join pipeline"""
         raise NotImplementedError()
+
+    @property
+    def pipeline(self) -> Pipeline:
+        """Create pipeline, passing needed values"""
+        if self._pipeline is None:
+            self._pipeline = Pipeline.from_config(
+                self.config.pipeline, passed={"sd_path": self.drive}
+            )
+        return self._pipeline
 
     @property
     def excitation(self) -> float:
@@ -649,12 +480,12 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
     @property
     def fps(self) -> int:
         """FPS"""
-        return self.config.fs
+        return self.metadata.fs
 
     @property
     def resolution(self) -> Resolution:
         """Resolution of recorded video"""
-        return Resolution(self.config.width, self.config.height)
+        return Resolution(self.metadata.width, self.metadata.height)
 
     def get(self, key: str) -> Any:
         """get a configuration value by its name"""

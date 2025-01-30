@@ -2,7 +2,23 @@
 File-based data sources
 """
 
+import sys
+import os
+from pathlib import Path
+from typing import BinaryIO, ClassVar, Optional
+from threading import Lock
+
+import numpy as np
+from pydantic import Field, PrivateAttr
+
+from mio.exceptions import EndOfRecordingException, ReadHeaderException
 from mio.models.pipeline import Source
+from mio.models.sdcard import SDBufferHeader, SDLayout
+
+if sys.version_info < (3, 12):
+    from typing_extensions import TypedDict
+else:
+    from typing import TypedDict
 
 
 class FileSource(Source):
@@ -10,18 +26,74 @@ class FileSource(Source):
     Generic parent class for file sources
     """
 
-
-class BinaryLayout:
-    """Layout for binary files"""
-
-    pass
+    name = "file-source"
 
 
 class BinaryFileSource(FileSource):
     """
+    A FileSource that yields blocks of binary data
+    """
+
+    name = "binary-file-source"
+    output_type: ClassVar[bytes]
+
+    path: Path
+    offset: int = 0
+    """
+    The offset position from the start of the file from which to consider the "zero point"
+    """
+    block_size: int
+    """
+    Number of bytes to read per processing loop
+    """
+
+    _f: Optional[BinaryIO] = None
+
+    def start(self) -> None:
+        """Open the file, seek to the offset"""
+        self._f = open(self.path, "rb")  # noqa: SIM115
+        self._f.seek(self.offset, 0)
+
+    def stop(self) -> None:
+        """Close the file, remove the reference"""
+        self._f.close()
+        self._f = None
+
+    def tell(self) -> int:
+        """Return the current position in the file"""
+        if self._f is None:
+            raise RuntimeError("File has not yet been opened with start")
+        return self._f.tell()
+
+    @property
+    def position(self) -> int:
+        """Property alias for :meth:`.tell` - the current position in the file"""
+        return self.tell()
+
+    def process(self) -> bytes:
+        """Return a block of data"""
+        return self._f.read(self.block_size)
+
+
+class SDFileSourceOutput(TypedDict):
+    """Output types returned by :meth:`.SDFileSource.process`"""
+
+    header: SDBufferHeader
+    buffer: np.ndarray
+
+
+class SDFileSourceConfig(TypedDict):
+    """Config for :class:`.SDFileSource`"""
+
+    path: Path
+    layout: SDLayout
+
+
+class SDFileSource(FileSource):
+    """
     Structured binary file that has
 
-    * a global header with config values
+    * a global header with metadata values
     * a series of buffers, each containing a
 
         * buffer header - with metadata for that buffer and
@@ -29,6 +101,191 @@ class BinaryFileSource(FileSource):
 
     The source thus has two configurations
 
-    * the ``config`` - getter and setter for the actual configuration values of the source
+    * the ``metadata`` - getter and setter for the actual configuration values of the source
     * the ``layout`` - how the configuration and data are laid out within the file.
+
     """
+
+    name = "sd-file-source"
+    output_type = SDFileSourceOutput
+
+    config: SDFileSourceConfig
+
+    _f: Optional[BinaryIO] = None
+    _positions: dict[int, int] = PrivateAttr(default_factory=dict)
+    """
+    A mapping between frame number and byte position in the video that makes for 
+    faster seeking :)
+
+    As we read, we store the locations of each frame before reading it. Later, 
+    we can assign to `frame` to seek back to those positions. Assigning to `frame` 
+    works without caching position, but has to manually iterate through each frame.
+    """
+    _last_buffer: int = None
+    _frame: int = 0
+    _lock: Lock = PrivateAttr(default_factory=Lock)
+
+    @property
+    def offset(self) -> int:
+        """Start point of the data sector"""
+        return self.config["layout"].sectors.data_pos
+
+    @property
+    def header_size(self) -> int:
+        """
+        Number of bytes in a buffer header
+
+        .. note::
+
+            This isn't guaranteed to be accurate, see:
+            https://github.com/Aharoni-Lab/Miniscope-v4-Wire-Free/issues/64
+        """
+        return (
+            max([v for v in self.config["layout"].buffer.model_dump().values() if v is not None])
+            + 1
+        ) * self.config["layout"].word_size
+
+    def start(self) -> None:
+        """Open the file, seek to the offset"""
+        self._last_buffer = 0
+
+        self._f = open(self.config["path"], "rb")  # noqa: SIM115
+        self._f.seek(self.offset, os.SEEK_SET)
+
+    def stop(self) -> None:
+        """Close the file, remove the reference"""
+        self._f.close()
+        self._f = None
+
+    def tell(self) -> int:
+        """Return the current position in the file"""
+        if self._f is None:
+            raise RuntimeError("File has not yet been opened with start")
+        with self._lock:
+            return self._f.tell()
+
+    @property
+    def size(self) -> int:
+        """
+        Size of the file (in bytes)
+        """
+        current_pos = self.tell()
+        with self._lock:
+            self._f.seek(self.offset, os.SEEK_END)
+            end = self._f.tell()
+            self._f.seek(current_pos, os.SEEK_SET)
+        return end
+
+    @property
+    def position(self) -> int:
+        """Property alias for :meth:`.tell` - the current position in the file"""
+        return self.tell()
+
+    def process(self) -> SDFileSourceOutput:
+        """
+        Read a single data buffer, parsing its header and splitting it from the data
+        """
+        start_position = self.tell()
+
+        header = self._read_header(self._f)
+        self._last_buffer = header.buffer_count
+        self._frame = header.frame_num
+
+        if header.frame_num not in self._positions:
+            self._positions[header.frame_num] = start_position
+
+        buffer = self._read_buffer(self._f, header)
+        buffer = self._trim(buffer, header.data_length)
+        return {"header": header, "buffer": buffer}
+
+    def _read_header(self, sd: BinaryIO) -> SDBufferHeader:
+        """
+        Given an already open file buffer opened in bytes mode,
+        seeked to the start of a frame, read the data header
+        """
+        # Get the length of the header from the first word
+        try:
+            with self._lock:
+                dataHeader = np.frombuffer(
+                    sd.read(self.config["layout"].word_size),
+                    dtype=np.dtype(self.config["layout"].header_dtype),
+                )
+        except IndexError as e:
+            if "index 0 is out of bounds for axis 0 with size 0" in str(e):
+                # end of file if we are reading from a disk image without any
+                # additional space on disk
+                raise EndOfRecordingException("Reached the end of the video!") from None
+            else:
+                raise e
+
+        # Get the rest of the values in the header
+        try:
+            with self._lock:
+                dataHeader = np.append(
+                    dataHeader,
+                    np.frombuffer(
+                        sd.read(int(dataHeader[0]) * self.config["layout"].word_size),
+                        dtype=np.dtype(self.config["layout"].header_dtype),
+                    ),
+                )
+        except ValueError as e:
+            if "read length must be non-negative" in str(e):
+                # end of file! Value error thrown because the dataHeader will be
+                # blank,  and thus have a value of 0 for the header size, and we
+                # can't read 0 from the card.
+                raise EndOfRecordingException("Reached the end of the video!") from None
+            else:
+                raise e
+
+        # use construct because we're already sure these are ints from the numpy casting
+        # https://docs.pydantic.dev/latest/usage/models/#creating-models-without-validation
+        try:
+            return SDBufferHeader.from_format(
+                dataHeader, self.config["layout"].buffer, construct=True
+            )
+        except IndexError as e:
+            if self.tell() >= self.size:
+                raise EndOfRecordingException("Reached the end of the video!") from None
+            else:
+                raise ReadHeaderException(
+                    "Could not read header, expected header to have "
+                    f"{len(self.config['layout'].buffer.model_dump().keys())} fields, "
+                    f"got {len(dataHeader)}. Likely mismatch between specified "
+                    "and actual SD Card layout or reached end of data.\n"
+                    f"Header Data: {dataHeader}"
+                ) from e
+
+    def _read_buffer(self, sd: BinaryIO, header: SDBufferHeader) -> np.ndarray:
+        with self._lock:
+            return np.frombuffer(sd.read(self._data_read_size(header)), dtype=np.uint8)
+
+    def _data_read_size(self, header: SDBufferHeader) -> int:
+        """
+        After the header, how many bytes to read for the data in a buffer
+        """
+        # blocks are quantized by sector size, so get min number of blocks that cover the data
+        n_blocks = np.ceil(
+            (header.data_length + (header.length * self.config["layout"].word_size))
+            / self.config["layout"].sectors.size
+        )
+        # expand back to n bytes
+        sector_size = n_blocks * self.config["layout"].sectors.size
+        # subtract length of header
+        return int(sector_size - (header.length * self.config["layout"].word_size))
+
+    def _trim(self, data: np.ndarray, expected_size: int) -> np.ndarray:
+        """
+        Trim or pad an array to match an expected size.
+
+        This should be the case most of the time -
+        number of bytes in a memory sector won't match bytes in a buffer
+        """
+        if data.shape[0] != expected_size:
+            # trim if too long
+            if data.shape[0] > expected_size:
+                data = data[0:expected_size]
+            # pad if too short
+            else:
+                data = np.pad(data, (0, expected_size - data.shape[0]))
+
+        return data

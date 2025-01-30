@@ -2,36 +2,40 @@
 ABC for 
 """
 
+import sys
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional
 
-from mio.models import MiniscopeConfig, Pipeline, PipelineConfig
+from mio.models import MiniscopeConfig, Pipeline, PipelineConfig, PipelineMixin
+from mio.models.mixins import ConfigYAMLMixin
 
 if TYPE_CHECKING:
     from mio.models.pipeline import Sink, Source, Transform
 
+if sys.version_info < (3, 11):
+    from typing_extensions import Self
+else:
+    from typing import Self
 
-class DeviceConfig(MiniscopeConfig):
+
+class DeviceConfig(MiniscopeConfig, ConfigYAMLMixin):
     """
     Abstract base class for device configuration
     """
 
-    id: Union[str, int]
-    """(Locally) unique identifier for this device"""
     pipeline: PipelineConfig = PipelineConfig()
 
 
 @dataclass(kw_only=True)
-class Device:
+class Device(PipelineMixin):
     """
     Abstract base class for devices.
 
     Currently a placeholder to allow room for expansion/renaming in the future
     """
 
-    pipeline: Optional[Pipeline] = None
-    # config: Optional[DeviceConfig] = None
+    config: Optional[DeviceConfig] = None
 
     @abstractmethod
     def init(self) -> None:
@@ -126,17 +130,8 @@ class Device:
             key (str): The name of the value to get
         """
 
-    @property
-    def sources(self) -> dict[str, "Source"]:
-        """Convenience method to access :attr:`.Pipeline.sources`"""
-        return self.pipeline.sources
-
-    @property
-    def transforms(self) -> dict[str, "Transform"]:
-        """Convenience method to access :attr:`.Pipeline.transforms`"""
-        return self.pipeline.transforms
-
-    @property
-    def sinks(self) -> dict[str, "Sink"]:
-        """Convenience method to access :attr:`.Pipeline.sinks`"""
-        return self.pipeline.sinks
+    @classmethod
+    def from_config(cls, config: DeviceConfig) -> Self:
+        """
+        Instantiate a device from its (yaml) configuration.
+        """

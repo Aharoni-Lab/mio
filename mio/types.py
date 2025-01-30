@@ -17,7 +17,7 @@ else:
 
 CONFIG_ID_PATTERN = r"[\w\-\/#]+"
 """
-Any alphanumeric string (\w), as well as
+Any alphanumeric string (\\w), as well as
 - ``-``
 - ``/``
 - ``#``

@@ -39,8 +39,8 @@ def test_read(wirefree):
 
             # the frame is the right shape
             assert len(frame.shape) == 2
-            assert frame.shape[0] == wirefree.config.height
-            assert frame.shape[1] == wirefree.config.width
+            assert frame.shape[0] == wirefree.metadata.height
+            assert frame.shape[1] == wirefree.metadata.width
 
             # assert they're not all zeros - ie. we read some data
             assert frame.any()
@@ -97,10 +97,10 @@ def test_relative_path():
     rel_path = abs_child.relative_to(abs_cwd)
 
     assert not rel_path.is_absolute()
-    sdcard = WireFreeMiniscope(drive=rel_path, layout="wirefree-sd-layout")
+    sdcard = WireFreeMiniscope(drive=rel_path)
 
-    # check we can do something basic like read config
-    assert sdcard.config is not None
+    # check we can do something basic like read metadata
+    assert sdcard.metadata is not None
 
     # check it remains relative after init
     assert not sdcard.drive.is_absolute()
@@ -108,8 +108,8 @@ def test_relative_path():
     # now try with an absolute path
     abs_path = rel_path.resolve()
     assert abs_path.is_absolute()
-    sdcard_abs = WireFreeMiniscope(drive=abs_path, layout="wirefree-sd-layout")
-    assert sdcard_abs.config is not None
+    sdcard_abs = WireFreeMiniscope(drive=abs_path)
+    assert sdcard_abs.metadata is not None
     assert sdcard_abs.drive.is_absolute()
 
 

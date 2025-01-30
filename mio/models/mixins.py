@@ -3,6 +3,7 @@ Mixin classes that are to be used alongside specific models
 to use composition for functionality and inheritance for semantics.
 """
 
+import pdb
 import re
 import shutil
 from importlib.metadata import version
@@ -11,11 +12,20 @@ from pathlib import Path
 from typing import Any, ClassVar, List, Literal, Optional, Type, TypeVar, Union, overload
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    GetCoreSchemaHandler,
+    ValidationError,
+    field_validator,
+)
+from pydantic_core import core_schema
 
 from mio.types import ConfigID, ConfigSource, PythonIdentifier, valid_config_id
 
 T = TypeVar("T")
+"""Generic type of ConfigYamlMixin subclass"""
 
 
 class YamlDumper(yaml.SafeDumper):
@@ -80,7 +90,9 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
      at the top of the file.
     """
 
-    id: ConfigID
+    model_config = ConfigDict(validate_default=True)
+
+    id: Optional[ConfigID] = None
     mio_model: PythonIdentifier = Field(None, validate_default=True)
     mio_version: str = version("mio")
 
@@ -120,22 +132,26 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
 
         """
         globs = [src.rglob("*.y*ml") for src in cls.config_sources]
+
         for config_file in chain(*globs):
+            # if id == "wirefree-pipeline":
+            #     pdb.set_trace()
             try:
                 file_id = yaml_peek("id", config_file)
-                if file_id == id:
-                    from mio.logging import init_logger
-
-                    init_logger("config").debug(
-                        "Model for %s found at %s", cls._model_name(), config_file
-                    )
-                    return cls.from_yaml(config_file)
             except KeyError:
                 continue
 
+            if file_id == id:
+                from mio.logging import init_logger
+
+                init_logger("config").debug(
+                    "Model for %s found at %s", cls._model_name(), config_file
+                )
+                return cls.from_yaml(config_file)
+
         from mio import Config
 
-        raise KeyError(f"No config with id {id} found in {Config().config_dir}")
+        raise KeyError(f"No config with id {id} found in {cls.config_sources}")
 
     @classmethod
     def from_any(cls: Type[T], source: Union[ConfigSource, T]) -> T:
@@ -257,6 +273,29 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
                 yaml.dump(data, yfile, Dumper=YamlDumper, sort_keys=False)
 
         return data
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> core_schema.CoreSchema:
+        """
+        Add before_validator to allow instantiation from id
+        """
+
+        def _from_id(value: Any) -> cls:
+            if isinstance(value, str):
+                return cls.from_id(value)
+            else:
+                return value
+
+        return core_schema.no_info_before_validator_function(
+            _from_id,
+            handler(source_type),
+            # TODO: add this when updating pydantic floor to 2.10
+            # json_schema_input_schema=core_schema.union_schema(
+            #     [handler(source_type), handler(ConfigID)]
+            # ),
+        )
 
 
 @overload

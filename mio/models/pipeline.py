@@ -4,30 +4,85 @@ Base ABCs for pipeline classes
 
 import sys
 from abc import abstractmethod
-from typing import ClassVar, Final, Generic, TypeVar, Union, final
+from dataclasses import dataclass
+from datetime import datetime
+from graphlib import TopologicalSorter
+from typing import (
+    Any,
+    ClassVar,
+    Generic,
+    Optional,
+    TypeVar,
+    Union,
+    Unpack,
+    final,
+    Protocol,
+    TYPE_CHECKING,
+)
 
-from pydantic import Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from mio.exceptions import ConfigurationMismatchError
 from mio.models.models import MiniscopeConfig, PipelineModel
+from mio.models.mixins import ConfigYAMLMixin
 
 if sys.version_info < (3, 11):
-    from typing_extensions import Self
-else:
+    from typing_extensions import Self, TypedDict, NotRequired
+elif sys.version_info < (3, 12):
     from typing import Self
+
+    from typing_extensions import TypedDict, NotRequired
+else:
+    from typing import Self, TypedDict, NotRequired
+
+if TYPE_CHECKING:
+    from mio.pipeline.runner import PipelineRunner
 
 T = TypeVar("T")
 """
 Input Type typevar
 """
-U = TypeVar("U")
+U = TypeVar("U", bound=dict[str, Any])
 """
 Output Type typevar
 """
 
 
-class NodeConfig(MiniscopeConfig):
-    """Configuration for a single processing node"""
+class Event(TypedDict, Generic[U]):
+    """
+    Container for a single value returned from a single :meth:`.Node.process` call
+    """
+
+    id: int
+    """Unique ID for each event"""
+    timestamp: datetime
+    """Timestamp of when the event was received by the :class:`.PipelineRunner"""
+    node_id: str
+    """ID of node that emitted the event"""
+    slot: str
+    """name of the slot that emitted the event"""
+    value: Any
+    """Value emitted by the processing node"""
+
+
+class _NodeMap(TypedDict):
+    source: str
+    target: str
+
+
+class NodeConfig(TypedDict, total=False):
+    """
+    Abstract parent TypedDict that each node inherits from to define
+    what fields it needs to be configured.
+    """
+
+
+class NodeSpecification(MiniscopeConfig):
+    """
+    Specification for a single processing node within a pipeline .yaml file.
+    Distinct from a :class:`.NodeConfig`, which is a generic TypedDict that each
+    node defines to declare its parameterization.
+    """
 
     type_: str = Field(..., alias="type")
     """
@@ -35,84 +90,259 @@ class NodeConfig(MiniscopeConfig):
     
     Subclasses should override this with a default.
     """
-
     id: str
     """The unique identifier of the node"""
-    inputs: list[str] = Field(default_factory=list)
-    """List of Node IDs to be used as input"""
-    outputs: list[str] = Field(default_factory=list)
+    outputs: Optional[list[_NodeMap]] = None
     """List of Node IDs to be used as output"""
+    config: Optional[dict] = None
+    """Additional configuration for this node, parameterized by a TypedDict for the class"""
+    passed: Optional[dict[str, str]] = None
+    """
+    Mapping of config values that must be passed when the pipeline is instantiated.
+    
+    Keys are the key in the config dictionary to be filled by passing, and values are a key that
+    those values should be passed as.
+    
+    Examples:
+    
+        For a node with config field `height` , one can specify that it must be passed 
+        on instantiation like this:
+        
+        .. code-block:: yaml
+        
+            nodes:
+              node1:
+                type: a_node 
+                passed:
+                  height: height_1
+              node2:
+                type: a_node
+                passed:
+                  height: height_2
+                  
+        The pipeline should then be instantiated like:
+        
+        .. code-block:: python
+        
+            Pipeline.from_config(above_config, passed={'height_1': 1, 'height_2': 2})
+    
+    """
+    fill: Optional[dict[str, str]] = None
+    """
+    Values in the node config that should be dynamically filled from other nodes in the pipeline.
+    
+    Specified as {node_id}.{attribute}, these specify attributes and properties
+    on the instantiated node class, not the config values for that node.
+    
+    This is useful for accessing some properties that might not be known until runtime
+    like width and height of an input image.
+    
+    Examples:
+    
+        For a node class `camera` that has property `frame_width`,
+        and node class `process` that has config value `width`,
+        we would fill the config value like this: 
+        
+        .. code-block:: yaml
+        
+            nodes:
+              cam:
+                type: camera
+              proc:
+                type: process
+                fill:
+                  width: cam.frame_width
+                  
+        The Pipeline class will then do something like this on instantiation:
+        
+        .. code-block:: python
+        
+            pipeline = PipelineConfig(**the_above_values)
+            
+            cam = CameraNode(config=pipeline.nodes['cam'].config)
+            
+            proc_config = pipeline.nodes['proc'].config
+            proc_config['width'] = cam.frame_width
+            proc = ProcessingNode(config=proc_config)    
+    
+    """
 
 
-class PipelineConfig(MiniscopeConfig):
+class _RequiredNode(TypedDict):
+    type: str
+    """Node type (as determined by its :attr:`.Node.name` attr"""
+    config: NotRequired[dict[str, Any]]
+    """Require that config values must be set to these values"""
+
+
+class PipelineConfig(MiniscopeConfig, ConfigYAMLMixin):
     """
     Configuration for the nodes within a pipeline
     """
 
-    nodes: dict[str, NodeConfig] = Field(default_factory=dict)
+    required_nodes: ClassVar[Optional[dict[str, _RequiredNode]]] = None
+    """
+    id: type mapping that a subclass can use to require a set of node types 
+    with specific IDs be present
+    """
+
+    nodes: dict[str, NodeSpecification] = Field(default_factory=dict)
     """The nodes that this pipeline configures"""
+
+    @model_validator(mode="after")
+    def validate_required_nodes(self) -> Self:
+        """Ensure required nodes are present, if any"""
+        if self.required_nodes is not None:
+            for id_, required in self.required_nodes.items():
+                assert id_ in self.nodes, f"Required node id {id_} not in {self.nodes.keys()}"
+                assert (
+                    self.nodes[id_].type_ == required["type"]
+                ), f"Node ID {id_} is not of type {required['type']}"
+                if "config" in required:
+                    for key, val in required["config"].items():
+                        assert (
+                            self.nodes[id_].config[key] == val
+                        ), f"Required node {id_} must have config value {key} set to {val}, "
+                        f"got {self.nodes[id_].config[key]} instead."
+        return self
+
+    @field_validator("nodes", mode="before")
+    @classmethod
+    def fill_node_ids(cls, value: dict[str, dict]) -> dict[str, dict]:
+        """
+        Roll down the `id` from the key in the `nodes` dictionary into the node config
+        """
+        assert isinstance(value, dict)
+        for id, node in value.items():
+            if "id" not in node:
+                node["id"] = id
+        return value
+
+    # TODO: Implement these validators
+    # @field_validator("nodes", mode="after")
+    # @classmethod
+    # def valid_passed_and_fill_keys(
+    #   cls, value: dict[str, NodeSpecification]
+    # ) -> dict[str, NodeSpecification]:
+    #     """
+    #     Passed and fill keys refer to values within the node's config type
+    #     """
+    #
+    # @field_validator("nodes", mode="after")
+    # @classmethod
+    # def unique_passed_values(
+    #   cls, value: dict[str, NodeSpecification]
+    # ) -> dict[str, NodeSpecification]:
+    #     """
+    #     All passed values (
+    #     """
+    #
+    # @field_validator("nodes", mode="after")
+    # @classmethod
+    # def fill_sources_present(
+    #     cls, value: dict[str, NodeSpecification]
+    #   # ) -> dict[str, NodeSpecification]:
+    #     """
+    #     Fill values refer to nodes that are present in the node graph
+    #     """
+    #
+    # @field_validator("nodes", mode="after")
+    # @classmethod
+    # def fill_values_dotted(
+    #     cls, value: dict[str, NodeSpecification]
+    # ) -> dict[str, NodeSpecification]:
+    #     """
+    #     Fill values refer to a property or attribute of a node (i.e. have at least one dot)
+    #     """
+
+    def graph(self) -> TopologicalSorter:
+        """
+        For the node specifications in :attr:`.PipelineConfig.nodes`,
+        produce a :class:`.TopologicalSorter` that accounts for the dependencies between nodes
+        induced by :attr:`.NodeSpecification.fill`
+        """
+        sorter = TopologicalSorter()
+        for node_id, node in self.nodes.items():
+            if node.fill is None:
+                sorter.add(node_id)
+            else:
+                dependents = {v.split(".")[0] for v in node.fill}
+                sorter.add(node_id, *dependents)
+        return sorter
 
 
 class Node(PipelineModel, Generic[T, U]):
     """A node within a processing pipeline"""
 
-    type_: ClassVar[str]
+    name: ClassVar[str]
     """
     Shortname for this type of node to match configs to node types
     """
 
     id: str
     """Unique identifier of the node"""
-    config: NodeConfig
+    config: Optional[NodeConfig] = None
 
     input_type: ClassVar[type[T]]
-    inputs: dict[str, Union["Source", "Transform"]] = Field(default_factory=dict)
     output_type: ClassVar[type[U]]
-    outputs: dict[str, Union["Sink", "Transform"]] = Field(default_factory=dict)
 
-    @abstractmethod
     def start(self) -> None:
         """
-        Start producing, processing, or receiving data
-        """
+        Start producing, processing, or receiving data.
 
-    @abstractmethod
+        Default is a no-op.
+        Subclasses do not need to override if they have no initialization logic.
+        """
+        pass
+
     def stop(self) -> None:
         """
         Stop producing, processing, or receiving data
+
+        Default is a no-op.
+        Subclasses do not need to override if they have no deinit logic.
         """
+        pass
+
+    @abstractmethod
+    def process(self, **kwargs: Unpack[T]) -> Optional[U]:
+        """Process some input, emitting it. See subclasses for details"""
+        pass
 
     @classmethod
-    def from_config(cls, config: NodeConfig) -> Self:
+    def from_specification(cls, config: NodeSpecification) -> Self:
         """
         Create a node from its config
         """
-        return cls(id=config.id, config=config)
+        return cls(id=config.id, config=config.config)
 
     @classmethod
     @final
     def node_types(cls) -> dict[str, type["Node"]]:
         """
-        Map of all imported :attr:`.Node.type_` names to node classes
+        Map of all imported :attr:`.Node.name` names to node classes
         """
+        from mio import sinks, sources, transforms
+
         node_types = {}
         to_check = cls.__subclasses__()
         while to_check:
             node = to_check.pop()
-            if node.type_ in node_types:
+            if node not in (Sink, Source, Transform) and node.name in node_types:
                 raise ValueError(
-                    f"Repeated node type_ identifier: {node.type_}, found in:\n"
-                    f"- {node_types[node.type_]}\n- {node}"
+                    f"Repeated node name identifier: {node.name}, found in:\n"
+                    f"- {node_types[node.name]}\n- {node}"
                 )
-            node_types[node.type_] = node
+
             to_check.extend(node.__subclasses__())
+            if node not in (Sink, Source, Transform):
+                node_types[node.name] = node
         return node_types
 
 
 class Source(Node, Generic[T, U]):
     """A source of data in a processing pipeline"""
 
-    inputs: Final[None] = None
     input_type: ClassVar[None] = None
 
     @abstractmethod
@@ -134,10 +364,9 @@ class Sink(Node, Generic[T, U]):
     """A sink of data in a processing pipeline"""
 
     output_type: ClassVar[None] = None
-    outputs: Final[None] = None
 
     @abstractmethod
-    def process(self, data: T) -> None:
+    def process(self, **kwargs: Unpack[T]) -> None:
         """
         Process some incoming data, returning None
 
@@ -155,7 +384,7 @@ class Transform(Node, Generic[T, U]):
     """
 
     @abstractmethod
-    def process(self, data: T) -> U:
+    def process(self, **kwargs: Unpack[T]) -> U:
         """
         Process some incoming data, yielding a transformed output
 
@@ -168,14 +397,37 @@ class Transform(Node, Generic[T, U]):
         """
 
 
+class Edge(PipelineModel):
+    """
+    Directed connection between an output slot a node and an input slot in another node
+    """
+
+    source_node: Node
+    source_slot: Optional[str] = None
+    target_node: Node
+    target_slot: Optional[str] = None
+
+
 class Pipeline(PipelineModel):
     """
     A graph of nodes transforming some input source(s) to some output sink(s)
+
+    The Pipeline model is a container for a set of nodes that are fully instantiated
+    (e.g. have their "passed" and "fill" keys processed) and connected.
+    It does not handle running the pipeline -- that is handled by a PipelineRunner.
     """
 
     nodes: dict[str, Node] = Field(default_factory=dict)
     """
     Dictionary mapping all nodes from their ID to the instantiated node.
+    """
+    edges: list[Edge] = Field(default_factory=list)
+    """
+    Edges connecting slots within nodes.
+    
+    The nodes within :attr:`.Edge.source_node` and :attr:`.Edge.target_node` must
+    be the same objects as those in :attr:`.Pipeline.nodes`
+    (i.e. ``edges[0].source_node is nodes[node_id]`` ).
     """
 
     @property
@@ -193,58 +445,228 @@ class Pipeline(PipelineModel):
         """All :class:`.Sink` nodes in the processing graph"""
         return {k: v for k, v in self.nodes.items() if isinstance(v, Sink)}
 
-    @abstractmethod
-    def process(self) -> None:
+    def graph(self) -> TopologicalSorter:
         """
-        Process one step of data from each of the sources,
-        passing intermediate data to any subscribed nodes in a chain.
+        Produce a :class:`.TopologicalSorter` based on the graph induced by
+        :attr:`.Pipeline.nodes` and :attr:`.Pipeline.edges` that yields node ids
+        """
+        sorter = TopologicalSorter()
+        for node_id, node in self.nodes.items():
+            in_edges = [e.target_node.id for e in self.edges if e.target_node is node]
+            sorter.add(node_id, *in_edges)
+        return sorter
 
-        The `process` method should not return anything except a to-be-implemented
-        result/status object, as any data intended to be received/processed by
-        downstream objects should be accessed via a :class:`.Sink` .
+    def in_edges(self, node: Union[Node, str]) -> list[Edge]:
         """
+        Edges going towards the given node (i.e. the node is the edge's ``target`` )
 
-    @abstractmethod
-    def start(self) -> None:
-        """
-        Start processing data with the pipeline graph
-        """
+        Args:
+            node (:class:`.Node`, str): Either a node or its id
 
-    @abstractmethod
-    def stop(self) -> None:
+        Returns:
+            list[:class:`.Edge`]
         """
-        Stop processing data with the pipeline graph
+        if isinstance(node, Node):
+            node = node.id
+        return [e for e in self.edges if e.target_node.id == node]
+
+    def out_edges(self, node: Union[Node, str]) -> list[Edge]:
         """
+        Edges going away from the given node (i.e. the node is the edge's ``source`` )
+
+        Args:
+            node (:class:`.Node`, str): Either a node or its id
+
+        Returns:
+            list[:class:`.Edge`]
+        """
+        if isinstance(node, Node):
+            node = node.id
+        return [e for e in self.edges if e.source_node.id == node]
 
     @classmethod
-    def from_config(cls, config: PipelineConfig) -> Self:
+    def from_config(cls, config: PipelineConfig, passed: Optional[dict[str, Any]] = None) -> Self:
         """
         Instantiate a pipeline model from its configuration
+
+        Args:
+            config (PipelineConfig): the pipeline config to instantiate
+            passed (dict[str, Any]): If any nodes in the
+        """
+        cls._validate_passed(config, passed)
+
+        nodes = cls._init_nodes(config, passed)
+        edges = cls._init_edges(nodes, config.nodes)
+
+        return cls(nodes=nodes, edges=edges)
+
+    @classmethod
+    def passed_values(cls, config: PipelineConfig) -> dict[str, type]:
+        """
+        Dictionary containing the keys that must be passed as specified by the `passed` field
+        of a node specification and their types.
+
+        Args:
+            config (:class:`.PipelineConfig`): Pipeline configuration to get passed values for
         """
         types = Node.node_types()
+        passed = {}
+        for node_id, node in config.nodes.items():
+            if not node.passed:
+                continue
 
-        nodes = {k: types[v.type_].from_config(v) for k, v in config.nodes.items()}
-        nodes = connect_nodes(nodes)
-        return cls(nodes=nodes)
+            for cfg_key, pass_key in node.passed.items():
+                # get type of config key that needs to be passed
+                config_type = types[node.type_].model_fields["config"].annotation
+                try:
+                    passed[pass_key] = config_type.__annotations__[cfg_key]
+                except KeyError as e:
+                    raise ConfigurationMismatchError(
+                        f"Node {node_id} requested {cfg_key} be passed as {pass_key}, "
+                        f"but node type {node.type_}'s config has no field {cfg_key}! "
+                        f"Possible keys: {list(config_type.__annotations__.keys())}"
+                    ) from e
+
+        return passed
+
+    @classmethod
+    def _init_nodes(
+        cls, config: PipelineConfig, passed: Optional[dict[str, Any]] = None
+    ) -> dict[str, Node]:
+        """
+        Initialize nodes, filling in any computed values from `fill` and `passed`
+        """
+        if passed is None:
+            passed = {}
+
+        types = Node.node_types()
+        graph = config.graph()
+        graph.prepare()
+
+        nodes = {}
+        while graph.is_active():
+            for node in graph.get_ready():
+                complete_cfg = cls._complete_node(config.nodes[node], nodes, passed)
+                nodes[node] = types[complete_cfg.type_].from_specification(complete_cfg)
+                graph.done(node)
+
+        return nodes
+
+    @classmethod
+    def _init_edges(cls, nodes: dict[str, Node], spec: dict[str, NodeSpecification]) -> list[Edge]:
+        edges = []
+        for node_id, node_spec in spec.items():
+            if not node_spec.outputs:
+                continue
+            for output in node_spec.outputs:
+                # FIXME: Ugly and not DRY
+                target_parts = output["target"].split(".")
+                target_id, target_slot = (
+                    (target_parts[0], target_parts[1])
+                    if len(target_parts) == 2
+                    else (target_parts[0], None)
+                )
+                edges.append(
+                    Edge(
+                        source_node=nodes[node_id],
+                        target_node=nodes[target_id],
+                        source_slot=output["source"],
+                        target_slot=target_slot,
+                    )
+                )
+        return edges
+
+    @classmethod
+    def _complete_node(
+        cls, node: NodeSpecification, context: dict[str, Node], passed: dict
+    ) -> NodeSpecification:
+        """
+        Given the context of already-instantiated nodes and passed values,
+        complete the configuration.
+        """
+        if node.passed:
+            for cfg_key, passed_key in node.passed.items():
+                node.config[cfg_key] = passed[passed_key]
+        if node.fill:
+            for cfg_key, fill_key in node.fill.items():
+                parts = fill_key.split(".")
+                val = context[parts[0]]
+                for part in parts[1:]:
+                    val = getattr(val, part)
+                node.config[cfg_key] = val
+        return node
+
+    @classmethod
+    def _validate_passed(cls, config: PipelineConfig, passed: dict[str, Any]) -> None:
+        """
+        Ensure that the passed values required by the pipeline config are in fact passed
+
+        Raise ConfigurationMismatchError if missing keys, otherwise do nothing
+        """
+        required = cls.passed_values(config)
+
+        for key in required:
+            if passed is None or key not in passed:
+                raise ConfigurationMismatchError(
+                    f"Pipeline config requires these values to be passed:\n"
+                    f"{required}\n"
+                    f"But received passed values:\n"
+                    f"{passed}"
+                )
 
 
-def connect_nodes(nodes: dict[str, Node]) -> dict[str, Node]:
+class _ConfigProtocol(Protocol):
     """
-    Provide references to instantiated nodes
+    Abstract protocol type to specify that classes consuming the PipelineMixin
+    must have some config attribute that specifies a pipeline
+    (without prescribing what that config object must be)
     """
 
-    for node in nodes.values():
-        if node.config.inputs and node.inputs is None:
-            raise ConfigurationMismatchError(
-                "inputs found in node configuration, but node type allows no inputs!\n"
-                f"node: {node.model_dump()}"
-            )
-        if node.config.outputs and not hasattr(node, "outputs"):
-            raise ConfigurationMismatchError(
-                "outputs found in node configuration, but node type allows no outputs!\n"
-                f"node: {node.model_dump()}"
-            )
+    pipeline: Optional[PipelineConfig] = None
 
-        node.inputs.update({id: nodes[id] for id in node.config.inputs})
-        node.outputs.update({id: nodes[id] for id in node.config.outputs})
-    return nodes
+
+@dataclass(kw_only=True)
+class PipelineMixin:
+    """Mixin for use with models that have pipelines!"""
+
+    config: _ConfigProtocol
+
+    _pipeline: Optional[Pipeline] = None
+    _runner: Optional["PipelineRunner"] = None
+
+    @property
+    def sources(self) -> dict[str, "Source"]:
+        """Convenience method to access :attr:`.Pipeline.sources`"""
+        return self.pipeline.sources
+
+    @property
+    def transforms(self) -> dict[str, "Transform"]:
+        """Convenience method to access :attr:`.Pipeline.transforms`"""
+        return self.pipeline.transforms
+
+    @property
+    def sinks(self) -> dict[str, "Sink"]:
+        """Convenience method to access :attr:`.Pipeline.sinks`"""
+        return self.pipeline.sinks
+
+    @property
+    def pipeline(self) -> Pipeline:
+        """Instantiated Pipeline from pipeline config"""
+        if self._pipeline is None:
+            self._pipeline = Pipeline.from_config(self.config.pipeline)
+        return self._pipeline
+
+    @property
+    def runner(self) -> "PipelineRunner":
+        """
+        A :class:`.PipelineRunner` that ... runs the :attr:`~.PipelineMixin.pipeline` !
+
+        By default, creates a :class:`.SynchronousRunner`,
+        and this property should be overridden by subclasses that want to specialize
+        runner instantiation.
+        """
+        from mio.pipeline.runner import SynchronousRunner
+
+        if self._runner is None:
+            self._runner = SynchronousRunner(self.pipeline)
+        return self._runner
