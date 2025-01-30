@@ -177,9 +177,6 @@ class NoiseDetectionHelper:
 
         noisy_mask = np.zeros_like(current_frame, dtype=np.uint8)
 
-        high_threshold = config.threshold
-        low_threshold = config.low_threshold
-
         # Slide through the frame vertically in block_height steps
         for i, y in enumerate(range(0, height, block_height)):
             # select block and cast to int16 to avoid diffs wrapping around 0
@@ -193,7 +190,7 @@ class NoiseDetectionHelper:
             logger.debug(f"Mean second derivative for block {i}: {mean_second_diff}")
 
             # Flag block as noisy if contrast exceeds the threshold
-            if mean_second_diff > high_threshold or mean_second_diff < low_threshold:
+            if mean_second_diff > config.threshold:
                 noisy_mask[y : y + block_height, :] = 1
 
         # Determine if the frame is noisy (if any blocks are marked as noisy)

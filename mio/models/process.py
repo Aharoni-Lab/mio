@@ -69,10 +69,6 @@ class NoisePatchConfig(BaseModel):
         default=20,
         description="Threshold for detecting noise.",
     )
-    low_threshold: float = Field(
-        default=2,
-        description="Lower threshold for detecting (black-out) noise.",
-    )
     buffer_size: int = Field(
         default=5032,
         description="Size of the buffers composing the image."
