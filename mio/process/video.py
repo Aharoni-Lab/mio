@@ -158,12 +158,12 @@ class NoisePatchProcessor(BaseVideoProcessor):
 
         if self.noise_patch_config.enable:
             if self.noise_patch_config.method == "gradient":
-            # For the gradient method, analyze the first frame immediately
+                # For the gradient method, analyze the first frame immediately
                 broken, noise_patch = self.noise_detect_helper.detect_frame_with_noisy_buffer(
-                input_frame,
-                None,  # No previous frame needed for gradient method
-                self.noise_patch_config,
-            )
+                    input_frame,
+                    None,  # No previous frame needed for gradient method
+                    self.noise_patch_config,
+                )
             else:
                 # For the mean method, wait until the second frame to start analysis
                 if self.previous_frame is not None:
@@ -171,13 +171,12 @@ class NoisePatchProcessor(BaseVideoProcessor):
                         input_frame,
                         self.previous_frame,
                         self.noise_patch_config,
-                )
+                    )
                 else:
                     # If it's the first frame and the method is mean_error, just store the frame
                     self.previous_frame = input_frame
                     self.append_output_frame(input_frame)
                     return input_frame
-                
 
             # Handle noisy frames
             if not broken:
