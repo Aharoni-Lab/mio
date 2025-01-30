@@ -7,7 +7,7 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
-from mio.models import MiniscopeConfig, Pipeline, PipelineConfig
+from mio.models import MiniscopeConfig, Pipeline, PipelineConfig, PipelineMixin
 from mio.models.mixins import ConfigYAMLMixin
 
 if TYPE_CHECKING:
@@ -28,7 +28,7 @@ class DeviceConfig(MiniscopeConfig, ConfigYAMLMixin):
 
 
 @dataclass(kw_only=True)
-class Device:
+class Device(PipelineMixin):
     """
     Abstract base class for devices.
 
@@ -36,8 +36,6 @@ class Device:
     """
 
     config: Optional[DeviceConfig] = None
-
-    _pipeline: Optional[Pipeline] = None
 
     @abstractmethod
     def init(self) -> None:
@@ -131,28 +129,6 @@ class Device:
         Args:
             key (str): The name of the value to get
         """
-
-    @property
-    def sources(self) -> dict[str, "Source"]:
-        """Convenience method to access :attr:`.Pipeline.sources`"""
-        return self.pipeline.sources
-
-    @property
-    def transforms(self) -> dict[str, "Transform"]:
-        """Convenience method to access :attr:`.Pipeline.transforms`"""
-        return self.pipeline.transforms
-
-    @property
-    def sinks(self) -> dict[str, "Sink"]:
-        """Convenience method to access :attr:`.Pipeline.sinks`"""
-        return self.pipeline.sinks
-
-    @property
-    def pipeline(self) -> Pipeline:
-        """Instantiated Pipeline from pipeline config"""
-        if self._pipeline is None:
-            self._pipeline = Pipeline.from_config(self.config.pipeline)
-        return self._pipeline
 
     @classmethod
     def from_config(cls, config: DeviceConfig) -> Self:

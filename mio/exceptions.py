@@ -66,3 +66,13 @@ class ConfigurationMismatchError(ConfigurationError):
     """
     Mismatch between the fields in some config model and the fields in the model it is configuring
     """
+
+class PipelineError(Exception):
+    """
+    Base exception type for pipeline errors
+    """
+
+class PipelineRunningError(PipelineError, RuntimeError):
+    """
+    A pipeline has been requested to start, but it is already started!
+    """

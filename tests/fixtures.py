@@ -14,20 +14,20 @@ from mio.models.mixins import ConfigYAMLMixin, YamlDumper
 
 
 @pytest.fixture
-def wirefree() ->WireFreeMiniscope:
+def wirefree() -> WireFreeMiniscope:
     """
     SDCard with wirefree layout pointing to the sample data file
 
     """
     sd_path = Path(__file__).parent.parent / "data" / "wirefree_example.img"
-    sdcard = WireFreeMiniscope(drive=sd_path, layout="wirefree-sd-layout")
+    sdcard = WireFreeMiniscope(drive=sd_path, config="wirefree-default")
     return sdcard
 
 
 @pytest.fixture
 def wirefree_battery() -> WireFreeMiniscope:
     sd_path = Path(__file__).parent.parent / "data" / "wirefree_battery_sample.img"
-    sdcard = WireFreeMiniscope(drive=sd_path, layout="wirefree-sd-layout-battery")
+    sdcard = WireFreeMiniscope(drive=sd_path, config="wirefree-sd-layout-battery")
     return sdcard
 
 

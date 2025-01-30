@@ -4,23 +4,39 @@ Base ABCs for pipeline classes
 
 import sys
 from abc import abstractmethod
+from dataclasses import dataclass
 from datetime import datetime
 from graphlib import TopologicalSorter
-from typing import Any, ClassVar, Generic, Optional, TypeVar, Union, Unpack, final
+from typing import (
+    Any,
+    ClassVar,
+    Generic,
+    Optional,
+    TypeVar,
+    Union,
+    Unpack,
+    final,
+    Protocol,
+    TYPE_CHECKING,
+)
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from mio.exceptions import ConfigurationMismatchError
 from mio.models.models import MiniscopeConfig, PipelineModel
+from mio.models.mixins import ConfigYAMLMixin
 
 if sys.version_info < (3, 11):
-    from typing_extensions import Self, TypedDict
+    from typing_extensions import Self, TypedDict, NotRequired
 elif sys.version_info < (3, 12):
     from typing import Self
 
-    from typing_extensions import TypedDict
+    from typing_extensions import TypedDict, NotRequired
 else:
-    from typing import Self, TypedDict
+    from typing import Self, TypedDict, NotRequired
+
+if TYPE_CHECKING:
+    from mio.pipeline.runner import PipelineRunner
 
 T = TypeVar("T")
 """
@@ -54,7 +70,7 @@ class _NodeMap(TypedDict):
     target: str
 
 
-class NodeConfig(TypedDict):
+class NodeConfig(TypedDict, total=False):
     """
     Abstract parent TypedDict that each node inherits from to define
     what fields it needs to be configured.
@@ -78,7 +94,7 @@ class NodeSpecification(MiniscopeConfig):
     """The unique identifier of the node"""
     outputs: Optional[list[_NodeMap]] = None
     """List of Node IDs to be used as output"""
-    config: Optional[NodeConfig] = None
+    config: Optional[dict] = None
     """Additional configuration for this node, parameterized by a TypedDict for the class"""
     passed: Optional[dict[str, str]] = None
     """
@@ -152,12 +168,19 @@ class NodeSpecification(MiniscopeConfig):
     """
 
 
-class PipelineConfig(MiniscopeConfig):
+class _RequiredNode(TypedDict):
+    type: str
+    """Node type (as determined by its :attr:`.Node.name` attr"""
+    config: NotRequired[dict[str, Any]]
+    """Require that config values must be set to these values"""
+
+
+class PipelineConfig(MiniscopeConfig, ConfigYAMLMixin):
     """
     Configuration for the nodes within a pipeline
     """
 
-    required_nodes: ClassVar[Optional[dict[str, str]]] = None
+    required_nodes: ClassVar[Optional[dict[str, _RequiredNode]]] = None
     """
     id: type mapping that a subclass can use to require a set of node types 
     with specific IDs be present
@@ -170,9 +193,17 @@ class PipelineConfig(MiniscopeConfig):
     def validate_required_nodes(self) -> Self:
         """Ensure required nodes are present, if any"""
         if self.required_nodes is not None:
-            for id_, type_ in self.required_nodes.items():
-                assert id_ in self.nodes, f"Node ID {id_} not in {self.nodes.keys()}"
-                assert self.nodes[id_].type_ == type_, f"Node ID {id_} is not of type {type_}"
+            for id_, required in self.required_nodes.items():
+                assert id_ in self.nodes, f"Required node id {id_} not in {self.nodes.keys()}"
+                assert (
+                    self.nodes[id_].type_ == required["type"]
+                ), f"Node ID {id_} is not of type {required['type']}"
+                if "config" in required:
+                    for key, val in required["config"].items():
+                        assert (
+                            self.nodes[id_].config[key] == val
+                        ), f"Required node {id_} must have config value {key} set to {val}, "
+                        f"got {self.nodes[id_].config[key]} instead."
         return self
 
     @field_validator("nodes", mode="before")
@@ -291,17 +322,21 @@ class Node(PipelineModel, Generic[T, U]):
         """
         Map of all imported :attr:`.Node.name` names to node classes
         """
+        from mio import sinks, sources, transforms
+
         node_types = {}
         to_check = cls.__subclasses__()
         while to_check:
             node = to_check.pop()
-            if node.name in node_types:
+            if node not in (Sink, Source, Transform) and node.name in node_types:
                 raise ValueError(
                     f"Repeated node name identifier: {node.name}, found in:\n"
                     f"- {node_types[node.name]}\n- {node}"
                 )
-            node_types[node.name] = node
+
             to_check.extend(node.__subclasses__())
+            if node not in (Sink, Source, Transform):
+                node_types[node.name] = node
         return node_types
 
 
@@ -569,11 +604,69 @@ class Pipeline(PipelineModel):
         Raise ConfigurationMismatchError if missing keys, otherwise do nothing
         """
         required = cls.passed_values(config)
+
         for key in required:
-            if key not in passed:
+            if passed is None or key not in passed:
                 raise ConfigurationMismatchError(
                     f"Pipeline config requires these values to be passed:\n"
                     f"{required}\n"
                     f"But received passed values:\n"
                     f"{passed}"
                 )
+
+
+class _ConfigProtocol(Protocol):
+    """
+    Abstract protocol type to specify that classes consuming the PipelineMixin
+    must have some config attribute that specifies a pipeline
+    (without prescribing what that config object must be)
+    """
+
+    pipeline: Optional[PipelineConfig] = None
+
+
+@dataclass(kw_only=True)
+class PipelineMixin:
+    """Mixin for use with models that have pipelines!"""
+
+    config: _ConfigProtocol
+
+    _pipeline: Optional[Pipeline] = None
+    _runner: Optional["PipelineRunner"] = None
+
+    @property
+    def sources(self) -> dict[str, "Source"]:
+        """Convenience method to access :attr:`.Pipeline.sources`"""
+        return self.pipeline.sources
+
+    @property
+    def transforms(self) -> dict[str, "Transform"]:
+        """Convenience method to access :attr:`.Pipeline.transforms`"""
+        return self.pipeline.transforms
+
+    @property
+    def sinks(self) -> dict[str, "Sink"]:
+        """Convenience method to access :attr:`.Pipeline.sinks`"""
+        return self.pipeline.sinks
+
+    @property
+    def pipeline(self) -> Pipeline:
+        """Instantiated Pipeline from pipeline config"""
+        if self._pipeline is None:
+            self._pipeline = Pipeline.from_config(self.config.pipeline)
+        return self._pipeline
+
+    @property
+    def runner(self) -> "PipelineRunner":
+        """
+        A :class:`.PipelineRunner` that ... runs the :attr:`~.PipelineMixin.pipeline` !
+
+        By default, creates a :class:`.SynchronousRunner`,
+        and this property should be overridden by subclasses that want to specialize
+        runner instantiation.
+        """
+        from mio.pipeline.runner import SynchronousRunner
+
+        if self._runner is None:
+            self._runner = SynchronousRunner(self.pipeline)
+        return self._runner

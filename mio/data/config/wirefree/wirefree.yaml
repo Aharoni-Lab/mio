@@ -1,3 +1,5 @@
 id: wirefree-default
+mio_model: mio.devices.wirefree.WireFreeConfig
+mio_version: 0.6.1
 pipeline: wirefree-pipeline
 layout: wirefree-sd-layout

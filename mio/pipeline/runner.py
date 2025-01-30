@@ -10,8 +10,10 @@ from datetime import datetime
 from itertools import count
 from logging import Logger
 from typing import TYPE_CHECKING, Any, Optional, Self
+from threading import Event
 
 from mio import init_logger
+from mio.exceptions import PipelineRunningError
 from mio.models import Pipeline
 from mio.models.pipeline import Edge, Event, Node, Source
 
@@ -133,7 +135,12 @@ class PipelineRunner(ABC):
     @abstractmethod
     def start(self) -> None:
         """
-        Start processing data with the pipeline graph
+        Start processing data with the pipeline graph.
+
+        Implementations of this method must raise a :class:`.PipelineRunningError`
+        if the pipeline has already been started and is running,
+        (i.e. :meth:`.stop` has not been called,
+        or the pipeline has not exhausted itself)
         """
 
     @abstractmethod
@@ -141,6 +148,14 @@ class PipelineRunner(ABC):
         """
         Stop processing data with the pipeline graph
         """
+
+    @property
+    @abstractmethod
+    def running(self) -> bool:
+        """
+        Whether the pipeline is currently running
+        """
+        pass
 
     def gather_input(self, node: Node) -> Optional[dict[str, Any]]:
         """
@@ -187,33 +202,40 @@ class SynchronousRunner(PipelineRunner):
     Just run the nodes in topological order and return from return nodes.
     """
 
-    @contextmanager
-    def start(self) -> Generator[Self, None, None]:
+    def __init__(self):
+        self._running = Event()
+
+    def __enter__(self) -> Self:
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):  # noqa: ANN001
+        self.stop()
+
+    def start(self) -> Self:
         """
         Start processing data with the pipeline graph.
-
-        Returns a contextmanager that should be used like this:
-
-        .. code-block:: python
-
-            with sync_runner.start() as runner:
-                output = runner.process()
-                # do something...
-
         """
         # TODO: lock for re-entry
-        try:
-            for node in self.pipeline.nodes.values():
-                node.start()
-            yield self
-        finally:
-            self.stop()
+        if self._running.is_set():
+            raise PipelineRunningError("Pipeline is already running!")
+
+        self._running.set()
+        for node in self.pipeline.nodes.values():
+            node.start()
+        return self
 
     def stop(self) -> None:
         """Stop all nodes processing"""
         # TODO: lock to ensure we've been started
         for node in self.pipeline.nodes.values():
             node.stop()
+        self._running.clear()
+
+    @property
+    def running(self) -> bool:
+        """Whether the pipeline is currently running"""
+        return self._running.is_set()
 
     def process(self) -> Optional[dict[str, Any]]:
         """

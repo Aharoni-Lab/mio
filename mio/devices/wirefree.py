@@ -14,6 +14,7 @@ from tqdm import tqdm
 from mio import init_logger
 from mio.devices import DeviceConfig, Miniscope, RecordingCameraMixin
 from mio.exceptions import EndOfRecordingException, ReadHeaderException
+from mio.models import Pipeline
 from mio.models.data import Frame
 from mio.models.pipeline import PipelineConfig
 from mio.models.sdcard import SDLayout, SDMetadata
@@ -25,7 +26,8 @@ class WireFreePipeline(PipelineConfig):
     """Base skeleton pipeline for the wirefree miniscope"""
 
     required_nodes = {
-        "sdcard": "sd-file-source",
+        "sdcard": {"type": "sd-file-source"},
+        "return": {"type": "return", "config": {"key": "frame"}},
     }
 
 
@@ -68,6 +70,9 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
 
     def __post_init__(self) -> None:
         """post-init create private vars"""
+        if isinstance(self.config, str):
+            self.config = WireFreeConfig.from_any(self.config)
+
         self.layout = SDLayout.from_any(self.config.layout)
         self.logger = init_logger("WireFreeMiniscope")
 
@@ -117,10 +122,7 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
         When entered as context manager, the current position of the internal file
         descriptor
         """
-        if self._f is None:
-            return None
-
-        return self._f.tell()
+        return self._source.position
 
     @property
     def frame(self) -> Optional[int]:
@@ -201,106 +203,24 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
     # --------------------------------------------------
 
     def __enter__(self) -> "WireFreeMiniscope":
-        if self._f is not None:
-            raise RuntimeError("Cant enter context, and open the file twice!")
-
-        # init private attrs
-        # create an empty frame to hold our data!
-        self._array = np.zeros((self.metadata.width * self.metadata.height, 1), dtype=np.uint8)
-        self._pixel_count = 0
-        self._last_buffer_n = 0
-        self._frame = 0
-
-        self._f = open(self.drive, "rb")  # noqa: SIM115 - this is a context handler
-        # seek to the start of the data
-        self._f.seek(self.layout.sectors.data_pos, 0)
-        # store the 0th frame position
-        self.positions[0] = self.layout.sectors.data_pos
-
+        self.runner.start()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):  # noqa: ANN001
-        self._f.close()
-        self._f = None
-        self._frame = 0
+        self.runner.stop()
 
-    @overload
-    def read(self, return_header: Literal[True] = True) -> Frame: ...
-
-    @overload
-    def read(self, return_header: Literal[False] = False) -> np.ndarray: ...
-
-    def read(self, return_header: bool = False) -> Union[np.ndarray, Frame]:
+    def read(self) -> Frame:
         """
-        Read a single frame
-
-        Arguments:
-            return_header (bool): If `True`, return headers from individual buffers
-                (default `False`)
-
-        Return:
-            :class:`numpy.ndarray` ,
-            or a tuple(ndarray, List[:class:`~.SDBufferHeader`]) if `return_header`
-            is `True`
+        Read a single :class:`.Frame`
         """
-        if self._f is None:
-            raise RuntimeError(
-                "File is not open! Try entering the reader context by using it like "
-                "`with sdcard:`"
-            )
+        if not self.runner.running:
+            self.logger.debug("Starting runner implicitly by calling read")
+            self.runner.start()
 
-        self._array[:] = 0
-        pixel_count = 0
-        last_buffer_n = 0
-        headers = []
-        while True:
-            # stash position before reading header
-            last_position = self._f.tell()
-            try:
-                header = self._read_data_header(self._f)
-            except ValueError as e:
-                if "read length must be non-negative" in str(e):
-                    # end of file! Value error thrown because the dataHeader will be
-                    # blank,  and thus have a value of 0 for the header size, and we
-                    # can't read 0 from the card.
-                    self._f.seek(last_position, 0)
-                    raise EndOfRecordingException("Reached the end of the video!") from None
-                else:
-                    raise e
-            except IndexError as e:
-                if "index 0 is out of bounds for axis 0 with size 0" in str(e):
-                    # end of file if we are reading from a disk image without any
-                    # additional space on disk
-                    raise EndOfRecordingException("Reached the end of the video!") from None
-                else:
-                    raise e
-            except ReadHeaderException as e:
-                # if we are on the last frame, normal! signal end of iteration
-                if self._frame == self.frame_count - 1:
-                    raise EndOfRecordingException("Reached the end of the video!") from None
-                else:
-                    raise e
-
-            if header.frame_buffer_count == 0 and last_buffer_n > 0:
-                # we are in the next frame!
-                # rewind to the beginning of the header, and return
-                # the last_position is the start of the header for this frame
-                self._f.seek(last_position, 0)
-                self._frame += 1
-                self.positions[self._frame] = last_position
-                frame = np.reshape(self._array, (self.metadata.width, self.metadata.height))
-                if return_header:
-                    return Frame.model_construct(frame=frame, headers=headers)
-                else:
-                    return frame
-
-            # grab buffer data and stash
-            headers.append(header)
-            data = self._read_buffer(self._f, header)
-            data = self._trim(data, header.data_length)
-            self._array[pixel_count : pixel_count + header.data_length, 0] = data
-            pixel_count += header.data_length
-            last_buffer_n = header.frame_buffer_count
+        res = None
+        while res is None:
+            res: Optional[dict[Literal["frame"], Frame]] = self.runner.process()
+        return res["frame"]
 
     # --------------------------------------------------
     # Write methods
@@ -367,8 +287,8 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
                     while True:
                         # this is sort of an awkward stack, should probably make a
                         # generator version of `read`
-                        frame = self.read(return_header=False)
-                        writer.write(frame)
+                        frame = self.read()
+                        writer.write(frame.frame)
 
                         if progress:
                             pbar.update()
@@ -533,15 +453,24 @@ class WireFreeMiniscope(Miniscope, RecordingCameraMixin):
 
     def start(self) -> None:
         """start pipeline"""
-        raise NotImplementedError()
+        self.runner.start()
 
     def stop(self) -> None:
         """stop pipeline"""
-        raise NotImplementedError()
+        self.runner.stop()
 
     def join(self) -> None:
         """join pipeline"""
         raise NotImplementedError()
+
+    @property
+    def pipeline(self) -> Pipeline:
+        """Create pipeline, passing needed values"""
+        if self._pipeline is None:
+            self._pipeline = Pipeline.from_config(
+                self.config.pipeline, passed={"sd_path": self.drive}
+            )
+        return self._pipeline
 
     @property
     def excitation(self) -> float:

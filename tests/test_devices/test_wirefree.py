@@ -97,7 +97,7 @@ def test_relative_path():
     rel_path = abs_child.relative_to(abs_cwd)
 
     assert not rel_path.is_absolute()
-    sdcard = WireFreeMiniscope(drive=rel_path, layout="wirefree-sd-layout")
+    sdcard = WireFreeMiniscope(drive=rel_path)
 
     # check we can do something basic like read metadata
     assert sdcard.metadata is not None
@@ -108,7 +108,7 @@ def test_relative_path():
     # now try with an absolute path
     abs_path = rel_path.resolve()
     assert abs_path.is_absolute()
-    sdcard_abs = WireFreeMiniscope(drive=abs_path, layout="wirefree-sd-layout")
+    sdcard_abs = WireFreeMiniscope(drive=abs_path)
     assert sdcard_abs.metadata is not None
     assert sdcard_abs.drive.is_absolute()
 

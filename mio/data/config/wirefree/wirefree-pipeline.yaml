@@ -3,7 +3,7 @@ mio_model: mio.devices.wirefree.WireFreePipeline
 mio_version: v0.6.0
 
 nodes:
-  file:
+  sdcard:
     type: "sd-file-source"
     config:
       layout: "wirefree-sd-layout"

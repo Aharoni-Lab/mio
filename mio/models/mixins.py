@@ -3,6 +3,7 @@ Mixin classes that are to be used alongside specific models
 to use composition for functionality and inheritance for semantics.
 """
 
+import pdb
 import re
 import shutil
 from importlib.metadata import version
@@ -91,7 +92,7 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
 
     model_config = ConfigDict(validate_default=True)
 
-    id: ConfigID
+    id: Optional[ConfigID] = None
     mio_model: PythonIdentifier = Field(None, validate_default=True)
     mio_version: str = version("mio")
 
@@ -131,22 +132,26 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
 
         """
         globs = [src.rglob("*.y*ml") for src in cls.config_sources]
+
         for config_file in chain(*globs):
+            # if id == "wirefree-pipeline":
+            #     pdb.set_trace()
             try:
                 file_id = yaml_peek("id", config_file)
-                if file_id == id:
-                    from mio.logging import init_logger
-
-                    init_logger("config").debug(
-                        "Model for %s found at %s", cls._model_name(), config_file
-                    )
-                    return cls.from_yaml(config_file)
             except KeyError:
                 continue
 
+            if file_id == id:
+                from mio.logging import init_logger
+
+                init_logger("config").debug(
+                    "Model for %s found at %s", cls._model_name(), config_file
+                )
+                return cls.from_yaml(config_file)
+
         from mio import Config
 
-        raise KeyError(f"No config with id {id} found in {Config().config_dir}")
+        raise KeyError(f"No config with id {id} found in {cls.config_sources}")
 
     @classmethod
     def from_any(cls: Type[T], source: Union[ConfigSource, T]) -> T:
