@@ -9,6 +9,7 @@ noise_patch:
   enable: true
   method: gradient # gradient or mean_error
   threshold: 20
+  low_threshold: 2
   buffer_size: 5032
   buffer_split: 8
   diff_multiply: 1
