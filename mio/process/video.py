@@ -160,12 +160,28 @@ class NoisePatchProcessor(BaseVideoProcessor):
         if input_frame is None:
             return None
 
-        if self.noise_patch_config.enable and self.previous_frame is not None:
-            broken, noise_patch = self.noise_detect_helper.detect_frame_with_noisy_buffer(
+        if self.noise_patch_config.enable:
+            if self.noise_patch_config.method == "gradient":
+            # For the gradient method, analyze the first frame immediately
+                broken, noise_patch = self.noise_detect_helper.detect_frame_with_noisy_buffer(
                 input_frame,
-                self.previous_frame if self.noise_patch_config.method == "mean_error" else None,
+                None,  # No previous frame needed for gradient method
                 self.noise_patch_config,
             )
+            else:
+                # For the mean method, wait until the second frame to start analysis
+                if self.previous_frame is not None:
+                    broken, noise_patch = self.noise_detect_helper.detect_frame_with_noisy_buffer(
+                        input_frame,
+                        self.previous_frame,
+                        self.noise_patch_config,
+                )
+                else:
+                    # If it's the first frame and the method is mean_error, just store the frame
+                    self.previous_frame = input_frame
+                    self.append_output_frame(input_frame)
+                    return input_frame
+                
 
             # Handle noisy frames
             if not broken:
@@ -181,10 +197,8 @@ class NoisePatchProcessor(BaseVideoProcessor):
                 self.dropped_frame_indices.append(index)
             return None
 
-        elif self.noise_patch_config.enable and self.previous_frame is None:
-            self.previous_frame = input_frame
-            self.append_output_frame(input_frame)
-            return input_frame
+        self.append_output_frame(input_frame)
+        return input_frame
 
     @property
     def noise_patch_named_video(self) -> NamedVideo:
