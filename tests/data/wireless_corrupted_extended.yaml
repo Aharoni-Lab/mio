@@ -1,12 +1,12 @@
 frames: # frame indexing in cv2 starts from 0
-  check_pattern:
-    less_than_one_row:
+  check_pattern: #black and white high contrast noise
+    less_than_one_row: #<200 px up to one row broken (for a 200x200 pixel image)
       - 70
       - 116
       - 412
       - 681
       - 751
-    several_rows:
+    several_rows: #2-19 rows of pixels broken
       - 0
       - 3
       - 7
@@ -66,7 +66,7 @@ frames: # frame indexing in cv2 starts from 0
       - 825
       - 831
       - 871
-    one_block:
+    one_block: #>19 rows of pixels broken
       - 6
       - 40
       - 45
@@ -81,16 +81,16 @@ frames: # frame indexing in cv2 starts from 0
       - 754
       - 769
       - 798
-    several_blocks:
+    several_blocks: #in one frame several disctinct blocks of a frame are broken
       - 141
       - 158
       - 607
       - 793
       - 801
       - 868
-  blacked_out:
-    one_block:
+  blacked_out: #all black pixels
+    one_block: #several rows of pixels black
       - 17
       - 717
-    majority_of_frame:
+    majority_of_frame: # more than 25 rows of pixels of a frame broken
       - 18
