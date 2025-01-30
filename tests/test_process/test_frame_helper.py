@@ -40,7 +40,7 @@ class NoiseGroundTruth(BaseModel):
     [
         (str(DATA_DIR / "wireless_corrupted.avi"), str(DATA_DIR / "wireless_corrupted.yaml")),
         (
-            str(DATA_DIR / "wireless_corrupted_extended.avi"),
+            str(DATA_DIR / "wireless_corrupted_extended.mp4"),
             str(DATA_DIR / "wireless_corrupted_extended.yaml"),
         ),
     ],
