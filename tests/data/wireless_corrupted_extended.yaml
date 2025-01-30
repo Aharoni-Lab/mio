@@ -31,6 +31,7 @@ frames: # frame indexing in cv2 starts from 0
       - 501
       - 569
       - 579
+      - 582
       - 594
       - 595
       - 636

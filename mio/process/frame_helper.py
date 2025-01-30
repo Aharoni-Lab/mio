@@ -165,35 +165,19 @@ class NoiseDetectionHelper:
         config: NoisePatchConfig,
     ) -> Tuple[bool, np.ndarray]:
         """
-        Detect noise using local contrast (second derivative) within blocks.
+        Detect noise using local contrast (second derivative) in the x-dimension (along rows, across columns)
 
         Returns:
             Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy and the noise mask.
         """
-        height, width = current_frame.shape
-
-        block_height = config.buffer_size // width  # Block spans the entire width
-        block_height = max(1, block_height)  # Ensure at least one row per block
-
         noisy_mask = np.zeros_like(current_frame, dtype=np.uint8)
 
-        # Slide through the frame vertically in block_height steps
-        for i, y in enumerate(range(0, height, block_height)):
-            # select block and cast to int16 to avoid diffs wrapping around 0
-            block = current_frame[y : y + block_height, :].astype(np.int16)
+        diff_x = np.diff(current_frame.astype(np.int16), n=2, axis=1)
+        mean_second_diff = np.abs(diff_x).mean(axis=1)
+        noisy_mask[mean_second_diff > config.threshold, :] = 1
+        logger.debug(f"Row-wise means of second derivative: %s", mean_second_diff)
 
-            # second derivative in x & y for local contrast
-            diff_x = np.diff(block, n=2, axis=1)
-            diff_y = np.diff(block, n=2, axis=0)
-
-            mean_second_diff = (np.abs(diff_x).mean() + np.abs(diff_y).mean()) / 2
-            logger.debug(f"Mean second derivative for block {i}: {mean_second_diff}")
-
-            # Flag block as noisy if contrast exceeds the threshold
-            if mean_second_diff > config.threshold:
-                noisy_mask[y : y + block_height, :] = 1
-
-        # Determine if the frame is noisy (if any blocks are marked as noisy)
+        # Determine if the frame is noisy (if any rows are marked as noisy)
         frame_is_noisy = noisy_mask.any()
 
         return frame_is_noisy, noisy_mask
