@@ -80,27 +80,49 @@ class NoiseDetectionHelper:
         """
         logger.debug(f"Buffer size: {config.buffer_size}")
 
-        if config.method == "mean_error":
-            if previous_frame is None:
-                raise ValueError("mean_error requires a previous frame to compare against")
+        methods = [config.method]
+        if hasattr(config, "additional_methods") and isinstance(config.additional_methods, list):
+            methods.extend(config.additional_methods)
 
-            serialized_current = current_frame.flatten().astype(np.int16)
-            logger.debug(f"Serialized current frame size: {len(serialized_current)}")
+        logger.debug(f"Applying noise detection methods: {methods}")
 
-            serialized_previous = previous_frame.flatten().astype(np.int16)
-            logger.debug(f"Serialized previous frame size: {len(serialized_previous)}")
+        noisy_flag = False
+        combined_mask = np.zeros_like(current_frame, dtype=np.uint8)
 
-            split_size = config.buffer_size // config.buffer_split + 1
-            split_previous = self.split_by_length(serialized_previous, split_size)
-            split_current = self.split_by_length(serialized_current, split_size)
+        for method in methods:
+            if method == "mean_error":
+                if previous_frame is None:
+                    raise ValueError("mean_error requires a previous frame to compare against")
 
-            return self._detect_with_mean_error(split_current, split_previous, config)
+                serialized_current = current_frame.flatten().astype(np.int16)
+                serialized_previous = previous_frame.flatten().astype(np.int16)
 
-        elif config.method == "gradient":
-            return self._detect_with_gradient(current_frame, config)
-        else:
-            logger.error(f"Unsupported noise detection method: {config.method}")
-            raise ValueError(f"Unsupported noise detection method: {config.method}")
+                split_size = config.buffer_size // config.buffer_split + 1
+                split_previous = self.split_by_length(serialized_previous, split_size)
+                split_current = self.split_by_length(serialized_current, split_size)
+
+                noisy, mask = self._detect_with_mean_error(split_current, split_previous, config)
+
+            elif method == "gradient":
+                noisy, mask = self._detect_with_gradient(current_frame, config)
+
+            elif method == "black_pixels":
+                noisy, mask = self._detect_black_pixels(current_frame, config)
+
+            else:
+                logger.error(f"Unsupported noise detection method: {method}")
+                continue  # Skip unknown methods
+
+            if noisy:
+                logger.info(f"Frame detected as noisy using method: {method}")
+            else:
+                logger.debug(f"Frame passed as clean using method: {method}")
+
+            # Combine results
+            noisy_flag = noisy_flag or noisy
+            combined_mask = np.maximum(combined_mask, mask)
+
+        return noisy_flag, combined_mask
 
     def _detect_with_mean_error(
         self,
@@ -180,6 +202,55 @@ class NoiseDetectionHelper:
 
         # Determine if the frame is noisy (if any rows are marked as noisy)
         frame_is_noisy = noisy_mask.any()
+
+        return frame_is_noisy, noisy_mask
+
+    def _detect_black_pixels(
+        self,
+        current_frame: np.ndarray,
+        config: NoisePatchConfig,
+    ) -> Tuple[bool, np.ndarray]:
+        """
+        Detect black-out noise by checking for black pixels (value 0) over rows of pixels.
+
+        Returns:
+            Tuple[bool, np.ndarray]: A boolean indicating if the frame is corrupted and noise mask.
+        """
+        height, width = current_frame.shape
+        noisy_mask = np.zeros_like(current_frame, dtype=np.uint8)
+
+        # Read values from YAML config
+        consecutive_threshold = (
+            config.black_pixel_consecutive_threshold
+        )  # How many consecutive pixels must be black
+        black_pixel_value_threshold = (
+            config.black_pixel_value_threshold
+        )  # Max pixel value considered "black"
+
+        logger.debug(f"Using black pixel threshold: <= {black_pixel_value_threshold}")
+        logger.debug(f"Consecutive black pixel threshold: {consecutive_threshold}")
+
+        frame_is_noisy = False  # Track if frame should be discarded
+
+        for y in range(height):
+            row = current_frame[y, :]  # Extract row
+            consecutive_count = 0  # Counter for consecutive black pixels
+
+            for x in range(width):
+                if row[x] <= black_pixel_value_threshold:  # Check if pixel is "black"
+                    consecutive_count += 1
+                else:
+                    consecutive_count = 0  # Reset if a non-black pixel is found
+
+                # If we exceed the allowed threshold of consecutive black pixels, discard the frame
+                if consecutive_count >= consecutive_threshold:
+                    logger.debug(
+                        f"Frame noisy due to {consecutive_count} consecutive black pixels "
+                        f"in row {y}."
+                    )
+                    noisy_mask[y, :] = 1  # Mark row as noisy
+                    frame_is_noisy = True
+                    break  # No need to check further in this row
 
         return frame_is_noisy, noisy_mask
 
