@@ -3,6 +3,14 @@ mio_model: mio.models.process.DenoiseConfig
 mio_version: 0.6.1
 noise_patch:
   enable: true
+  method: gradient #gradient or mean_error or black_pixels
+  additional_methods:
+    - black_pixels
+  threshold: 20 #for first method
+  black_pixel_consecutive_threshold: 5 # If 5 consecutive pixels in a row are black, discard the frame
+  black_pixel_value_threshold: 16 # Any pixel value ≤ 16 is considered "black"
+  buffer_size: 5032
+  buffer_split: 8
   method: gradient # gradient or mean_error
   threshold: 20
   device_config_id: wireless-200px

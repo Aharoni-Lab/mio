@@ -2,7 +2,7 @@
 Module for preprocessing data.
 """
 
-from typing import Literal, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -55,6 +55,10 @@ class NoisePatchConfig(BaseModel):
         "gradient: Detection based on the gradient of the frame row."
         "mean_error: Detection based on the mean error with the same row of the previous frame.",
     )
+    additional_methods: Optional[list[str]] = Field(
+        default=list,
+        description="Additional noise detection methods to apply after the primary method.",
+    )
     threshold: float = Field(
         default=20,
         description="Threshold for detecting noise."
@@ -66,6 +70,18 @@ class NoisePatchConfig(BaseModel):
         description="ID of the stream device configuration used for aquiring the video."
         "This is used in the mean_error method to compare frames"
         " in the units of data transfer buffers.",
+    black_pixel_consecutive_threshold: int = Field(
+        default=5,
+        description="Number of consecutive black pixels required to classify a row as noisy.",
+    )
+    black_pixel_value_threshold: int = Field(
+        default=20,
+        description="Pixel intensity value below which a pixel is considered 'black'.",
+    )
+    buffer_size: int = Field(
+        default=5032,
+        description="Size of the buffers composing the image."
+        "This premises that the noisy area will appear in units of buffer_size.",
     )
     buffer_split: int = Field(
         default=1,

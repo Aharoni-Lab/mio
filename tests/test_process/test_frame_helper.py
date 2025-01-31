@@ -49,6 +49,7 @@ class NoiseGroundTruth(BaseModel):
     "noise_detection_method,noise_category",
     [
         ("gradient", GroundTruthCategory.check_pattern),
+        ("gradient", GroundTruthCategory.blacked_out),
         ("mean_error", GroundTruthCategory.check_pattern),
     ],
 )
