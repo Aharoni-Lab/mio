@@ -5,7 +5,7 @@ noise_patch:
   enable: true
   method: gradient # gradient or mean_error
   threshold: 20
-  buffer_size: 5032 # Better to get this from device configuration
+  device_config_id: wireless-200px
   buffer_split: 8
   diff_multiply: 1
   output_result: true

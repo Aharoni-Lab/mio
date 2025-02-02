@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from mio.models import MiniscopeConfig
 from mio.models.mixins import ConfigYAMLMixin
+from mio.models.stream import StreamDevConfig
 
 
 class InteractiveDisplayConfig(BaseModel):
@@ -69,10 +70,9 @@ class NoisePatchConfig(BaseModel):
         default=20,
         description="Threshold for detecting noise.",
     )
-    buffer_size: int = Field(
-        default=5032,
-        description="Size of the buffers composing the image."
-        "This premises that the noisy area will appear in units of buffer_size.",
+    device_config_id: Optional[str] = Field(
+        default=None,
+        description="ID of the stream device configuration.",
     )
     buffer_split: int = Field(
         default=1,
@@ -98,6 +98,17 @@ class NoisePatchConfig(BaseModel):
         default=True,
         description="Whether to output the noisy frames as an independent video stream.",
     )
+
+    _device_config: Optional[StreamDevConfig] = None
+
+    @property
+    def device_config(self) -> StreamDevConfig:
+        """
+        Get the stream device configuration.
+        """
+        if self._device_config is None:
+            self._device_config = StreamDevConfig.from_any(self.device_config_id)
+        return self._device_config
 
 
 class FreqencyMaskingConfig(BaseModel):

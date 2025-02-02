@@ -47,7 +47,14 @@ class NoiseDetectionHelper:
             Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy,
                 and a spatial mask showing noisy regions.
         """
-        logger.debug(f"Buffer size: {config.buffer_size}")
+        if config.device_config is not None:
+            px_per_buffer = config.device_config.px_per_buffer
+        else:
+            px_per_buffer = 1000
+            logger.warning(
+                f"Device configuration not found. Using default buffer size: {px_per_buffer}"
+            )
+        logger.debug(f"Buffer size: {px_per_buffer}")
 
         frame_width = current_frame.shape[1]
         frame_height = current_frame.shape[0]
@@ -63,7 +70,7 @@ class NoiseDetectionHelper:
             serialized_previous = previous_frame.flatten().astype(np.int16)
             logger.debug(f"Serialized previous frame size: {len(serialized_previous)}")
 
-            split_size = config.buffer_size // config.buffer_split + 1
+            split_size = px_per_buffer // config.buffer_split + 1
 
             split_shape = []
 
