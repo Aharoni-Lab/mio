@@ -170,7 +170,6 @@ class InteractiveDisplayConfig(BaseModel):
     )
 
 
-
 class DenoiseConfig(MiniscopeConfig, ConfigYAMLMixin):
     """
     Configuration for denoising a video.
