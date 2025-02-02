@@ -35,10 +35,12 @@ class NamedBaseFrame(BaseModel):
         """
         raise NotImplementedError("Method not implemented.")
 
+
 class NamedFrame(NamedBaseFrame):
     """
     Pydantic model to store an image or a video together with a name.
     """
+
     frame: Optional[np.ndarray] = Field(
         None,
         description="Frame data, if provided.",
@@ -55,11 +57,39 @@ class NamedFrame(NamedBaseFrame):
             raise ValueError("No frame data provided.")
         cv2.imwrite(str(output_path.with_suffix(".png")), self.frame)
         logger.info(
-            f"Writing frame to {output_path}.png: {self.frame.shape[1]}x{self.frame.shape[0]}")
+            f"Writing frame to {output_path}.png: {self.frame.shape[1]}x{self.frame.shape[0]}"
+        )
+
+    def display(self, binary: bool = False) -> None:
+        """
+        Display the frame data.
+
+        Parameters
+        ----------
+        binary : bool
+            If True, the frame will be scaled to the full range of uint8.
+        """
+        if self.frame is None:
+            raise ValueError("No frame data provided.")
+
+        frame_to_display = self.frame
+        if binary:
+            frame_to_display = cv2.normalize(
+                self.frame, None, 0, np.iinfo(np.uint8).max, cv2.NORM_MINMAX
+            ).astype(np.uint8)
+        cv2.imshow(self.name, frame_to_display)
+        while True:
+            if cv2.waitKey(1) == 27:
+                break
+        cv2.destroyAllWindows()
+        cv2.waitKey(1)  # Extra waitKey to properly close the window
+
+
 class NamedVideo(NamedBaseFrame):
     """
     Pydantic model to store a video together with a name.
     """
+
     video: Optional[List[np.ndarray]] = Field(
         None,
         description="List of frames.",

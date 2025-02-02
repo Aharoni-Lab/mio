@@ -97,14 +97,14 @@ class VideoReader:
         The height of the video frames.
         """
         return int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    
+
     @property
     def width(self) -> int:
         """
         The width of the video frames.
         """
         return int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    
+
     @property
     def cap(self) -> cv2.VideoCapture:
         """

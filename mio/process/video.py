@@ -80,9 +80,7 @@ class BaseVideoProcessor:
         Export the video to a file.
         """
         if not self.output_video:
-            logger.warning(
-                f"No output video available for export in {self.name}. Skipping export."
-            )
+            logger.warning(f"No output video available for export in {self.name}. Skipping export.")
             return
 
         if self.output_enable:
@@ -553,6 +551,9 @@ def denoise_run(
         width=reader.width,
         height=reader.height,
     )
+
+    if config.frequency_masking.display_mask:
+        freq_mask_processor.freq_mask_named_frame.display()
 
     try:
         for index, frame in reader.read_frames():

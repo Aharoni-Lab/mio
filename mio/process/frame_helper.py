@@ -53,7 +53,7 @@ class NoiseDetectionHelper:
         frame_height = current_frame.shape[0]
 
         if config.method == "mean_error":
-            
+
             if previous_frame is None:
                 raise ValueError("mean_error requires a previous frame to compare against")
 
@@ -80,7 +80,8 @@ class NoiseDetectionHelper:
                 split_previous=split_previous,
                 width=frame_width,
                 height=frame_height,
-                config=config)
+                config=config,
+            )
 
         elif config.method == "gradient":
             return self._detect_with_gradient(current_frame, config)
@@ -246,7 +247,7 @@ class FrequencyMaskHelper:
         ] = 0
 
         # Define spacial low pass filter
-        y, x = np.ogrid[: height, : width]
+        y, x = np.ogrid[:height, :width]
         center_mask = (x - ccol) ** 2 + (
             y - crow
         ) ** 2 <= freq_mask_config.spatial_LPF_cutoff_radius**2
@@ -254,14 +255,8 @@ class FrequencyMaskHelper:
         # Restore the center circular area to allow low frequencies to pass
         mask[center_mask] = 1
 
-        # Visualize the mask if needed. Might delete later.
-        if freq_mask_config.display_mask:
-            cv2.imshow("Mask", mask * np.iinfo(np.uint8).max)
-            while True:
-                if cv2.waitKey(1) == 27:  # Press 'Esc' key to exit visualization
-                    break
-            cv2.destroyAllWindows()
         return mask
+
 
 class ZStackHelper:
     """
