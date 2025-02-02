@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 import numpy as np
 
-from mio.models.frames import NamedFrame
+from mio.models.frames import NamedVideo
 from mio.plots.video import VideoPlotter
 
 class TestVideoPlotter(unittest.TestCase):
@@ -10,8 +10,8 @@ class TestVideoPlotter(unittest.TestCase):
     def setUp(self):
         # Create a list of NamedFrame instances with dummy data
         self.named_frames = [
-            NamedFrame(name="Video1", frame=[np.random.rand(64, 64) * 255 for _ in range(50)]),
-            NamedFrame(name="Video2", frame=[np.random.rand(64, 64) * 255 for _ in range(50)]),
+            NamedVideo(name="Video1", video=[np.random.rand(64, 64) * 255 for _ in range(50)]),
+            NamedVideo(name="Video2", video=[np.random.rand(64, 64) * 255 for _ in range(50)]),
         ]
 
     def test_no_matplotlib_raises_exception(self):

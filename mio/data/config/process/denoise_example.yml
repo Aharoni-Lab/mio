@@ -1,15 +1,11 @@
 id: denoise_example
 mio_model: mio.models.process.DenoiseConfig
 mio_version: 0.6.1
-interactive_display:
-  enable: true
-  start_frame: 40
-  end_frame: 140
 noise_patch:
   enable: true
   method: gradient # gradient or mean_error
   threshold: 20
-  buffer_size: 5032
+  buffer_size: 5032 # Better to get this from device configuration
   buffer_split: 8
   diff_multiply: 1
   output_result: true
@@ -24,12 +20,16 @@ frequency_masking:
   display_mask: true
   output_mask: true
   output_result: true
-  output_freq_domain: false
+  output_freq_domain: true
 minimum_projection:
   enable: true
   normalize: true
   output_result: true
   output_min_proj: true
+interactive_display:
+  enable: true
+  start_frame: 40
+  end_frame: 140
 end_frame: -1 #-1 means all frames
 output_result: true
 output_dir: user_data/output

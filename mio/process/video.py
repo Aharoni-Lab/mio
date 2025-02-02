@@ -356,7 +356,7 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
         """
         if self.freq_mask_config.output_freq_domain:
             logger.info(f"Exporting {self.name} frequency domain to {self.output_dir}")
-            self.freq_domain_named_frame.export(
+            self.freq_domain_named_video.export(
                 output_path=self.output_dir / f"{self.name}",
                 fps=20,
                 suffix=True,
@@ -592,8 +592,8 @@ def denoise_run(
             videos = [
                 noise_patch_processor.output_named_video,
                 freq_mask_processor.output_named_video,
+                freq_mask_processor.freq_domain_named_video,
                 minimum_projection_processor.min_proj_named_frame,
-                freq_mask_processor.output_named_video,
             ]
             VideoPlotter.show_video_with_controls(
                 videos,

@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 import numpy as np
 from pathlib import Path
 
-from mio.models.frames import NamedFrame
+from mio.models.frames import NamedFrame, NamedVideo
 
 class TestNamedFrame(unittest.TestCase):
 
@@ -18,7 +18,7 @@ class TestNamedFrame(unittest.TestCase):
         # Create instance of NamedFrame with a single image
         named_frame = NamedFrame(name=self.name, frame=self.image_frame)
         # Call the export method
-        named_frame.export("output_path", 20, True)
+        named_frame.export("output_path", True)
         # Check that cv2.imwrite was called correctly
         mock_imwrite.assert_called_once_with("output_path_test.png", self.image_frame)
 
@@ -29,9 +29,9 @@ class TestNamedFrame(unittest.TestCase):
         mock_init_video.return_value = mock_writer
 
         # Create instance of NamedFrame with a video
-        named_frame = NamedFrame(name=self.name, frame=self.video_frames)
+        named_frame = NamedVideo(name=self.name, video=self.video_frames)
         # Call the export method
-        named_frame.export("output_path", 20, True)
+        named_frame.export(output_path="output_path", fps=20, suffix=True)
 
         # Verify init_video was called with correct parameters
         mock_init_video.assert_called_once_with(
