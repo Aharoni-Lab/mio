@@ -84,14 +84,35 @@ class VideoReader:
         """
         self.video_path = video_path
         self.cap = cv2.VideoCapture(str(video_path))
-        self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.logger = init_logger("VideoReader")
 
         if not self.cap.isOpened():
             raise ValueError(f"Could not open video at {video_path}")
 
         self.logger.info(f"Opened video at {video_path}")
+
+    @property
+    def height(self) -> int:
+        """
+        The height of the video frames.
+        """
+        return int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    @property
+    def width(self) -> int:
+        """
+        The width of the video frames.
+        """
+        return int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    
+    @property
+    def cap(self) -> cv2.VideoCapture:
+        """
+        The OpenCV video capture object.
+        """
+        if self._cap is None:
+            self._cap = cv2.VideoCapture(str(self.video_path))
+        return self._cap
 
     def read_frames(self) -> Iterator[Tuple[int, np.ndarray]]:
         """
@@ -115,6 +136,7 @@ class VideoReader:
         Release the video capture object.
         """
         self.cap.release()
+        self._cap = None
 
     def __del__(self):
         with contextlib.suppress(AttributeError):

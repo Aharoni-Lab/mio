@@ -160,6 +160,4 @@ cython_debug/
 wirefree_example.mp4
 wirefree_example.avi
 .pdm-python
-user_dir/*
-!user_dir/.gitkeep
-
+user_data/*
