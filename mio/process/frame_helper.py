@@ -76,8 +76,9 @@ class NoiseDetectionHelper:
 
             pixel_index = 0
             while pixel_index < len(serialized_current):
-                split_shape.append[split_size]
+                split_shape.append(split_size)
                 pixel_index += split_size
+            logger.info(f"Split shape: {split_shape}")
 
             split_previous = np.split(serialized_previous, split_shape)
             split_current = np.split(serialized_current, split_shape)

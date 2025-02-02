@@ -595,8 +595,9 @@ def denoise_run(
                 freq_mask_processor.freq_domain_named_video,
                 minimum_projection_processor.min_proj_named_frame,
             ]
-            VideoPlotter.show_video_with_controls(
-                videos,
+            video_plotter = VideoPlotter(
+                videos=videos,
                 start_frame=config.interactive_display.start_frame,
                 end_frame=config.interactive_display.end_frame,
             )
+            video_plotter.show()

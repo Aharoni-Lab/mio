@@ -4,6 +4,8 @@ Plotting functions for video streams and frames.
 
 from typing import List, Union
 
+import numpy as np
+
 from mio import init_logger
 from mio.models.frames import NamedFrame, NamedVideo
 
@@ -25,117 +27,154 @@ logger = init_logger("videoplot")
 class VideoPlotter:
     """
     Class to display video streams and static images.
+
+    Parameters
+    ----------
+    videos : list
+        List of NamedFrame or NamedVideo instances.
+    start_frame : int
+        Start frame index.
+    end_frame : int
+        End frame index.
+    fps : int, optional
+        Frames per second, by default 20.
     """
 
-    @staticmethod
-    def show_video_with_controls(
+    def __init__(
+        self,
         videos: List[Union[NamedFrame, NamedVideo]],
         start_frame: int,
         end_frame: int,
         fps: int = 20,
-    ) -> None:
+    ):
+        self.fps = fps
+        self.videos = videos
+        self.start_frame = start_frame
+        self.end_frame = end_frame
+        self._titles = None
+        self.video_frames = self._init_video_frames()
+        self.num_frames = max(len(stream) for stream in self.video_frames)
+        self.playing = False
+        self.fig, self.axes = plt.subplots(1, len(self.video_frames), figsize=(20, 5))
+        self.frame_displays = self._init_video_displays()
+        self.slider, self.button = self._init_controls()
+
+    def _init_video_frames(self) -> List[List]:
+        video_frames = [None] * len(self.videos)
+        for i, video in enumerate(self.videos):
+            if isinstance(video, NamedFrame):
+                video_frames[i] = [video.frame]
+            elif isinstance(video, NamedVideo):
+                video_frames[i] = video.video[self.start_frame : self.end_frame]
+        return video_frames
+
+    @property
+    def titles(self) -> List[str]:
         """
-        Plot multiple video streams or static images side-by-side.
-        Can play/pause and navigate frames.
+        Get the titles of the videos from the NamedFrame or NamedVideo instances.
+
+        Returns
+        -------
+        titles : list
+            List of video titles.
+        """
+        if self._titles is None:
+            self._titles = [video.name for video in self.videos]
+        return self._titles
+
+    def _init_video_displays(self) -> List:
+        """
+        Initialize the video displays.
+        """
+        frame_displays = []
+        for idx, ax in enumerate(self.axes):
+            initial_frame = self.video_frames[idx][0]
+            frame_display = ax.imshow(
+                initial_frame, cmap="gray", vmin=0, vmax=np.iinfo(np.uint8).max
+            )
+            frame_displays.append(frame_display)
+            if self.titles:
+                ax.set_title(self.videos[idx].name)
+            ax.axis("off")
+        return frame_displays
+
+    def _init_controls(self) -> tuple:
+        """
+        Initialize the slider and play/pause button.
+
+        Returns
+        -------
+        slider : matplotlib.widgets.Slider
+            Slider to select the frame index.
+        button : matplotlib.widgets.Button
+            Button to toggle play/pause.
+        """
+        ax_slider = plt.axes([0.1, 0.1, 0.65, 0.05], facecolor="lightgoldenrodyellow")
+        slider = Slider(
+            ax=ax_slider, label="Frame", valmin=0, valmax=self.num_frames - 1, valinit=0, valstep=1
+        )
+        slider.on_changed(self.on_slider_change)
+
+        ax_button = plt.axes([0.8, 0.1, 0.1, 0.05])
+        button = Button(ax_button, "Play/Pause")
+        button.on_clicked(self.toggle_play)
+
+        return slider, button
+
+    def toggle_play(self, event: KeyEvent) -> None:  # type: ignore
+        """
+        Toggle the play/pause state of the video.
+        """
+        self.playing = not self.playing
+
+    def on_slider_change(self, val: float) -> None:
+        """
+        Update the frame display based on the slider value.
 
         Parameters
         ----------
-        videos : NamedFrame
-            NamedFrame object containing video data and names.
-        start_frame : int
-            Starting frame index for the video display.
-        end_frame : int
-            Ending frame index for the video display.
-        fps : int, optional
-            Frames per second for the video, by default 20
+        val : float
+            Slider value.
         """
-        if plt is None:
-            raise ModuleNotFoundError(
-                "matplotlib is not a required dependency of miniscope-io, to use it, "
-                "install it manually or install miniscope-io with `pip install miniscope-io[plot]`"
-            )
+        index = int(self.slider.val)
+        self.update_frame(index)
 
-        # Wrap static images in lists to handle them uniformly
-        video_frames = [None] * len(videos)
-        for i in range(len(videos)):
-            if isinstance(videos[i], NamedFrame):
-                video_frames[i] = [videos[i].frame]
-            elif isinstance(videos[i], NamedVideo):
-                video_frames[i] = videos[i].video
+    def update_frame(self, index: int) -> None:
+        """
+        Update the frame display based on the given index.
 
-        titles = [video.name for video in videos]
+        Parameters
+        ----------
+        index : int
+            Index of the frame to display.
+        """
+        for idx, frame_display in enumerate(self.frame_displays):
+            if index < len(self.video_frames[idx]):
+                frame = self.video_frames[idx][index]
+            else:
+                frame = self.video_frames[idx][-1]
+            frame_display.set_data(frame)
+        self.fig.canvas.draw_idle()
 
-        num_streams = len(video_frames)
+    def animate(self, i: int) -> None:
+        """
+        Update the frame display for the animation.
 
-        logger.info(f"Displaying {num_streams} video streams.")
-        if end_frame > start_frame:
-            logger.info(f"Displaying frames {start_frame} to {end_frame}.")
-            for stream_index in range(len(video_frames)):
-                logger.info(f"Stream length: {len(video_frames[stream_index])}")
-                if len(video_frames[stream_index]) > 1:
-                    video_frames[stream_index] = video_frames[stream_index][start_frame:end_frame]
-                    logger.info(f"Trimmed stream length: {len(video_frames[stream_index])}")
+        Parameters
+        ----------
+        i : int
+            Frame index.
+        """
+        if self.playing:
+            current_frame = int(self.slider.val)
+            next_frame = (current_frame + 1) % self.num_frames
+            self.slider.set_val(next_frame)
 
-        num_frames = max(len(stream) for stream in video_frames)
-        logger.info(f"Max stream length: {num_frames}")
-
-        fig, axes = plt.subplots(1, num_streams, figsize=(20, 5))
-
-        frame_displays = []
-        for idx, ax in enumerate(axes):
-            initial_frame = video_frames[idx][0]
-            frame_display = ax.imshow(initial_frame, cmap="gray", vmin=0, vmax=255)
-            frame_displays.append(frame_display)
-            if titles:
-                ax.set_title(titles[idx])
-            ax.axis("off")
-
-        # Slider
-        ax_slider = plt.axes([0.1, 0.1, 0.65, 0.05], facecolor="lightgoldenrodyellow")
-        slider = Slider(
-            ax=ax_slider, label="Frame", valmin=0, valmax=num_frames - 1, valinit=0, valstep=1
+    def show(self) -> None:
+        """
+        Display the video stream with controls.
+        """
+        self.ani = animation.FuncAnimation(
+            self.fig, self.animate, frames=self.num_frames, interval=1000 // self.fps, blit=False
         )
-
-        playing = [False]  # Use a mutable object to track play state
-        ax_button = plt.axes([0.8, 0.1, 0.1, 0.05])
-        button = Button(ax_button, "Play/Pause")
-
-        # Callback to toggle play/pause
-        def toggle_play(event: KeyEvent) -> None:
-            playing[0] = not playing[0]
-
-        button.on_clicked(toggle_play)
-
-        # Update function for the slider and frame displays
-        def update_frame(index: int) -> None:
-            for idx, frame_display in enumerate(frame_displays):
-                # Repeat last frame for static images or when the index is larger than stream length
-                if index < len(video_frames[idx]):
-                    frame = video_frames[idx][index]
-                else:
-                    frame = video_frames[idx][-1]  # Keep showing last frame for shorter streams
-                frame_display.set_data(frame)
-            fig.canvas.draw_idle()
-
-        # Slider update callback
-        def on_slider_change(val: float) -> None:
-            index = int(slider.val)
-            update_frame(index)
-
-        # Connect the slider update function
-        slider.on_changed(on_slider_change)
-
-        # Animation function
-        def animate(i: int) -> None:
-            if playing[0]:
-                current_frame = int(slider.val)
-                next_frame = (current_frame + 1) % num_frames
-                slider.set_val(next_frame)  # This will also trigger on_slider_change
-
-        # Use FuncAnimation to update the figure at the specified FPS
-        # This needs to be stored in a variable to prevent animation getting deleted
-        ani = animation.FuncAnimation(  # noqa: F841
-            fig, animate, frames=num_frames, interval=1000 // fps, blit=False
-        )
-
         plt.show()

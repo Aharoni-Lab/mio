@@ -14,11 +14,6 @@ class TestVideoPlotter(unittest.TestCase):
             NamedVideo(name="Video2", video=[np.random.rand(64, 64) * 255 for _ in range(50)]),
         ]
 
-    def test_no_matplotlib_raises_exception(self):
-        with patch('mio.plots.video.plt', None):
-            with self.assertRaises(ModuleNotFoundError):
-                VideoPlotter.show_video_with_controls(self.named_frames, 0, 10)
-
     @patch('mio.plots.video.plt.show')
     @patch('mio.plots.video.plt.subplots')
     @patch('mio.plots.video.Slider')
@@ -29,8 +24,9 @@ class TestVideoPlotter(unittest.TestCase):
         mock_figure = MagicMock()
         mock_subplots.return_value = (mock_figure, mock_axes)
         
-        # Call the method under test
-        VideoPlotter.show_video_with_controls(self.named_frames, 0, 10)
+        # Instantiate VideoPlotter and call show method
+        video_plotter = VideoPlotter(self.named_frames, 0, 10)
+        video_plotter.show()
 
         # Ensure subplots were created
         mock_subplots.assert_called_once()
