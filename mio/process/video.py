@@ -86,7 +86,7 @@ class BaseVideoProcessor:
         if self.output_enable:
             logger.info(f"Exporting {self.name} video to {self.output_dir}")
             self.output_named_video.export(
-                output_path=self.output_dir / f"{self.name}",
+                output_path=self.output_dir / "output",
                 fps=20,
                 suffix=True,
             )
@@ -532,18 +532,18 @@ def denoise_run(
         output_dir.mkdir(parents=True)
 
     raw_frame_processor = PassThroughProcessor(
-        name=pathstem + "raw",
+        name=pathstem + "_raw",
         output_dir=output_dir,
     )
 
     output_frame_processor = PassThroughProcessor(
-        name=pathstem + "output",
+        name=pathstem + "_output",
         output_dir=output_dir,
     )
 
     noise_patch_processor = NoisePatchProcessor(
         output_dir=output_dir,
-        name=pathstem + "patch",
+        name=pathstem + "_patch",
         noise_patch_config=config.noise_patch,
         width=reader.width,
         height=reader.height,
@@ -551,7 +551,7 @@ def denoise_run(
 
     freq_mask_processor = FreqencyMaskProcessor(
         output_dir=output_dir,
-        name=pathstem + "freq_mask",
+        name=pathstem + "_freq_mask",
         freq_mask_config=config.frequency_masking,
         width=reader.width,
         height=reader.height,
