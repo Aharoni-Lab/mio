@@ -49,7 +49,7 @@ class NoiseGroundTruth(BaseModel):
     "noise_detection_method,noise_category",
     [
         ("gradient", GroundTruthCategory.check_pattern),
-        ("mean_error", GroundTruthCategory.blacked_out),
+        ("mean_error", GroundTruthCategory.check_pattern),
     ],
 )
 def test_noise_detection_contrast(video, ground_truth, noise_detection_method, noise_category):

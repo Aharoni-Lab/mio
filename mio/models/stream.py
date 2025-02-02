@@ -316,7 +316,7 @@ class StreamDevConfig(MiniscopeConfig, ConfigYAMLMixin):
         px_per_word = 32 / self.pix_depth
         if self._px_per_buffer is None:
             self._px_per_buffer = (
-                self.buffer_block_length * self.block_size * px_per_word
+                self.buffer_block_length * self.block_size
                 - self.header_len / self.pix_depth
                 - px_per_word * self.dummy_words
             )

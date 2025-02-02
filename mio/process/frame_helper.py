@@ -56,38 +56,12 @@ class NoiseDetectionHelper:
             )
         logger.debug(f"Buffer size: {px_per_buffer}")
 
-        frame_width = current_frame.shape[1]
-        frame_height = current_frame.shape[0]
-
         if config.method == "mean_error":
-
             if previous_frame is None:
                 raise ValueError("mean_error requires a previous frame to compare against")
-
-            serialized_current = current_frame.flatten().astype(np.int16)
-            logger.debug(f"Serialized current frame size: {len(serialized_current)}")
-
-            serialized_previous = previous_frame.flatten().astype(np.int16)
-            logger.debug(f"Serialized previous frame size: {len(serialized_previous)}")
-
-            split_size = px_per_buffer // config.buffer_split + 1
-
-            split_shape = []
-
-            pixel_index = 0
-            while pixel_index < len(serialized_current):
-                split_shape.append(split_size)
-                pixel_index += split_size
-            logger.info(f"Split shape: {split_shape}")
-
-            split_previous = np.split(serialized_previous, split_shape)
-            split_current = np.split(serialized_current, split_shape)
-
             return self._detect_with_mean_error(
-                split_current=split_current,
-                split_previous=split_previous,
-                width=frame_width,
-                height=frame_height,
+                current_frame=current_frame,
+                previous_frame=previous_frame,
                 config=config,
             )
 
@@ -97,63 +71,83 @@ class NoiseDetectionHelper:
             logger.error(f"Unsupported noise detection method: {config.method}")
             raise ValueError(f"Unsupported noise detection method: {config.method}")
 
+    def _get_buffer_shape(
+        self, frame_width: int, frame_height: int, px_per_buffer: int
+    ) -> list[int]:
+        """
+        Get the shape of each buffer in a frame.
+
+        Parameters:
+            frame_width (int): The width of the frame.
+            frame_height (int): The height of the frame.
+            px_per_buffer (int): The number of pixels per buffer.
+
+        Returns:
+            list[int]: The shape of each buffer in the frame.
+        """
+        buffer_shape = []
+
+        pixel_index = 0
+        while pixel_index < frame_width * frame_height:
+            buffer_shape.append(int(pixel_index))
+            pixel_index += px_per_buffer
+        logger.debug(f"Split shape: {buffer_shape}")
+
+        return buffer_shape
+
     def _detect_with_mean_error(
         self,
-        split_current: list[np.ndarray],
-        split_previous: list[np.ndarray],
-        width: int,
-        height: int,
+        current_frame: np.ndarray,
+        previous_frame: np.ndarray,
         config: NoisePatchConfig,
     ) -> Tuple[bool, np.ndarray]:
         """
-        Detect noise using mean error between current and previous buffers.
+        Detect noise using mean error between current and previous buffers. This is deprecated now.
 
         Returns:
             Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy and the noise mask.
         """
-        noisy_parts = split_current.copy()
+        frame_width = current_frame.shape[1]
+        frame_height = current_frame.shape[0]
+
+        serialized_current = current_frame.flatten().astype(np.int16)
+        serialized_previous = previous_frame.flatten().astype(np.int16)
+        buffer_shape = self._get_buffer_shape(
+            frame_width, frame_height, config.device_config.px_per_buffer
+        )
+
+        noisy_parts = np.ones_like(serialized_current, np.uint8)
         any_buffer_has_noise = False
-        current_buffer_has_noise = False
 
-        logger.debug(f"Config buffer_split: {config.buffer_split}")
-        logger.debug(
-            f"Actual total splits in current: {len(split_current)}, previous: {len(split_previous)}"
-        )
+        for buffer_index in range(len(buffer_shape)):
+            buffer_start = 0 if buffer_index == 0 else buffer_shape[buffer_index]
+            buffer_end = (
+                frame_width * frame_height
+                if buffer_index == len(buffer_shape) - 1
+                else buffer_shape[buffer_index + 1]
+            )
 
-        # Iterate over buffers and split sections
-        logger.debug(
-            f"Entering mean_error loop: Total splits: {len(split_current)}, "
-            f"Buffer split: {config.buffer_split}"
-        )
-        for buffer_index in range(len(split_current) // config.buffer_split):
-            for split_index in range(config.buffer_split):
-                i = buffer_index * config.buffer_split + split_index
-
-                # Calculate mean error for each split section
-                mean_error = abs(split_current[i] - split_previous[i]).mean()
+            comparison_start = buffer_end - config.buffer_split
+            while comparison_start > buffer_start:
+                mean_error = abs(
+                    serialized_current[comparison_start:buffer_end]
+                    - serialized_previous[comparison_start:buffer_end]
+                ).mean()
                 logger.debug(
-                    f"Mean error for buffer {i}: {mean_error}, Threshold: {config.threshold}"
+                    f"Mean error for buffer {buffer_index}:"
+                    f" pixels {comparison_start}-{buffer_end}: {mean_error}"
+                    f" (threshold: {config.threshold})"
                 )
 
                 if mean_error > config.threshold:
-                    logger.debug(f"Buffer {i} exceeds threshold ({config.threshold}): {mean_error}")
-                    current_buffer_has_noise = True
+                    noisy_parts[comparison_start:buffer_end] = np.zeros_like(
+                        serialized_current[comparison_start:buffer_end], np.uint8
+                    )
                     any_buffer_has_noise = True
                     break
-                else:
-                    noisy_parts[i] = np.zeros_like(split_current[i], np.uint8)
+                comparison_start -= config.buffer_split
 
-            # Mark noisy blocks
-            if current_buffer_has_noise:
-                for split_index in range(config.buffer_split):
-                    i = buffer_index * config.buffer_split + split_index
-                    noisy_parts[i] = np.ones_like(split_current[i], np.uint8)
-                current_buffer_has_noise = False
-
-        # Create a noise mask for visualization
-        noise_output = np.concatenate(noisy_parts)[: height * width]
-        noise_patch = noise_output.reshape((height, width))
-
+        noise_patch = noisy_parts.reshape((frame_height, frame_width))
         return any_buffer_has_noise, noise_patch
 
     def _detect_with_gradient(

@@ -140,6 +140,12 @@ class NoisePatchProcessor(BaseVideoProcessor):
 
         self.output_enable: bool = noise_patch_config.output_result
 
+        if noise_patch_config.method == "mean_error":
+            logger.warning(
+                "The mean_error method is unstable and not fully tested yet."
+                " Use gradient method instead."
+            )
+
     def process_frame(self, input_frame: np.ndarray) -> Optional[np.ndarray]:
         """
         Process a single frame.
@@ -155,7 +161,6 @@ class NoisePatchProcessor(BaseVideoProcessor):
             return None
 
         if self.noise_patch_config.enable and self.previous_frame is not None:
-            # Call the unified detection method
             broken, noise_patch = self.noise_detect_helper.detect_frame_with_noisy_buffer(
                 input_frame,
                 self.previous_frame if self.noise_patch_config.method == "mean_error" else None,
@@ -171,13 +176,12 @@ class NoisePatchProcessor(BaseVideoProcessor):
                 index = len(self.output_video) + len(self.noise_patchs)
                 logger.info(f"Dropping frame {index} of original video due to noise.")
                 logger.debug(f"Adding noise patch for frame {index}.")
-                self.noise_patchs.append(noise_patch * np.iinfo(np.uint8).max)
+                self.noise_patchs.append((noise_patch * np.iinfo(np.uint8).max).astype(np.uint8))
                 self.noisy_frames.append(input_frame)
                 self.dropped_frame_indices.append(index)
             return None
 
-        # Initialize previous frame if it's the first frame
-        if self.noise_patch_config.enable and self.previous_frame is None:
+        elif self.noise_patch_config.enable and self.previous_frame is None:
             self.previous_frame = input_frame
             self.append_output_frame(input_frame)
             return input_frame
@@ -215,6 +219,7 @@ class NoisePatchProcessor(BaseVideoProcessor):
 
         if self.noise_patch_config.output_noise_patch:
             logger.info(f"Exporting {self.name} noise patch to {self.output_dir}")
+            print(f"image shape: {self.noise_patchs[0].shape}, dtype: {self.noise_patchs[0].dtype}")
             self.noise_patch_named_video.export(
                 output_path=self.output_dir / f"{self.name}",
                 fps=20,
@@ -552,7 +557,7 @@ def denoise_run(
         height=reader.height,
     )
 
-    if config.frequency_masking.display_mask:
+    if config.interactive_display.display_freq_mask:
         freq_mask_processor.freq_mask_named_frame.display()
 
     try:
@@ -588,7 +593,19 @@ def denoise_run(
         freq_mask_processor.batch_export_videos()
         minimum_projection_processor.batch_export_videos()
 
-        if config.interactive_display.enable:
+        if len(noise_patch_processor.output_named_video.video) == 0:
+            logger.warning("No output video available for display.")
+        elif (
+            len(noise_patch_processor.output_named_video.video)
+            < config.interactive_display.end_frame
+        ):
+            logger.warning(
+                f"Output video has {len(noise_patch_processor.output_named_video.video)} frames."
+                f" End frame for interactive plot is {config.interactive_display.end_frame}."
+                " End frame for interactive plot exceeds the number of frames in the video."
+                " Skipping interactive display."
+            )
+        elif config.interactive_display.show_videos:
             videos = [
                 noise_patch_processor.output_named_video,
                 freq_mask_processor.output_named_video,

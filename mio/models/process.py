@@ -132,10 +132,6 @@ class FreqencyMaskingConfig(BaseModel):
         default=0,
         description="Cutoff for the horizontal band elimination filter in pixels.",
     )
-    display_mask: bool = Field(
-        default=False,
-        description="Interactively display the mask before starting processing",
-    )
     output_result: bool = Field(
         default=False,
         description="Output the result video stream.",
@@ -156,7 +152,7 @@ class InteractiveDisplayConfig(BaseModel):
     This can not display long video streams efficienty and is for debugging purposes.
     """
 
-    enable: bool = Field(
+    show_videos: bool = Field(
         default=False,
         description="Enable interactive display.",
     )
@@ -168,6 +164,11 @@ class InteractiveDisplayConfig(BaseModel):
         default=...,
         description="Frame to end interactive display at.",
     )
+    display_freq_mask: bool = Field(
+        default=False,
+        description="Interactively display the mask before starting processing",
+    )
+
 
 
 class DenoiseConfig(MiniscopeConfig, ConfigYAMLMixin):

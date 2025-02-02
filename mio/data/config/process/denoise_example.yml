@@ -6,7 +6,7 @@ noise_patch:
   method: gradient # gradient or mean_error
   threshold: 20
   device_config_id: wireless-200px
-  buffer_split: 8
+  comparison_unit: 1000
   diff_multiply: 1
   output_result: true
   output_noise_patch: true
@@ -17,7 +17,6 @@ frequency_masking:
   spatial_LPF_cutoff_radius: 15
   vertical_BEF_cutoff: 2
   horizontal_BEF_cutoff: 0
-  display_mask: true
   output_mask: true
   output_result: true
   output_freq_domain: true
@@ -27,9 +26,10 @@ minimum_projection:
   output_result: true
   output_min_proj: true
 interactive_display:
-  enable: true
+  show_videos: true
   start_frame: 40
   end_frame: 140
+  display_freq_mask: true
 end_frame: -1 #-1 means all frames
 output_result: true
 output_dir: user_data/output
