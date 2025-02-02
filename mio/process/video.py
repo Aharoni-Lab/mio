@@ -292,10 +292,12 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
         freq_mask_config (FreqencyMaskingConfig): The frequency masking configuration.
         """
         super().__init__(name, output_dir)
-        self.freq_mask_helper = FrequencyMaskHelper(height=height, width=width)
+        self.freq_mask_helper = FrequencyMaskHelper()
         self.freq_mask_config: FreqencyMaskingConfig = freq_mask_config
         self.freq_domain_frames = []
         self._freq_mask: np.ndarray = None
+        self.frame_width: int = width
+        self.frame_height: int = height
         self.output_enable: bool = freq_mask_config.output_result
 
     @property
@@ -306,6 +308,8 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
         if self._freq_mask is None:
             self._freq_mask = self.freq_mask_helper.gen_freq_mask(
                 freq_mask_config=self.freq_mask_config,
+                width=self.frame_width,
+                height=self.frame_height,
             )
         return self._freq_mask
 

@@ -24,40 +24,9 @@ class NoiseDetectionHelper:
         Initialize the FrameProcessor object.
         Block size/buffer size will be set by dev config later.
 
-        Parameters:
-            height (int): Height of the video frame.
-            width (int): Width of the video frame.
-
         Returns:
             NoiseDetectionHelper: A NoiseDetectionHelper object
         """
-        self.height = height
-        self.width = width
-
-    def split_by_length(self, array: np.ndarray, segment_length: int) -> list[np.ndarray]:
-        """
-        Split an array into sub-arrays of a specified length.
-        Last sub-array may be shorter if the array length is not a multiple of the segment length.
-
-        Parameters:
-            array (np.ndarray): The array to split.
-            segment_length (int): The length of each sub-array.
-
-        Returns:
-            list[np.ndarray]: A list of sub-arrays.
-        """
-        num_segments = len(array) // segment_length
-
-        # Split the array into segments of the specified length
-        sub_arrays = [
-            array[i * segment_length : (i + 1) * segment_length] for i in range(num_segments)
-        ]
-
-        # Add the remaining elements as a final shorter segment, if any
-        if len(array) % segment_length != 0:
-            sub_arrays.append(array[num_segments * segment_length :])
-
-        return sub_arrays
 
     def detect_frame_with_noisy_buffer(
         self,
@@ -80,7 +49,11 @@ class NoiseDetectionHelper:
         """
         logger.debug(f"Buffer size: {config.buffer_size}")
 
+        frame_width = current_frame.shape[1]
+        frame_height = current_frame.shape[0]
+
         if config.method == "mean_error":
+            
             if previous_frame is None:
                 raise ValueError("mean_error requires a previous frame to compare against")
 
@@ -91,10 +64,23 @@ class NoiseDetectionHelper:
             logger.debug(f"Serialized previous frame size: {len(serialized_previous)}")
 
             split_size = config.buffer_size // config.buffer_split + 1
-            split_previous = self.split_by_length(serialized_previous, split_size)
-            split_current = self.split_by_length(serialized_current, split_size)
 
-            return self._detect_with_mean_error(split_current, split_previous, config)
+            split_shape = []
+
+            pixel_index = 0
+            while pixel_index < len(serialized_current):
+                split_shape.append[split_size]
+                pixel_index += split_size
+
+            split_previous = np.split(serialized_previous, split_shape)
+            split_current = np.split(serialized_current, split_shape)
+
+            return self._detect_with_mean_error(
+                split_current=split_current,
+                split_previous=split_previous,
+                width=frame_width,
+                height=frame_height,
+                config=config)
 
         elif config.method == "gradient":
             return self._detect_with_gradient(current_frame, config)
@@ -106,6 +92,8 @@ class NoiseDetectionHelper:
         self,
         split_current: list[np.ndarray],
         split_previous: list[np.ndarray],
+        width: int,
+        height: int,
         config: NoisePatchConfig,
     ) -> Tuple[bool, np.ndarray]:
         """
@@ -154,8 +142,8 @@ class NoiseDetectionHelper:
                 current_buffer_has_noise = False
 
         # Create a noise mask for visualization
-        noise_output = np.concatenate(noisy_parts)[: self.height * self.width]
-        noise_patch = noise_output.reshape((self.height, self.width))
+        noise_output = np.concatenate(noisy_parts)[: height * width]
+        noise_patch = noise_output.reshape((height, width))
 
         return any_buffer_has_noise, noise_patch
 
@@ -187,24 +175,16 @@ class NoiseDetectionHelper:
 class FrequencyMaskHelper:
     """
     Helper class for frame operations.
-
-
     """
 
-    def __init__(self, height: int, width: int):
+    def __init__(self):
         """
         Initialize the FrameProcessor object.
         Block size/buffer size will be set by dev config later.
 
-        Parameters:
-            height (int): Height of the video frame.
-            width (int): Width of the video frame.
-
         Returns:
             FrequencyMaskHelper: A FrequencyMaskHelper object.
         """
-        self.height = height
-        self.width = width
 
     def apply_freq_mask(self, img: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """
@@ -236,16 +216,18 @@ class FrequencyMaskHelper:
 
     def gen_freq_mask(
         self,
+        width: int,
+        height: int,
         freq_mask_config: FreqencyMaskingConfig,
     ) -> np.ndarray:
         """
         Generate a mask to filter out horizontal and vertical frequencies.
         A central circular region can be removed to allow low frequencies to pass.
         """
-        crow, ccol = self.height // 2, self.width // 2
+        crow, ccol = height // 2, width // 2
 
         # Create an initial mask filled with ones (pass all frequencies)
-        mask = np.ones((self.height, self.width), np.uint8)
+        mask = np.ones((height, width), np.uint8)
 
         # Zero out a vertical stripe at the frequency center
         mask[
@@ -264,7 +246,7 @@ class FrequencyMaskHelper:
         ] = 0
 
         # Define spacial low pass filter
-        y, x = np.ogrid[: self.height, : self.width]
+        y, x = np.ogrid[: height, : width]
         center_mask = (x - ccol) ** 2 + (
             y - crow
         ) ** 2 <= freq_mask_config.spatial_LPF_cutoff_radius**2
@@ -280,7 +262,6 @@ class FrequencyMaskHelper:
                     break
             cv2.destroyAllWindows()
         return mask
-
 
 class ZStackHelper:
     """
