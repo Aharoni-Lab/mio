@@ -161,3 +161,5 @@ wirefree_example.mp4
 wirefree_example.avi
 .pdm-python
 user_data/*
+!user_dir/.gitkeep
+

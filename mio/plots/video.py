@@ -2,10 +2,10 @@
 Plotting functions for video streams and frames.
 """
 
-from typing import List
+from typing import List, Union
 
 from mio import init_logger
-from mio.models.frames import NamedFrame
+from mio.models.frames import NamedFrame, NamedVideo
 
 try:
     import matplotlib.pyplot as plt
@@ -29,7 +29,7 @@ class VideoPlotter:
 
     @staticmethod
     def show_video_with_controls(
-        videos: List[NamedFrame],
+        videos: List[Union[NamedFrame, NamedVideo]],
         start_frame: int,
         end_frame: int,
         fps: int = 20,
@@ -56,9 +56,12 @@ class VideoPlotter:
             )
 
         # Wrap static images in lists to handle them uniformly
-        video_frames = [
-            frame.frame if isinstance(frame.frame, list) else [frame.frame] for frame in videos
-        ]
+        video_frames = [None] * len(videos)
+        for i in range(len(videos)):
+            if isinstance(videos[i], NamedFrame):
+                video_frames[i] = [videos[i].frame]
+            elif isinstance(videos[i], NamedVideo):
+                video_frames[i] = videos[i].video
 
         titles = [video.name for video in videos]
 

@@ -10,7 +10,7 @@ import numpy as np
 
 from mio import init_logger
 from mio.io import VideoReader
-from mio.models.frames import NamedFrame
+from mio.models.frames import NamedFrame, NamedVideo
 from mio.models.process import (
     DenoiseConfig,
     FreqencyMaskingConfig,
@@ -53,18 +53,18 @@ class BaseVideoProcessor:
         """
         self.name: str = name
         self.output_dir: Path = output_dir
-        self.output_frames: list[np.ndarray] = []
+        self.output_video: list[np.ndarray] = []
         self.output_enable: bool = True
 
     @property
-    def output_named_frame(self) -> NamedFrame:
+    def output_named_video(self) -> NamedVideo:
         """
         Get the output NamedFrame object.
 
         Returns:
-        NamedFrame: The output NamedFrame object.
+        NamedVideo: The output NamedVideo object.
         """
-        return NamedFrame(name=self.name, frame=self.output_frames)
+        return NamedVideo(name=self.name, video=self.output_video)
 
     def append_output_frame(self, input_frame: np.ndarray) -> None:
         """
@@ -73,21 +73,21 @@ class BaseVideoProcessor:
         Parameters:
         frame (np.ndarray): The frame to append.
         """
-        self.output_frames.append(input_frame)
+        self.output_video.append(input_frame)
 
     def export_output_video(self) -> None:
         """
         Export the video to a file.
         """
-        if not self.output_frames:
+        if not self.output_video:
             logger.warning(
-                f"No output frames available for export in {self.name}. Skipping export."
+                f"No output video available for export in {self.name}. Skipping export."
             )
             return
 
         if self.output_enable:
             logger.info(f"Exporting {self.name} video to {self.output_dir}")
-            self.output_named_frame.export(
+            self.output_named_video.export(
                 output_path=self.output_dir / f"{self.name}",
                 fps=20,
                 suffix=True,
@@ -170,7 +170,7 @@ class NoisePatchProcessor(BaseVideoProcessor):
                 self.previous_frame = input_frame
                 return input_frame
             else:
-                index = len(self.output_frames) + len(self.noise_patchs)
+                index = len(self.output_video) + len(self.noise_patchs)
                 logger.info(f"Dropping frame {index} of original video due to noise.")
                 logger.debug(f"Adding noise patch for frame {index}.")
                 self.noise_patchs.append(noise_patch * np.iinfo(np.uint8).max)
@@ -185,27 +185,27 @@ class NoisePatchProcessor(BaseVideoProcessor):
             return input_frame
 
     @property
-    def noise_patch_named_frame(self) -> NamedFrame:
+    def noise_patch_named_video(self) -> NamedVideo:
         """
         Get the NamedFrame object for the noise patch.
         """
-        return NamedFrame(name="patched_area", frame=self.noise_patchs)
+        return NamedVideo(name="patched_area", video=self.noise_patchs)
 
     @property
-    def diff_frames_named_frame(self) -> NamedFrame:
+    def diff_frames_named_video(self) -> NamedVideo:
         """
         Get the NamedFrame object for the difference frames.
         """
-        return NamedFrame(
-            name=f"diff_{self.noise_patch_config.diff_multiply}x", frame=self.diff_frames
+        return NamedVideo(
+            name=f"diff_{self.noise_patch_config.diff_multiply}x", video=self.diff_frames
         )
 
     @property
-    def noisy_frames_named_frame(self) -> NamedFrame:
+    def noisy_frames_named_video(self) -> NamedVideo:
         """
         Get the NamedFrame object for the noisy frames.
         """
-        return NamedFrame(name="noisy_frames", frame=self.noisy_frames)
+        return NamedVideo(name="noisy_frames", video=self.noisy_frames)
 
     def export_noise_patch(self) -> None:
         """
@@ -217,7 +217,7 @@ class NoisePatchProcessor(BaseVideoProcessor):
 
         if self.noise_patch_config.output_noise_patch:
             logger.info(f"Exporting {self.name} noise patch to {self.output_dir}")
-            self.noise_patch_named_frame.export(
+            self.noise_patch_named_video.export(
                 output_path=self.output_dir / f"{self.name}",
                 fps=20,
                 suffix=True,
@@ -235,7 +235,7 @@ class NoisePatchProcessor(BaseVideoProcessor):
 
         if self.noise_patch_config.output_diff:
             logger.info(f"Exporting {self.name} difference frames to {self.output_dir}")
-            self.diff_frames_named_frame.export(
+            self.diff_frames_named_video.export(
                 output_path=self.output_dir / f"{self.name}",
                 fps=20,
                 suffix=True,
@@ -243,13 +243,13 @@ class NoisePatchProcessor(BaseVideoProcessor):
         else:
             logger.info(f"{self.name} difference frames output disabled.")
 
-    def export_noisy_frames(self) -> None:
+    def export_noisy_video(self) -> None:
         """
         Export the noisy frames to a file.
         """
         if self.noise_patch_config.output_noisy_frames:
             logger.info(f"Exporting {self.name} noisy frames to {self.output_dir}")
-            self.noisy_frames_named_frame.export(
+            self.noisy_frames_named_video.export(
                 output_path=self.output_dir / f"{self.name}",
                 fps=20,
                 suffix=True,
@@ -268,7 +268,7 @@ class NoisePatchProcessor(BaseVideoProcessor):
         self.export_output_video()
         self.export_noise_patch()
         self.export_diff_frames()
-        self.export_noisy_frames()
+        self.export_noisy_video()
 
 
 class FreqencyMaskProcessor(BaseVideoProcessor):
@@ -317,11 +317,11 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
         return NamedFrame(name="freq_mask", frame=self.freq_mask * np.iinfo(np.uint8).max)
 
     @property
-    def freq_domain_named_frame(self) -> NamedFrame:
+    def freq_domain_named_video(self) -> NamedVideo:
         """
         Get the NamedFrame object for the frequency domain.
         """
-        return NamedFrame(name="freq_domain", frame=self.freq_domain_frames)
+        return NamedVideo(name="freq_domain", video=self.freq_domain_frames)
 
     def process_frame(self, input_frame: np.ndarray) -> Optional[np.ndarray]:
         """
@@ -370,7 +370,6 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
             logger.info(f"Exporting {self.name} frequency mask to {self.output_dir}")
             self.freq_mask_named_frame.export(
                 output_path=self.output_dir / f"{self.name}",
-                fps=20,
                 suffix=True,
             )
         else:
@@ -404,11 +403,11 @@ class PassThroughProcessor(BaseVideoProcessor):
         super().__init__(name, output_dir)
 
     @property
-    def pass_through_named_frame(self) -> NamedFrame:
+    def pass_through_named_video(self) -> NamedVideo:
         """
         Get the NamedFrame object for the pass through.
         """
-        return NamedFrame(name=self.name, frame=self.output_frames)
+        return NamedVideo(name=self.name, video=self.output_video)
 
     def process_frame(self, input_frame: np.ndarray) -> np.ndarray:
         """
@@ -565,7 +564,7 @@ def denoise_run(
     finally:
         reader.release()
 
-        output_frames = output_frame_processor.output_frames
+        output_frames = output_frame_processor.output_video
 
         if not isinstance(output_frames, list):
             raise ValueError("Output frames must be a list.")
@@ -586,10 +585,10 @@ def denoise_run(
 
         if config.interactive_display.enable:
             videos = [
-                noise_patch_processor.output_named_frame,
-                freq_mask_processor.output_named_frame,
+                noise_patch_processor.output_named_video,
+                freq_mask_processor.output_named_video,
                 minimum_projection_processor.min_proj_named_frame,
-                freq_mask_processor.freq_domain_named_frame,
+                freq_mask_processor.output_named_video,
             ]
             VideoPlotter.show_video_with_controls(
                 videos,

@@ -32,4 +32,4 @@ minimum_projection:
   output_min_proj: true
 end_frame: -1 #-1 means all frames
 output_result: true
-output_dir: user_dir/output
+output_dir: user_data/output

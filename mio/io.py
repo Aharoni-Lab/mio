@@ -83,8 +83,8 @@ class VideoReader:
         ValueError: If the video file cannot be opened.
         """
         self.video_path = video_path
-        self.cap = cv2.VideoCapture(str(video_path))
         self.logger = init_logger("VideoReader")
+        self._cap = None
 
         if not self.cap.isOpened():
             raise ValueError(f"Could not open video at {video_path}")
