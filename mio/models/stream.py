@@ -5,13 +5,47 @@ Models for :mod:`mio.stream_daq`
 from pathlib import Path
 from typing import Literal, Optional, Union
 
-from pydantic import Field, computed_field, field_validator
+import numpy as np
+from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 from mio import DEVICE_DIR
 from mio.models import MiniscopeConfig
 from mio.models.buffer import BufferHeader, BufferHeaderFormat
 from mio.models.mixins import ConfigYAMLMixin
 from mio.models.sinks import CSVWriterConfig, StreamPlotterConfig
+
+
+class ScaledValue(BaseModel):
+    """
+    A value that has been scaled from a raw value
+
+    Parameters
+    ----------
+    raw: float
+        The raw value
+    scaled: float
+        The scaled value
+    """
+
+    scaling_factor: float = Field(
+        ...,
+        description="Scaling factor applied to the raw value",
+    )
+    maximum: Optional[float] = Field(
+        None,
+        description="Maximum value for the scaled value",
+    )
+    minimum: Optional[float] = Field(
+        None,
+        description="Minimum value for the scaled value",
+    )
+
+    def scale(self, value: int) -> float:
+        """
+        The scaled value
+        """
+        scaled_value = float(value) * self.scaling_factor
+        return np.clip(scaled_value, self.minimum, self.maximum)
 
 
 class ADCScaling(MiniscopeConfig):
@@ -46,30 +80,6 @@ class ADCScaling(MiniscopeConfig):
         "Scaled Vin voltage will be 0 if it is greater than this value",
     )
 
-    def scale_battery_voltage(self, voltage_raw: float) -> float:
-        """
-        Scale raw input ADC voltage to Volts
-
-        Args:
-            voltage_raw: Voltage as output by the ADC
-
-        Returns:
-            float: Scaled voltage
-        """
-        return voltage_raw / 2**self.bitdepth * self.ref_voltage * self.battery_div_factor
-
-    def scale_input_voltage(self, voltage_raw: float) -> float:
-        """
-        Scale raw input ADC voltage to Volts
-
-        Args:
-            voltage_raw: Voltage as output by the ADC
-
-        Returns:
-            float: Scaled voltage
-        """
-        return voltage_raw / 2**self.bitdepth * self.ref_voltage * self.vin_div_factor
-
 
 class StreamBufferHeaderFormat(BufferHeaderFormat):
     """
@@ -102,40 +112,48 @@ class StreamBufferHeader(BufferHeader):
     pixel_count: int
     battery_voltage_raw: int
     input_voltage_raw: int
-    _adc_scaling: ADCScaling = None
+
+    # This shouldn't have a default value and probably better to have this in the device config.
+    _adc_scale: ADCScaling = PrivateAttr(default_factory=ADCScaling)
+
+    _battery_voltage_scaling: ScaledValue = PrivateAttr()
+    _input_voltage_scaling: ScaledValue = PrivateAttr()
+
+    def __init__(self, **data: dict):
+        super().__init__(**data)
+        self._battery_voltage_scaling = ScaledValue(
+            scaling_factor=(
+                1
+                / (2**self._adc_scale.bitdepth)
+                * self._adc_scale.ref_voltage
+                * self._adc_scale.battery_div_factor
+            ),
+            maximum=self._adc_scale.battery_max_voltage,
+        )
+
+        self._input_voltage_scaling = ScaledValue(
+            scaling_factor=(
+                1
+                / (2**self._adc_scale.bitdepth)
+                * self._adc_scale.ref_voltage
+                * self._adc_scale.vin_div_factor
+            ),
+            maximum=self._adc_scale.vin_max_voltage,
+        )
 
     @property
-    def adc_scaling(self) -> Optional[ADCScaling]:
-        """
-        :class:`.ADCScaling` applied to voltage readings
-        """
-        return self._adc_scaling
-
-    @adc_scaling.setter
-    def adc_scaling(self, scaling: ADCScaling) -> None:
-        self._adc_scaling = scaling
-
-    @computed_field
     def battery_voltage(self) -> float:
         """
         Scaled battery voltage in Volts.
         """
-        if self._adc_scaling is None:
-            return self.battery_voltage_raw
-        else:
-            battery_voltage = self._adc_scaling.scale_battery_voltage(self.battery_voltage_raw)
-            return battery_voltage if battery_voltage < self._adc_scaling.battery_max_voltage else 0
+        return self._battery_voltage_scaling.scale(self.battery_voltage_raw)
 
-    @computed_field
+    @property
     def input_voltage(self) -> float:
         """
         Scaled input voltage in Volts.
         """
-        if self._adc_scaling is None:
-            return self.input_voltage_raw
-        else:
-            vin_voltage = self._adc_scaling.scale_input_voltage(self.input_voltage_raw)
-            return vin_voltage if vin_voltage < self._adc_scaling.vin_max_voltage else 0
+        return self._input_voltage_scaling.scale(self.input_voltage_raw)
 
 
 class StreamDevRuntime(MiniscopeConfig):

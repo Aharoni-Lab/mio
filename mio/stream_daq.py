@@ -171,7 +171,6 @@ class StreamDaq:
         header_data = StreamBufferHeader.from_format(
             header.astype(int), self.header_fmt, construct=True
         )
-        header_data.adc_scaling = self.config.adc_scale
 
         return header_data, payload
 

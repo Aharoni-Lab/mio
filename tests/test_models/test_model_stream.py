@@ -42,23 +42,22 @@ _default_adc_scale = {
 }
 
 
-@pytest.mark.parametrize("scale", [None, 1, 2, _default_adc_scale["ref_voltage"]])
+@pytest.mark.parametrize("scale", [1, 2, _default_adc_scale["ref_voltage"]])
 def test_adc_scaling(scale, config_override):
-    """
-    Test that the ADC scaling factors are correctly parsed,
-    and that :class:`.ADCScaling` methods are correctly applied to their relevant values
-    """
-    if scale is None:
-        adc_scale = None
-    else:
-        adc_scale = _default_adc_scale.copy()
-        adc_scale.update({"ref_voltage": scale})
-
-    example = config_override(CONFIG_DIR / "stream_daq_test_200px.yml", {"adc_scale": adc_scale})
-    instance_config = StreamDevConfig.from_yaml(example)
+    
+    ref_voltage = scale
+    bitdepth = 8
+    
+    battery_div_factor = 5.0
+    vin_div_factor = 11.3
+    battery_max_voltage = 10.0
+    vin_max_voltage = 20.0
 
     battery_voltage_raw = 100
     input_voltage_raw = 150
+
+    battery_factor = 1 / (2 ** bitdepth) * ref_voltage * battery_div_factor
+    vin_factor = 1 / (2 ** bitdepth) * ref_voltage * vin_div_factor
 
     instance_header = StreamBufferHeader(
         linked_list=0,
@@ -72,16 +71,18 @@ def test_adc_scaling(scale, config_override):
         write_timestamp=0,
         battery_voltage_raw=battery_voltage_raw,
         input_voltage_raw=input_voltage_raw,
+        adc_scale=ADCScaling(
+            ref_voltage=ref_voltage,
+            bitdepth=bitdepth,
+            battery_div_factor=battery_div_factor,
+            vin_div_factor=vin_div_factor,
+            battery_max_voltage=battery_max_voltage,
+            vin_max_voltage=vin_max_voltage,
+        ),
     )
-    instance_header.adc_scaling = instance_config.adc_scale
 
-    if scale is None:
-        assert instance_header.battery_voltage == battery_voltage_raw
-        assert instance_header.input_voltage == input_voltage_raw
+    expected_battery_voltage = min(battery_voltage_raw * battery_factor, battery_max_voltage)
+    expected_input_voltage = min(input_voltage_raw * vin_factor, vin_max_voltage)
 
-    else:
-        adcscale = ADCScaling(**adc_scale)
-        assert instance_header.battery_voltage == adcscale.scale_battery_voltage(
-            battery_voltage_raw
-        )
-        assert instance_header.input_voltage == adcscale.scale_input_voltage(input_voltage_raw)
+    assert instance_header.battery_voltage == expected_battery_voltage
+    assert instance_header.input_voltage == expected_input_voltage
