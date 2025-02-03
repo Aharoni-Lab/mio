@@ -5,7 +5,6 @@ Models for :mod:`mio.stream_daq`
 from pathlib import Path
 from typing import Literal, Optional, Union
 
-import numpy as np
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 from mio import DEVICE_DIR
@@ -42,10 +41,25 @@ class ScaledValue(BaseModel):
 
     def scale(self, value: int) -> float:
         """
-        The scaled value
+        Scale a raw value to a scaled value. If the scaled value is outside of the
+        minimum or maximum bounds, return -1.0
+
+        Parameters
+        ----------
+        value : int
+            The raw value to scale
+
+        Returns
+        -------
+        float
+            The scaled value
         """
         scaled_value = float(value) * self.scaling_factor
-        return np.clip(scaled_value, self.minimum, self.maximum)
+        if (self.minimum is not None and scaled_value < self.minimum) or (
+            self.maximum is not None and scaled_value > self.maximum
+        ):
+            return -1.0
+        return scaled_value
 
 
 class ADCScaling(MiniscopeConfig):
@@ -72,12 +86,12 @@ class ADCScaling(MiniscopeConfig):
     battery_max_voltage: float = Field(
         10.0,
         description="Maximum voltage of the battery."
-        "Scaled battery voltage will be 0 if it is greater than this value",
+        "Scaled battery voltage will be -1 if it is greater than this value",
     )
     vin_max_voltage: float = Field(
         20.0,
         description="Maximum voltage of the Vin"
-        "Scaled Vin voltage will be 0 if it is greater than this value",
+        "Scaled Vin voltage will be -1 if it is greater than this value",
     )
 
 
@@ -102,25 +116,29 @@ class StreamBufferHeaderFormat(BufferHeaderFormat):
     battery_voltage_raw: int
     input_voltage_raw: int
 
+    _adc_scale: ADCScaling
+
 
 class StreamBufferHeader(BufferHeader):
     """
     Refinements of :class:`.BufferHeader` for
     :class:`~mio.stream_daq.StreamDaq`
+
+    .. todo::
+        Get the scaling factors from the device configuration
     """
 
     pixel_count: int
     battery_voltage_raw: int
     input_voltage_raw: int
 
-    # This shouldn't have a default value and probably better to have this in the device config.
-    _adc_scale: ADCScaling = PrivateAttr(default_factory=ADCScaling)
-
+    _adc_scale: ADCScaling = PrivateAttr()
     _battery_voltage_scaling: ScaledValue = PrivateAttr()
     _input_voltage_scaling: ScaledValue = PrivateAttr()
 
-    def __init__(self, **data: dict):
+    def __init__(self, adc_scale: ADCScaling, **data: dict):
         super().__init__(**data)
+        self._adc_scale = adc_scale
         self._battery_voltage_scaling = ScaledValue(
             scaling_factor=(
                 1
@@ -130,7 +148,6 @@ class StreamBufferHeader(BufferHeader):
             ),
             maximum=self._adc_scale.battery_max_voltage,
         )
-
         self._input_voltage_scaling = ScaledValue(
             scaling_factor=(
                 1

@@ -43,7 +43,7 @@ _default_adc_scale = {
 
 
 @pytest.mark.parametrize("scale", [1, 2, _default_adc_scale["ref_voltage"]])
-def test_adc_scaling(scale, config_override):
+def test_adc_scaling(scale):
     
     ref_voltage = scale
     bitdepth = 8
@@ -81,8 +81,13 @@ def test_adc_scaling(scale, config_override):
         ),
     )
 
-    expected_battery_voltage = min(battery_voltage_raw * battery_factor, battery_max_voltage)
-    expected_input_voltage = min(input_voltage_raw * vin_factor, vin_max_voltage)
+    expected_battery_voltage = battery_voltage_raw * battery_factor
+    if expected_battery_voltage > battery_max_voltage:
+        expected_battery_voltage = -1
+
+    expected_input_voltage = input_voltage_raw * vin_factor
+    if expected_input_voltage > vin_max_voltage:
+        expected_input_voltage = -1
 
     assert instance_header.battery_voltage == expected_battery_voltage
     assert instance_header.input_voltage == expected_input_voltage
