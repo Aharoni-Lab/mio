@@ -18,7 +18,7 @@ from mio.models.process import (
     NoisePatchConfig,
 )
 from mio.plots.video import VideoPlotter
-from mio.process.frame_helper import FrequencyMaskHelper, NoiseDetectionHelper, ZStackHelper
+from mio.process.frame_helper import CombinedNoiseDetector, FrequencyMaskHelper, ZStackHelper
 
 logger = init_logger("video")
 
@@ -130,8 +130,8 @@ class NoisePatchProcessor(BaseVideoProcessor):
         noise_patch_config (NoisePatchConfig): The noise patch configuration.
         """
         super().__init__(name, output_dir)
-        self.noise_detect_helper = NoiseDetectionHelper(height=height, width=width)
         self.noise_patch_config: NoisePatchConfig = noise_patch_config
+        self.noise_detect_helper = CombinedNoiseDetector(noise_patch_config=noise_patch_config)
         self.previous_frame: Optional[np.ndarray] = None
         self.noise_patchs: list[np.ndarray] = []
         self.noisy_frames: list[np.ndarray] = []
@@ -143,7 +143,7 @@ class NoisePatchProcessor(BaseVideoProcessor):
         if noise_patch_config.method == "mean_error":
             logger.warning(
                 "The mean_error method is unstable and not fully tested yet."
-                " Use gradient method instead."
+                " Gradient method is recommended."
             )
 
     def process_frame(self, input_frame: np.ndarray) -> Optional[np.ndarray]:
@@ -161,31 +161,11 @@ class NoisePatchProcessor(BaseVideoProcessor):
             return None
 
         if self.noise_patch_config.enable:
-            if self.noise_patch_config.method == "gradient":
-                # For the gradient method, analyze the first frame immediately
-                broken, noise_patch = self.noise_detect_helper.detect_frame_with_noisy_buffer(
-                    input_frame,
-                    None,  # No previous frame needed for gradient method
-                    self.noise_patch_config,
-                )
-            else:
-                # For the mean method, wait until the second frame to start analysis
-                if self.previous_frame is not None:
-                    broken, noise_patch = self.noise_detect_helper.detect_frame_with_noisy_buffer(
-                        input_frame,
-                        self.previous_frame,
-                        self.noise_patch_config,
-                    )
-                else:
-                    # If it's the first frame and the method is mean_error, just store the frame
-                    self.previous_frame = input_frame
-                    self.append_output_frame(input_frame)
-                    return input_frame
+            broken, noise_patch = self.noise_detect_helper.process_and_verify_frame(input_frame)
 
             # Handle noisy frames
             if not broken:
                 self.append_output_frame(input_frame)
-                self.previous_frame = input_frame
                 return input_frame
             else:
                 index = len(self.output_video) + len(self.noise_patchs)

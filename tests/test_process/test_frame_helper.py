@@ -8,7 +8,7 @@ from pprint import pformat
 from pydantic import BaseModel
 
 from mio.models.process import DenoiseConfig, NoisePatchConfig
-from mio.process.frame_helper import NoiseDetectionHelper
+from mio.process.frame_helper import CombinedNoiseDetector
 
 from ..conftest import DATA_DIR
 
@@ -82,10 +82,7 @@ def test_noisy_frame_detection(video, ground_truth, noise_detection_method, nois
 
     video = cv2.VideoCapture(video)
 
-    detector = NoiseDetectionHelper(
-        height=int(video.get(cv2.CAP_PROP_FRAME_HEIGHT)),
-        width=int(video.get(cv2.CAP_PROP_FRAME_WIDTH)),
-    )
+    detector = CombinedNoiseDetector(noise_patch_config=config)
 
     detected_frames = []
     previous_frame = None
@@ -98,9 +95,7 @@ def test_noisy_frame_detection(video, ground_truth, noise_detection_method, nois
         if previous_frame is None:
             previous_frame = frame
 
-        is_noisy, mask = detector.detect_frame_with_noisy_buffer(
-            current_frame=frame, previous_frame=previous_frame, config=config
-        )
+        is_noisy, mask = detector.process_and_verify_frame(frame=frame)
         if not is_noisy:
             previous_frame = frame
 

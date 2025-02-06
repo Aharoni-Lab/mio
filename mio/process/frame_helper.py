@@ -1,6 +1,5 @@
 """
 This module contains a helper class for frame operations.
-It should be organized in a different way to make it more readable and maintainable.
 """
 
 from abc import abstractmethod
@@ -42,169 +41,54 @@ class SingleFrameHelper:
         """
         pass
 
-
-class NoiseDetectionHelper:
-    """
-    Helper class for noise detection and frame processing.
-    """
-
-    def __init__(self, height: int, width: int):
+    @abstractmethod
+    def process_and_verify_frame(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
         """
-        Initialize the FrameProcessor object.
-        Block size/buffer size will be set by dev config later.
-
-        Returns:
-            NoiseDetectionHelper: A NoiseDetectionHelper object
-        """
-
-    def detect_frame_with_noisy_buffer(
-        self,
-        current_frame: np.ndarray,
-        previous_frame: Optional[np.ndarray],
-        config: NoisePatchConfig,
-    ) -> Tuple[bool, np.ndarray]:
-        """
-        Unified noise detection method that supports multiple detection algorithms
-        (mean_error, gradient, etc.).
+        Process a single frame and verify if it is valid.
 
         Parameters:
-            current_frame (np.ndarray): The current frame to process.
-            previous_frame (Optional[np.ndarray]): The previous frame to compare against.
-            config (NoisePatchConfig): Configuration for noise detection.
+            frame (np.ndarray): The frame to process.
 
         Returns:
-            Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy,
-                and a spatial mask showing noisy regions.
+            Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy
+              and the processed frame.
         """
-        if config.device_config is not None:
-            px_per_buffer = config.device_config.px_per_buffer
-        else:
-            px_per_buffer = 1000
-            logger.warning(
-                f"Device configuration not found. Using default buffer size: {px_per_buffer}"
-            )
-        logger.debug(f"Buffer size: {px_per_buffer}")
+        pass
 
-        methods = [config.method]
-        if hasattr(config, "additional_methods") and isinstance(config.additional_methods, list):
-            methods.extend(config.additional_methods)
+class GradientNoiseDetector(SingleFrameHelper):
+    """
+    Helper class for gradient noise detection.
+    """
 
-        logger.debug(f"Applying noise detection methods: {methods}")
-
-        noisy_flag = False
-        combined_mask = np.zeros_like(current_frame, dtype=np.uint8)
-
-        for method in methods:
-            if method == "mean_error":
-                if previous_frame is None:
-                    raise ValueError("mean_error requires a previous frame to compare against")
-                return self._detect_with_mean_error(
-                    current_frame=current_frame, previous_frame=previous_frame, config=config
-                )
-
-            elif method == "gradient":
-                noisy, mask = self._detect_with_gradient(current_frame, config)
-
-            elif method == "black_pixels":
-                noisy, mask = self._detect_black_pixels(current_frame, config)
-
-            else:
-                logger.error(f"Unsupported noise detection method: {method}")
-                continue  # Skip unknown methods
-
-            if noisy:
-                logger.info(f"Frame detected as noisy using method: {method}")
-            else:
-                logger.debug(f"Frame passed as clean using method: {method}")
-
-            # Combine results
-            noisy_flag = noisy_flag or noisy
-            combined_mask = np.maximum(combined_mask, mask)
-
-        return noisy_flag, combined_mask
-
-    def _get_buffer_shape(
-        self, frame_width: int, frame_height: int, px_per_buffer: int
-    ) -> list[int]:
+    def __init__(self, noise_patch_config: NoisePatchConfig):
         """
-        Get the shape of each buffer in a frame.
+        Initialize the GradientNoiseDetectionHelper object.
 
         Parameters:
-            frame_width (int): The width of the frame.
-            frame_height (int): The height of the frame.
-            px_per_buffer (int): The number of pixels per buffer.
+            threshold (float): The threshold for noise detection.
 
         Returns:
-            list[int]: The shape of each buffer in the frame.
+            GradientNoiseDetectionHelper: A GradientNoiseDetectionHelper object.
         """
-        buffer_shape = []
-
-        pixel_index = 0
-        while pixel_index < frame_width * frame_height:
-            buffer_shape.append(int(pixel_index))
-            pixel_index += px_per_buffer
-        logger.debug(f"Split shape: {buffer_shape}")
-        return buffer_shape
-
-    def _detect_with_mean_error(
-        self,
-        current_frame: np.ndarray,
-        previous_frame: np.ndarray,
-        config: NoisePatchConfig,
-    ) -> Tuple[bool, np.ndarray]:
+        self.config = noise_patch_config
+        
+    def process_and_verify_frame(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
         """
-        Detect noise using mean error between current and previous buffers. This is deprecated now.
+        Process a single frame and verify if it is valid.
+
+        Parameters:
+            frame (np.ndarray): The frame to process.
 
         Returns:
-            Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy and the noise mask.
+            Tuple[bool, np.ndarray]: A boolean indicating if the frame is valid
+            and the processed frame.
         """
-        frame_width = current_frame.shape[1]
-        frame_height = current_frame.shape[0]
-
-        serialized_current = current_frame.flatten().astype(np.int16)
-        serialized_previous = previous_frame.flatten().astype(np.int16)
-        buffer_shape = self._get_buffer_shape(
-            frame_width, frame_height, config.device_config.px_per_buffer
-        )
-
-        noisy_parts = np.ones_like(serialized_current, np.uint8)
-        any_buffer_has_noise = False
-
-        for buffer_index in range(len(buffer_shape)):
-            buffer_start = 0 if buffer_index == 0 else buffer_shape[buffer_index]
-            buffer_end = (
-                frame_width * frame_height
-                if buffer_index == len(buffer_shape) - 1
-                else buffer_shape[buffer_index + 1]
-            )
-
-            comparison_start = buffer_end - config.buffer_split
-            while comparison_start > buffer_start:
-                mean_error = abs(
-                    serialized_current[comparison_start:buffer_end]
-                    - serialized_previous[comparison_start:buffer_end]
-                ).mean()
-                logger.debug(
-                    f"Mean error for buffer {buffer_index}:"
-                    f" pixels {comparison_start}-{buffer_end}: {mean_error}"
-                    f" (threshold: {config.threshold})"
-                )
-
-                if mean_error > config.threshold:
-                    noisy_parts[comparison_start:buffer_end] = np.zeros_like(
-                        serialized_current[comparison_start:buffer_end], np.uint8
-                    )
-                    any_buffer_has_noise = True
-                    break
-                comparison_start -= config.buffer_split
-
-        noise_patch = noisy_parts.reshape((frame_height, frame_width))
-        return any_buffer_has_noise, noise_patch
+        noisy, mask = self._detect_with_gradient(frame)
+        return noisy, mask
 
     def _detect_with_gradient(
         self,
         current_frame: np.ndarray,
-        config: NoisePatchConfig,
     ) -> Tuple[bool, np.ndarray]:
         """
         Detect noise using local contrast (second derivative) in the x-dimension
@@ -217,18 +101,48 @@ class NoiseDetectionHelper:
 
         diff_x = np.diff(current_frame.astype(np.int16), n=2, axis=1)
         mean_second_diff = np.abs(diff_x).mean(axis=1)
-        noisy_mask[mean_second_diff > config.threshold, :] = 1
+        noisy_mask[mean_second_diff > self.config.threshold, :] = 1
         logger.debug("Row-wise means of second derivative: %s", mean_second_diff)
 
         # Determine if the frame is noisy (if any rows are marked as noisy)
         frame_is_noisy = noisy_mask.any()
 
         return frame_is_noisy, noisy_mask
+    
+class BlackAreaDetector(SingleFrameHelper):
+    """
+    Helper class for black area detection.
+    """
+
+    def __init__(self, noise_patch_config: NoisePatchConfig):
+        """
+        Initialize the BlackAreaDetectionHelper object.
+
+        Parameters:
+            threshold (float): The threshold for noise detection.
+
+        Returns:
+            BlackAreaDetectionHelper: A BlackAreaDetectionHelper object.
+        """
+        self.config = noise_patch_config
+
+    def process_and_verify_frame(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
+        """
+        Process a single frame and verify if it is valid.
+
+        Parameters:
+            frame (np.ndarray): The frame to process.
+
+        Returns:
+            Tuple[bool, np.ndarray]: A boolean indicating if the frame is valid
+            and the processed frame.
+        """
+        noisy, mask = self._detect_black_pixels(frame)
+        return noisy, mask
 
     def _detect_black_pixels(
         self,
         current_frame: np.ndarray,
-        config: NoisePatchConfig,
     ) -> Tuple[bool, np.ndarray]:
         """
         Detect black-out noise by checking for black pixels (value 0) over rows of pixels.
@@ -241,10 +155,10 @@ class NoiseDetectionHelper:
 
         # Read values from YAML config
         consecutive_threshold = (
-            config.black_pixel_consecutive_threshold
+            self.config.black_pixel_consecutive_threshold
         )  # How many consecutive pixels must be black
         black_pixel_value_threshold = (
-            config.black_pixel_value_threshold
+            self.config.black_pixel_value_threshold
         )  # Max pixel value considered "black"
 
         logger.debug(f"Using black pixel threshold: <= {black_pixel_value_threshold}")
@@ -273,7 +187,178 @@ class NoiseDetectionHelper:
                     break  # No need to check further in this row
 
         return frame_is_noisy, noisy_mask
+    
+class MSENoiseDetector(SingleFrameHelper):
+    """
+    Helper class for mean squared error noise detection.
+    """
 
+    def __init__(self, noise_patch_config: NoisePatchConfig):
+        """
+        Initialize the MeanErrorNoiseDetectionHelper object.
+
+        Parameters:
+            threshold (float): The threshold for noise detection.
+
+        Returns:
+            MeanErrorNoiseDetectionHelper: A MeanErrorNoiseDetectionHelper object.
+        """
+        self.config = noise_patch_config
+    
+    def register_previous_frame(self, previous_frame: np.ndarray)-> None:
+        """
+        Register the previous frame for mean error calculation.
+
+        Parameters:
+            previous_frame (np.ndarray): The previous frame to compare against.
+        """
+        self.previous_frame = previous_frame
+    
+    def process_and_verify_frame(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
+        """
+        Process a single frame and verify if it is valid.
+
+        Parameters:
+            frame (np.ndarray): The frame to process.
+
+        Returns:
+            Tuple[bool, np.ndarray]: A boolean indicating if the frame is valid
+            and the processed frame.
+        """
+        noisy, mask = self._detect_with_mean_error(frame)
+        return noisy, mask
+    
+    def _detect_with_mean_error(
+        self,
+        current_frame: np.ndarray,
+    ) -> Tuple[bool, np.ndarray]:
+        """
+        Detect noise using mean error between current and previous frames.
+
+        Returns:
+            Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy and the noise mask.
+        """
+        frame_width = current_frame.shape[1]
+        frame_height = current_frame.shape[0]
+
+        serialized_current = current_frame.flatten().astype(np.int16)
+        serialized_previous = self.previous_frame.flatten().astype(np.int16)
+        buffer_shape = self._get_buffer_shape(
+            frame_width, frame_height, self.config.device_config.px_per_buffer
+        )
+
+        noisy_parts = np.ones_like(serialized_current, np.uint8)
+        any_buffer_has_noise = False
+
+        for buffer_index in range(len(buffer_shape)):
+            buffer_start = 0 if buffer_index == 0 else buffer_shape[buffer_index]
+            buffer_end = (
+                frame_width * frame_height
+                if buffer_index == len(buffer_shape) - 1
+                else buffer_shape[buffer_index + 1]
+            )
+
+            comparison_start = buffer_end - self.config.buffer_split
+            while comparison_start > buffer_start:
+                mean_error = abs(
+                    serialized_current[comparison_start:buffer_end]
+                    - serialized_previous[comparison_start:buffer_end]
+                ).mean()
+                logger.debug(
+                    f"Mean error for buffer {buffer_index}:"
+                    f" pixels {comparison_start}-{buffer_end}: {mean_error}"
+                    f" (threshold: {self.config.threshold})"
+                )
+
+                if mean_error > self.config.threshold:
+                    noisy_parts[comparison_start:buffer_end] = np.zeros_like(
+                        serialized_current[comparison_start:buffer_end], np.uint8
+                    )
+                    any_buffer_has_noise = True
+                    break
+                comparison_start -= self.config.buffer_split
+
+        noise_patch = noisy_parts.reshape((frame_height, frame_width))
+        return any_buffer_has_noise, noise_patch
+
+class CombinedNoiseDetector(SingleFrameHelper):
+    """
+    Helper class for combined invalid frame detection.
+    """
+
+    def __init__(self, noise_patch_config: NoisePatchConfig):
+        """
+        Initialize the FrameProcessor object.
+        Block size/buffer size will be set by dev config later.
+
+        Returns:
+            NoiseDetectionHelper: A NoiseDetectionHelper object
+        """
+        self.config = noise_patch_config
+        if noise_patch_config.method is None:
+            raise ValueError("No noise detection methods provided")
+        self.methods = noise_patch_config.method
+
+        if "mean_error" in self.methods:
+            self.mse_detector = MSENoiseDetector(noise_patch_config)
+        if "gradient" in self.methods:
+            self.gradient_detector = GradientNoiseDetector(noise_patch_config)
+        if "black_pixels" in self.methods:
+            self.black_detector = BlackAreaDetector(noise_patch_config)
+
+    def process_and_verify_frame(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
+        """
+        Process a single frame and verify if it is valid.
+
+        Parameters:
+            frame (np.ndarray): The frame to process.
+
+        Returns:
+            Tuple[bool, np.ndarray]: A boolean indicating if the frame is valid
+            and the processed frame.
+        """
+        noisy_flag = False
+        combined_noisy_area = np.zeros_like(frame, dtype=np.uint8)
+
+        if "mean_error" in self.methods:
+            noisy, noisy_area = self.mse_detector.process_and_verify_frame(frame)
+            combined_noisy_area = np.maximum(combined_noisy_area, noisy_area)
+            noisy_flag = noisy_flag or noisy
+
+        if "gradient" in self.methods:
+            noisy, noisy_area = self.gradient_detector.process_and_verify_frame(frame)
+            combined_noisy_area = np.maximum(combined_noisy_area, noisy_area)
+            noisy_flag = noisy_flag or noisy
+
+        if "black_pixels" in self.methods:
+            noisy, noisy_area = self.black_detector.process_and_verify_frame(frame)
+            combined_noisy_area = np.maximum(combined_noisy_area, noisy_area)
+            noisy_flag = noisy_flag or noisy
+
+        return noisy_flag, combined_noisy_area            
+
+    def _get_buffer_shape(
+        self, frame_width: int, frame_height: int, px_per_buffer: int
+    ) -> list[int]:
+        """
+        Get the shape of each buffer in a frame.
+
+        Parameters:
+            frame_width (int): The width of the frame.
+            frame_height (int): The height of the frame.
+            px_per_buffer (int): The number of pixels per buffer.
+
+        Returns:
+            list[int]: The shape of each buffer in the frame.
+        """
+        buffer_shape = []
+
+        pixel_index = 0
+        while pixel_index < frame_width * frame_height:
+            buffer_shape.append(int(pixel_index))
+            pixel_index += px_per_buffer
+        logger.debug(f"Split shape: {buffer_shape}")
+        return buffer_shape
 
 class FrequencyMaskHelper(SingleFrameHelper):
     """
