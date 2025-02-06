@@ -53,7 +53,7 @@ class NoiseGroundTruth(BaseModel):
         ("mean_error", GroundTruthCategory.check_pattern),
     ],
 )
-def test_noise_detection_contrast(video, ground_truth, noise_detection_method, noise_category):
+def test_noisy_frame_detection(video, ground_truth, noise_detection_method, noise_category):
     """
     Contrast method of noise detection should correctly label frames corrupted
     by speckled noise

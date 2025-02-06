@@ -2,7 +2,7 @@
 Module for preprocessing data.
 """
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -70,6 +70,7 @@ class NoisePatchConfig(BaseModel):
         description="ID of the stream device configuration used for aquiring the video."
         "This is used in the mean_error method to compare frames"
         " in the units of data transfer buffers.",
+    )
     black_pixel_consecutive_threshold: int = Field(
         default=5,
         description="Number of consecutive black pixels required to classify a row as noisy.",

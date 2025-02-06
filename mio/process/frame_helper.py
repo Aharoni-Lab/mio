@@ -69,15 +69,9 @@ class NoiseDetectionHelper:
             if method == "mean_error":
                 if previous_frame is None:
                     raise ValueError("mean_error requires a previous frame to compare against")
-
-                serialized_current = current_frame.flatten().astype(np.int16)
-                serialized_previous = previous_frame.flatten().astype(np.int16)
-
-                split_size = config.buffer_size // config.buffer_split + 1
-                split_previous = self.split_by_length(serialized_previous, split_size)
-                split_current = self.split_by_length(serialized_current, split_size)
-
-                noisy, mask = self._detect_with_mean_error(split_current, split_previous, config)
+                return self._detect_with_mean_error(
+                    current_frame=current_frame, previous_frame=previous_frame, config=config
+                )
 
             elif method == "gradient":
                 noisy, mask = self._detect_with_gradient(current_frame, config)
@@ -99,6 +93,29 @@ class NoiseDetectionHelper:
             combined_mask = np.maximum(combined_mask, mask)
 
         return noisy_flag, combined_mask
+
+    def _get_buffer_shape(
+        self, frame_width: int, frame_height: int, px_per_buffer: int
+    ) -> list[int]:
+        """
+        Get the shape of each buffer in a frame.
+
+        Parameters:
+            frame_width (int): The width of the frame.
+            frame_height (int): The height of the frame.
+            px_per_buffer (int): The number of pixels per buffer.
+
+        Returns:
+            list[int]: The shape of each buffer in the frame.
+        """
+        buffer_shape = []
+
+        pixel_index = 0
+        while pixel_index < frame_width * frame_height:
+            buffer_shape.append(int(pixel_index))
+            pixel_index += px_per_buffer
+        logger.debug(f"Split shape: {buffer_shape}")
+        return buffer_shape
 
     def _detect_with_mean_error(
         self,
