@@ -49,7 +49,7 @@ class NoiseGroundTruth(BaseModel):
     "noise_detection_method,noise_category",
     [
         ("gradient", GroundTruthCategory.check_pattern),
-        ("gradient", GroundTruthCategory.blacked_out),
+        ("black_area", GroundTruthCategory.blacked_out),
         ("mean_error", GroundTruthCategory.check_pattern),
     ],
 )
@@ -68,6 +68,8 @@ def test_noisy_frame_detection(video, ground_truth, noise_detection_method, nois
                 "see https://github.com/Aharoni-Lab/mio/pull/97"
             )
         global_config: DenoiseConfig = DenoiseConfig.from_id("denoise_example_mean_error")
+    elif noise_detection_method == "black_area":
+        global_config: DenoiseConfig = DenoiseConfig.from_id("denoise_example")
     else:
         raise ValueError("Invalid noise detection method")
 
@@ -95,7 +97,7 @@ def test_noisy_frame_detection(video, ground_truth, noise_detection_method, nois
         if previous_frame is None:
             previous_frame = frame
 
-        is_noisy, mask = detector.process_and_verify_frame(frame=frame)
+        is_noisy, mask = detector.find_invalid_area(frame=frame)
         if not is_noisy:
             previous_frame = frame
 

@@ -18,7 +18,8 @@ from mio.models.process import (
     NoisePatchConfig,
 )
 from mio.plots.video import VideoPlotter
-from mio.process.frame_helper import CombinedNoiseDetector, FrequencyMaskHelper, ZStackHelper
+from mio.process.frame_helper import CombinedNoiseDetector, FrequencyMaskHelper
+from mio.process.zstack_helper import ZStackHelper
 
 logger = init_logger("video")
 
@@ -161,7 +162,7 @@ class NoisePatchProcessor(BaseVideoProcessor):
             return None
 
         if self.noise_patch_config.enable:
-            broken, noise_patch = self.noise_detect_helper.process_and_verify_frame(input_frame)
+            broken, noise_patch = self.noise_detect_helper.find_invalid_area(input_frame)
 
             # Handle noisy frames
             if not broken:

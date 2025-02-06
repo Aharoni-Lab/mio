@@ -3,7 +3,7 @@ This module contains a helper class for frame operations.
 """
 
 from abc import abstractmethod
-from typing import Optional, Tuple
+from typing import Tuple
 
 import cv2
 import numpy as np
@@ -42,7 +42,46 @@ class SingleFrameHelper:
         pass
 
     @abstractmethod
-    def process_and_verify_frame(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
+    def find_invalid_area(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
+        """
+        Find the invalid area in a single frame.
+
+        Parameters:
+            frame (np.ndarray): The frame to process.
+
+        Returns:
+            Tuple[bool, np.ndarray]: A boolean indicating if the frame is invalid
+            and the processed frame.
+        """
+        pass
+
+
+class CombinedNoiseDetector(SingleFrameHelper):
+    """
+    Helper class for combined invalid frame detection.
+    """
+
+    def __init__(self, noise_patch_config: NoisePatchConfig):
+        """
+        Initialize the FrameProcessor object.
+        Block size/buffer size will be set by dev config later.
+
+        Returns:
+            NoiseDetectionHelper: A NoiseDetectionHelper object
+        """
+        self.config = noise_patch_config
+        if noise_patch_config.method is None:
+            raise ValueError("No noise detection methods provided")
+        self.methods = noise_patch_config.method
+
+        if "mean_error" in self.methods:
+            self.mse_detector = MSENoiseDetector(noise_patch_config)
+        if "gradient" in self.methods:
+            self.gradient_detector = GradientNoiseDetector(noise_patch_config)
+        if "black_area" in self.methods:
+            self.black_detector = BlackAreaDetector(noise_patch_config)
+
+    def find_invalid_area(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
         """
         Process a single frame and verify if it is valid.
 
@@ -50,10 +89,29 @@ class SingleFrameHelper:
             frame (np.ndarray): The frame to process.
 
         Returns:
-            Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy
-              and the processed frame.
+            Tuple[bool, np.ndarray]: A boolean indicating if the frame is valid
+            and the processed frame.
         """
-        pass
+        noisy_flag = False
+        combined_noisy_area = np.zeros_like(frame, dtype=np.uint8)
+
+        if "mean_error" in self.methods:
+            noisy, noisy_area = self.mse_detector.find_invalid_area(frame)
+            combined_noisy_area = np.maximum(combined_noisy_area, noisy_area)
+            noisy_flag = noisy_flag or noisy
+
+        if "gradient" in self.methods:
+            noisy, noisy_area = self.gradient_detector.find_invalid_area(frame)
+            combined_noisy_area = np.maximum(combined_noisy_area, noisy_area)
+            noisy_flag = noisy_flag or noisy
+
+        if "black_area" in self.methods:
+            noisy, noisy_area = self.black_detector.find_invalid_area(frame)
+            combined_noisy_area = np.maximum(combined_noisy_area, noisy_area)
+            noisy_flag = noisy_flag or noisy
+
+        return noisy_flag, combined_noisy_area
+
 
 class GradientNoiseDetector(SingleFrameHelper):
     """
@@ -71,8 +129,8 @@ class GradientNoiseDetector(SingleFrameHelper):
             GradientNoiseDetectionHelper: A GradientNoiseDetectionHelper object.
         """
         self.config = noise_patch_config
-        
-    def process_and_verify_frame(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
+
+    def find_invalid_area(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
         """
         Process a single frame and verify if it is valid.
 
@@ -108,7 +166,8 @@ class GradientNoiseDetector(SingleFrameHelper):
         frame_is_noisy = noisy_mask.any()
 
         return frame_is_noisy, noisy_mask
-    
+
+
 class BlackAreaDetector(SingleFrameHelper):
     """
     Helper class for black area detection.
@@ -126,7 +185,7 @@ class BlackAreaDetector(SingleFrameHelper):
         """
         self.config = noise_patch_config
 
-    def process_and_verify_frame(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
+    def find_invalid_area(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
         """
         Process a single frame and verify if it is valid.
 
@@ -187,7 +246,8 @@ class BlackAreaDetector(SingleFrameHelper):
                     break  # No need to check further in this row
 
         return frame_is_noisy, noisy_mask
-    
+
+
 class MSENoiseDetector(SingleFrameHelper):
     """
     Helper class for mean squared error noise detection.
@@ -204,8 +264,9 @@ class MSENoiseDetector(SingleFrameHelper):
             MeanErrorNoiseDetectionHelper: A MeanErrorNoiseDetectionHelper object.
         """
         self.config = noise_patch_config
-    
-    def register_previous_frame(self, previous_frame: np.ndarray)-> None:
+        self.previous_frame = None
+
+    def register_previous_frame(self, previous_frame: np.ndarray) -> None:
         """
         Register the previous frame for mean error calculation.
 
@@ -213,8 +274,8 @@ class MSENoiseDetector(SingleFrameHelper):
             previous_frame (np.ndarray): The previous frame to compare against.
         """
         self.previous_frame = previous_frame
-    
-    def process_and_verify_frame(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
+
+    def find_invalid_area(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
         """
         Process a single frame and verify if it is valid.
 
@@ -225,9 +286,12 @@ class MSENoiseDetector(SingleFrameHelper):
             Tuple[bool, np.ndarray]: A boolean indicating if the frame is valid
             and the processed frame.
         """
+        if self.previous_frame is None:
+            self.previous_frame = frame
+            return False, np.zeros_like(frame, dtype=np.uint8)
         noisy, mask = self._detect_with_mean_error(frame)
         return noisy, mask
-    
+
     def _detect_with_mean_error(
         self,
         current_frame: np.ndarray,
@@ -238,12 +302,15 @@ class MSENoiseDetector(SingleFrameHelper):
         Returns:
             Tuple[bool, np.ndarray]: A boolean indicating if the frame is noisy and the noise mask.
         """
+        if self.previous_frame is None:
+            return False, np.zeros_like(current_frame, dtype=np.uint8)
+
         frame_width = current_frame.shape[1]
         frame_height = current_frame.shape[0]
 
         serialized_current = current_frame.flatten().astype(np.int16)
         serialized_previous = self.previous_frame.flatten().astype(np.int16)
-        buffer_shape = self._get_buffer_shape(
+        buffer_shape = FrameSplitter.get_buffer_shape(
             frame_width, frame_height, self.config.device_config.px_per_buffer
         )
 
@@ -281,84 +348,6 @@ class MSENoiseDetector(SingleFrameHelper):
         noise_patch = noisy_parts.reshape((frame_height, frame_width))
         return any_buffer_has_noise, noise_patch
 
-class CombinedNoiseDetector(SingleFrameHelper):
-    """
-    Helper class for combined invalid frame detection.
-    """
-
-    def __init__(self, noise_patch_config: NoisePatchConfig):
-        """
-        Initialize the FrameProcessor object.
-        Block size/buffer size will be set by dev config later.
-
-        Returns:
-            NoiseDetectionHelper: A NoiseDetectionHelper object
-        """
-        self.config = noise_patch_config
-        if noise_patch_config.method is None:
-            raise ValueError("No noise detection methods provided")
-        self.methods = noise_patch_config.method
-
-        if "mean_error" in self.methods:
-            self.mse_detector = MSENoiseDetector(noise_patch_config)
-        if "gradient" in self.methods:
-            self.gradient_detector = GradientNoiseDetector(noise_patch_config)
-        if "black_pixels" in self.methods:
-            self.black_detector = BlackAreaDetector(noise_patch_config)
-
-    def process_and_verify_frame(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
-        """
-        Process a single frame and verify if it is valid.
-
-        Parameters:
-            frame (np.ndarray): The frame to process.
-
-        Returns:
-            Tuple[bool, np.ndarray]: A boolean indicating if the frame is valid
-            and the processed frame.
-        """
-        noisy_flag = False
-        combined_noisy_area = np.zeros_like(frame, dtype=np.uint8)
-
-        if "mean_error" in self.methods:
-            noisy, noisy_area = self.mse_detector.process_and_verify_frame(frame)
-            combined_noisy_area = np.maximum(combined_noisy_area, noisy_area)
-            noisy_flag = noisy_flag or noisy
-
-        if "gradient" in self.methods:
-            noisy, noisy_area = self.gradient_detector.process_and_verify_frame(frame)
-            combined_noisy_area = np.maximum(combined_noisy_area, noisy_area)
-            noisy_flag = noisy_flag or noisy
-
-        if "black_pixels" in self.methods:
-            noisy, noisy_area = self.black_detector.process_and_verify_frame(frame)
-            combined_noisy_area = np.maximum(combined_noisy_area, noisy_area)
-            noisy_flag = noisy_flag or noisy
-
-        return noisy_flag, combined_noisy_area            
-
-    def _get_buffer_shape(
-        self, frame_width: int, frame_height: int, px_per_buffer: int
-    ) -> list[int]:
-        """
-        Get the shape of each buffer in a frame.
-
-        Parameters:
-            frame_width (int): The width of the frame.
-            frame_height (int): The height of the frame.
-            px_per_buffer (int): The number of pixels per buffer.
-
-        Returns:
-            list[int]: The shape of each buffer in the frame.
-        """
-        buffer_shape = []
-
-        pixel_index = 0
-        while pixel_index < frame_width * frame_height:
-            buffer_shape.append(int(pixel_index))
-            pixel_index += px_per_buffer
-        logger.debug(f"Split shape: {buffer_shape}")
-        return buffer_shape
 
 class FrequencyMaskHelper(SingleFrameHelper):
     """
@@ -474,60 +463,29 @@ class FrequencyMaskHelper(SingleFrameHelper):
         return mask
 
 
-class ZStackHelper:
+class FrameSplitter:
     """
-    Helper class for Z-stack operations.
+    Helper class for splitting frames into buffers.
+    Currently only for getting the buffer shape from pixel count.
     """
 
-    @staticmethod
-    def get_minimum_projection(image_list: list[np.ndarray]) -> np.ndarray:
+    def get_buffer_shape(frame_width: int, frame_height: int, px_per_buffer: int) -> list[int]:
         """
-        Get the minimum projection of a list of images.
+        Get the shape of each buffer in a frame.
 
         Parameters:
-            image_list (list[np.ndarray]): A list of images to project.
+            frame_width (int): The width of the frame.
+            frame_height (int): The height of the frame.
+            px_per_buffer (int): The number of pixels per buffer.
 
         Returns:
-            np.ndarray: The minimum projection of the images.
+            list[int]: The shape of each buffer in the frame.
         """
-        stacked_images = np.stack(image_list, axis=0)
-        min_projection = np.min(stacked_images, axis=0)
-        return min_projection
+        buffer_shape = []
 
-    @staticmethod
-    def normalize_video_stack(image_list: list[np.ndarray]) -> list[np.ndarray]:
-        """
-        Normalize a stack of images to 0-255 using max and minimum values of the entire stack.
-        Return a list of images.
-
-        Parameters:
-            image_list (list[np.ndarray]): A list of images to normalize.
-
-        Returns:
-            list[np.ndarray]: The normalized images as a list.
-        """
-
-        # Stack images along a new axis (axis=0)
-        stacked_images = np.stack(image_list, axis=0)
-
-        # Find the global min and max across the entire stack
-        global_min = stacked_images.min()
-        global_max = stacked_images.max()
-
-        range_val = max(global_max - global_min, 1e-5)  # Set an epsilon value for stability
-
-        # Normalize each frame using the global min and max
-        normalized_images = []
-        for i in range(stacked_images.shape[0]):
-            normalized_image = cv2.normalize(
-                stacked_images[i],
-                None,
-                0,
-                np.iinfo(np.uint8).max,
-                cv2.NORM_MINMAX,
-                dtype=cv2.CV_32F,
-            )
-            normalized_image = (stacked_images[i] - global_min) / range_val * np.iinfo(np.uint8).max
-            normalized_images.append(normalized_image.astype(np.uint8))
-
-        return normalized_images
+        pixel_index = 0
+        while pixel_index < frame_width * frame_height:
+            buffer_shape.append(int(pixel_index))
+            pixel_index += px_per_buffer
+        logger.debug(f"Split shape: {buffer_shape}")
+        return buffer_shape
