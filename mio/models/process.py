@@ -2,7 +2,7 @@
 Module for preprocessing data.
 """
 
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -48,16 +48,12 @@ class NoisePatchConfig(BaseModel):
         default=True,
         description="Enable patch based noise handling.",
     )
-    method: Literal["mean_error", "gradient"] = Field(
+    method: List[Literal["mean_error", "gradient", "black_area"]] = Field(
         default="gradient",
         description="Method for detecting noise."
-        "The gradient method is the current recommended method."
         "gradient: Detection based on the gradient of the frame row."
-        "mean_error: Detection based on the mean error with the same row of the previous frame.",
-    )
-    additional_methods: Optional[list[str]] = Field(
-        default=list,
-        description="Additional noise detection methods to apply after the primary method.",
+        "mean_error: Detection based on the mean error with the same row of the previous frame."
+        "black_area: Detection based on the number of consecutive black pixels in a row.",
     )
     threshold: float = Field(
         default=20,

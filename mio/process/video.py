@@ -18,7 +18,7 @@ from mio.models.process import (
     NoisePatchConfig,
 )
 from mio.plots.video import VideoPlotter
-from mio.process.frame_helper import CombinedNoiseDetector, FrequencyMaskHelper
+from mio.process.frame_helper import FrequencyMaskHelper, InvalidFrameDetector
 from mio.process.zstack_helper import ZStackHelper
 
 logger = init_logger("video")
@@ -119,8 +119,6 @@ class NoisePatchProcessor(BaseVideoProcessor):
         self,
         name: str,
         noise_patch_config: NoisePatchConfig,
-        width: int,
-        height: int,
         output_dir: Path,
     ) -> None:
         """
@@ -132,8 +130,7 @@ class NoisePatchProcessor(BaseVideoProcessor):
         """
         super().__init__(name, output_dir)
         self.noise_patch_config: NoisePatchConfig = noise_patch_config
-        self.noise_detect_helper = CombinedNoiseDetector(noise_patch_config=noise_patch_config)
-        self.previous_frame: Optional[np.ndarray] = None
+        self.noise_detect_helper = InvalidFrameDetector(noise_patch_config=noise_patch_config)
         self.noise_patchs: list[np.ndarray] = []
         self.noisy_frames: list[np.ndarray] = []
         self.diff_frames: list[np.ndarray] = []
@@ -141,10 +138,9 @@ class NoisePatchProcessor(BaseVideoProcessor):
 
         self.output_enable: bool = noise_patch_config.output_result
 
-        if noise_patch_config.method == "mean_error":
+        if "mean_error" in noise_patch_config.method:
             logger.warning(
-                "The mean_error method is unstable and not fully tested yet."
-                " Gradient method is recommended."
+                "The mean_error method is unstable and not fully tested yet." " Use with caution."
             )
 
     def process_frame(self, input_frame: np.ndarray) -> Optional[np.ndarray]:
@@ -157,22 +153,21 @@ class NoisePatchProcessor(BaseVideoProcessor):
         Returns:
         Optional[np.ndarray]: The processed frame. If the frame is noisy, a None is returned.
         """
-
         if input_frame is None:
             return None
 
         if self.noise_patch_config.enable:
-            broken, noise_patch = self.noise_detect_helper.find_invalid_area(input_frame)
+            invalid, noisy_area = self.noise_detect_helper.find_invalid_area(input_frame)
 
             # Handle noisy frames
-            if not broken:
+            if not invalid:
                 self.append_output_frame(input_frame)
                 return input_frame
             else:
                 index = len(self.output_video) + len(self.noise_patchs)
                 logger.info(f"Dropping frame {index} of original video due to noise.")
                 logger.debug(f"Adding noise patch for frame {index}.")
-                self.noise_patchs.append((noise_patch * np.iinfo(np.uint8).max).astype(np.uint8))
+                self.noise_patchs.append((noisy_area * np.iinfo(np.uint8).max).astype(np.uint8))
                 self.noisy_frames.append(input_frame)
                 self.dropped_frame_indices.append(index)
             return None
@@ -213,7 +208,6 @@ class NoisePatchProcessor(BaseVideoProcessor):
 
         if self.noise_patch_config.output_noise_patch:
             logger.info(f"Exporting {self.name} noise patch to {self.output_dir}")
-            print(f"image shape: {self.noise_patchs[0].shape}, dtype: {self.noise_patchs[0].dtype}")
             self.noise_patch_named_video.export(
                 output_path=self.output_dir / f"{self.name}",
                 fps=20,
@@ -294,7 +288,6 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
             height=height, width=width, freq_mask_config=freq_mask_config
         )
         self.freq_domain_frames = []
-        self._freq_mask: np.ndarray = None
         self.frame_width: int = width
         self.frame_height: int = height
         self.output_enable: bool = freq_mask_config.output_result
@@ -304,9 +297,7 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
         """
         Get the frequency mask.
         """
-        if self._freq_mask is None:
-            self._freq_mask = self.freq_mask_helper.freq_mask
-        return self._freq_mask
+        return self.freq_mask_helper.freq_mask
 
     @property
     def freq_mask_named_frame(self) -> NamedFrame:
@@ -331,7 +322,6 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
 
         Returns:
         Optional[np.ndarray]: The processed frame. If the input is none, a None is returned.
-
         """
         if input_frame is None:
             return None

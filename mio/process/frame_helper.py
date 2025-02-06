@@ -14,17 +14,17 @@ from mio.models.process import FreqencyMaskingConfig, NoisePatchConfig
 logger = init_logger("frame_helper")
 
 
-class SingleFrameHelper:
+class BaseSingleFrameHelper:
     """
-    Helper class for single frame operations.
+    Base class for single frame operations.
     """
 
     def __init__(self):
         """
-        Initialize the SingleFrameHelper object.
+        Initialize the BaseSingleFrameHelper object.
 
         Returns:
-            SingleFrameHelper: A SingleFrameHelper object.
+            BaseSingleFrameHelper: A BaseSingleFrameHelper object.
         """
         pass
 
@@ -56,7 +56,7 @@ class SingleFrameHelper:
         pass
 
 
-class CombinedNoiseDetector(SingleFrameHelper):
+class InvalidFrameDetector(BaseSingleFrameHelper):
     """
     Helper class for combined invalid frame detection.
     """
@@ -89,8 +89,7 @@ class CombinedNoiseDetector(SingleFrameHelper):
             frame (np.ndarray): The frame to process.
 
         Returns:
-            Tuple[bool, np.ndarray]: A boolean indicating if the frame is valid
-            and the processed frame.
+            Tuple[bool, np.ndarray]: A boolean indicating invalid frames and the invalid area.
         """
         noisy_flag = False
         combined_noisy_area = np.zeros_like(frame, dtype=np.uint8)
@@ -113,7 +112,7 @@ class CombinedNoiseDetector(SingleFrameHelper):
         return noisy_flag, combined_noisy_area
 
 
-class GradientNoiseDetector(SingleFrameHelper):
+class GradientNoiseDetector(BaseSingleFrameHelper):
     """
     Helper class for gradient noise detection.
     """
@@ -168,7 +167,7 @@ class GradientNoiseDetector(SingleFrameHelper):
         return frame_is_noisy, noisy_mask
 
 
-class BlackAreaDetector(SingleFrameHelper):
+class BlackAreaDetector(BaseSingleFrameHelper):
     """
     Helper class for black area detection.
     """
@@ -248,7 +247,7 @@ class BlackAreaDetector(SingleFrameHelper):
         return frame_is_noisy, noisy_mask
 
 
-class MSENoiseDetector(SingleFrameHelper):
+class MSENoiseDetector(BaseSingleFrameHelper):
     """
     Helper class for mean squared error noise detection.
     """
@@ -292,10 +291,7 @@ class MSENoiseDetector(SingleFrameHelper):
         noisy, mask = self._detect_with_mean_error(frame)
         return noisy, mask
 
-    def _detect_with_mean_error(
-        self,
-        current_frame: np.ndarray,
-    ) -> Tuple[bool, np.ndarray]:
+    def _detect_with_mean_error(self, current_frame: np.ndarray) -> Tuple[bool, np.ndarray]:
         """
         Detect noise using mean error between current and previous frames.
 
@@ -305,51 +301,35 @@ class MSENoiseDetector(SingleFrameHelper):
         if self.previous_frame is None:
             return False, np.zeros_like(current_frame, dtype=np.uint8)
 
-        frame_width = current_frame.shape[1]
-        frame_height = current_frame.shape[0]
+        current_flat = current_frame.astype(np.int16).flatten()
+        previous_flat = self.previous_frame.astype(np.int16).flatten()
 
-        serialized_current = current_frame.flatten().astype(np.int16)
-        serialized_previous = self.previous_frame.flatten().astype(np.int16)
-        buffer_shape = FrameSplitter.get_buffer_shape(
-            frame_width, frame_height, self.config.device_config.px_per_buffer
-        )
+        buffer_indices = FrameSplitter.get_buffer_shape(
+            current_frame.shape[1], current_frame.shape[0], self.config.device_config.px_per_buffer
+        ) + [
+            current_frame.size
+        ]  # Ensure final boundary is included
 
-        noisy_parts = np.ones_like(serialized_current, np.uint8)
-        any_buffer_has_noise = False
+        noisy_mask = np.ones_like(current_flat, dtype=np.uint8)
+        has_noise = False
 
-        for buffer_index in range(len(buffer_shape)):
-            buffer_start = 0 if buffer_index == 0 else buffer_shape[buffer_index]
-            buffer_end = (
-                frame_width * frame_height
-                if buffer_index == len(buffer_shape) - 1
-                else buffer_shape[buffer_index + 1]
-            )
-
-            comparison_start = buffer_end - self.config.buffer_split
-            while comparison_start > buffer_start:
-                mean_error = abs(
-                    serialized_current[comparison_start:buffer_end]
-                    - serialized_previous[comparison_start:buffer_end]
-                ).mean()
-                logger.debug(
-                    f"Mean error for buffer {buffer_index}:"
-                    f" pixels {comparison_start}-{buffer_end}: {mean_error}"
-                    f" (threshold: {self.config.threshold})"
+        for start_idx, end_idx in zip(buffer_indices[:-1], buffer_indices[1:]):
+            for sub_start in range(
+                end_idx - self.config.buffer_split, start_idx, -self.config.buffer_split
+            ):
+                mean_error = np.mean(
+                    np.abs(current_flat[sub_start:end_idx] - previous_flat[sub_start:end_idx])
                 )
 
                 if mean_error > self.config.threshold:
-                    noisy_parts[comparison_start:buffer_end] = np.zeros_like(
-                        serialized_current[comparison_start:buffer_end], np.uint8
-                    )
-                    any_buffer_has_noise = True
+                    noisy_mask[sub_start:end_idx] = 0
+                    has_noise = True
                     break
-                comparison_start -= self.config.buffer_split
 
-        noise_patch = noisy_parts.reshape((frame_height, frame_width))
-        return any_buffer_has_noise, noise_patch
+        return has_noise, noisy_mask.reshape(current_frame.shape)
 
 
-class FrequencyMaskHelper(SingleFrameHelper):
+class FrequencyMaskHelper(BaseSingleFrameHelper):
     """
     Helper class for frequency masking operations.
     """
