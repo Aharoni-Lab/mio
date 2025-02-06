@@ -20,7 +20,7 @@ class TestVideoProcessors(unittest.TestCase):
         denoise_config.noise_patch.enable = True
         denoise_config.noise_patch.output_result = True
 
-        processor = NoisePatchProcessor("denoise_example", denoise_config.noise_patch, self.width, self.height, self.test_dir)
+        processor = NoisePatchProcessor("denoise_example", denoise_config.noise_patch, self.test_dir)
         processed_frame = processor.process_frame(self.test_frame)
 
         self.assertIsInstance(processed_frame, np.ndarray)

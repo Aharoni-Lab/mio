@@ -9,6 +9,7 @@ Generic I/O interfaces for miniscopes :)
 guide/installation
 guide/config
 cli/index
+api/preprocessing_guide
 ```
 
 ```{toctree}
@@ -31,9 +32,9 @@ api/exceptions
 api/plots/index
 api/utils
 api/stream_daq
-api/preprocessing
 api/bit_operation
 api/vendor/index
+api/process/index
 ```
 
 ```{toctree}

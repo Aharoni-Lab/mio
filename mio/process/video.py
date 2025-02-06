@@ -18,7 +18,8 @@ from mio.models.process import (
     NoisePatchConfig,
 )
 from mio.plots.video import VideoPlotter
-from mio.process.frame_helper import FrequencyMaskHelper, NoiseDetectionHelper, ZStackHelper
+from mio.process.frame_helper import FrequencyMaskHelper, InvalidFrameDetector
+from mio.process.zstack_helper import ZStackHelper
 
 logger = init_logger("video")
 
@@ -118,8 +119,6 @@ class NoisePatchProcessor(BaseVideoProcessor):
         self,
         name: str,
         noise_patch_config: NoisePatchConfig,
-        width: int,
-        height: int,
         output_dir: Path,
     ) -> None:
         """
@@ -130,9 +129,8 @@ class NoisePatchProcessor(BaseVideoProcessor):
         noise_patch_config (NoisePatchConfig): The noise patch configuration.
         """
         super().__init__(name, output_dir)
-        self.noise_detect_helper = NoiseDetectionHelper(height=height, width=width)
         self.noise_patch_config: NoisePatchConfig = noise_patch_config
-        self.previous_frame: Optional[np.ndarray] = None
+        self.noise_detect_helper = InvalidFrameDetector(noise_patch_config=noise_patch_config)
         self.noise_patchs: list[np.ndarray] = []
         self.noisy_frames: list[np.ndarray] = []
         self.diff_frames: list[np.ndarray] = []
@@ -140,10 +138,9 @@ class NoisePatchProcessor(BaseVideoProcessor):
 
         self.output_enable: bool = noise_patch_config.output_result
 
-        if noise_patch_config.method == "mean_error":
+        if "mean_error" in noise_patch_config.method:
             logger.warning(
-                "The mean_error method is unstable and not fully tested yet."
-                " Use gradient method instead."
+                "The mean_error method is unstable and not fully tested yet." " Use with caution."
             )
 
     def process_frame(self, input_frame: np.ndarray) -> Optional[np.ndarray]:
@@ -156,35 +153,27 @@ class NoisePatchProcessor(BaseVideoProcessor):
         Returns:
         Optional[np.ndarray]: The processed frame. If the frame is noisy, a None is returned.
         """
-
         if input_frame is None:
             return None
 
-        if self.noise_patch_config.enable and self.previous_frame is not None:
-            broken, noise_patch = self.noise_detect_helper.detect_frame_with_noisy_buffer(
-                input_frame,
-                self.previous_frame if self.noise_patch_config.method == "mean_error" else None,
-                self.noise_patch_config,
-            )
+        if self.noise_patch_config.enable:
+            invalid, noisy_area = self.noise_detect_helper.find_invalid_area(input_frame)
 
             # Handle noisy frames
-            if not broken:
+            if not invalid:
                 self.append_output_frame(input_frame)
-                self.previous_frame = input_frame
                 return input_frame
             else:
                 index = len(self.output_video) + len(self.noise_patchs)
                 logger.info(f"Dropping frame {index} of original video due to noise.")
                 logger.debug(f"Adding noise patch for frame {index}.")
-                self.noise_patchs.append((noise_patch * np.iinfo(np.uint8).max).astype(np.uint8))
+                self.noise_patchs.append((noisy_area * np.iinfo(np.uint8).max).astype(np.uint8))
                 self.noisy_frames.append(input_frame)
                 self.dropped_frame_indices.append(index)
             return None
 
-        elif self.noise_patch_config.enable and self.previous_frame is None:
-            self.previous_frame = input_frame
-            self.append_output_frame(input_frame)
-            return input_frame
+        self.append_output_frame(input_frame)
+        return input_frame
 
     @property
     def noise_patch_named_video(self) -> NamedVideo:
@@ -219,7 +208,6 @@ class NoisePatchProcessor(BaseVideoProcessor):
 
         if self.noise_patch_config.output_noise_patch:
             logger.info(f"Exporting {self.name} noise patch to {self.output_dir}")
-            print(f"image shape: {self.noise_patchs[0].shape}, dtype: {self.noise_patchs[0].dtype}")
             self.noise_patch_named_video.export(
                 output_path=self.output_dir / f"{self.name}",
                 fps=20,
@@ -295,10 +283,11 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
         freq_mask_config (FreqencyMaskingConfig): The frequency masking configuration.
         """
         super().__init__(name, output_dir)
-        self.freq_mask_helper = FrequencyMaskHelper()
         self.freq_mask_config: FreqencyMaskingConfig = freq_mask_config
+        self.freq_mask_helper = FrequencyMaskHelper(
+            height=height, width=width, freq_mask_config=freq_mask_config
+        )
         self.freq_domain_frames = []
-        self._freq_mask: np.ndarray = None
         self.frame_width: int = width
         self.frame_height: int = height
         self.output_enable: bool = freq_mask_config.output_result
@@ -308,13 +297,7 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
         """
         Get the frequency mask.
         """
-        if self._freq_mask is None:
-            self._freq_mask = self.freq_mask_helper.gen_freq_mask(
-                freq_mask_config=self.freq_mask_config,
-                width=self.frame_width,
-                height=self.frame_height,
-            )
-        return self._freq_mask
+        return self.freq_mask_helper.freq_mask
 
     @property
     def freq_mask_named_frame(self) -> NamedFrame:
@@ -339,15 +322,12 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
 
         Returns:
         Optional[np.ndarray]: The processed frame. If the input is none, a None is returned.
-
         """
         if input_frame is None:
             return None
         if self.freq_mask_config.enable:
-            freq_filtered_frame, frame_freq_domain = self.freq_mask_helper.apply_freq_mask(
-                img=input_frame,
-                mask=self.freq_mask,
-            )
+            freq_filtered_frame = self.freq_mask_helper.process_frame(img=input_frame)
+            frame_freq_domain = self.freq_mask_helper.freq_domain(img=input_frame)
             self.append_output_frame(freq_filtered_frame)
             self.freq_domain_frames.append(frame_freq_domain)
 
