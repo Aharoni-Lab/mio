@@ -38,6 +38,76 @@ class MinimumProjectionConfig(BaseModel):
     )
 
 
+class MSEDetectorConfig(BaseModel):
+    """
+    Configraiton for detecting invalid frames based on mean squared error.
+    """
+
+    threshold: float = Field(
+        ...,
+        description="Threshold for detecting invalid frames based on mean squared error.",
+    )
+    device_config_id: Optional[str] = Field(
+        default=None,
+        description="ID of the stream device configuration used for aquiring the video."
+        "This is used in the mean_error method to compare frames"
+        " in the units of data transfer buffers.",
+    )
+    buffer_size: int = Field(
+        default=5032,
+        description="Size of the buffers composing the image."
+        "This premises that the noisy area will appear in units of buffer_size.",
+    )
+    buffer_split: int = Field(
+        default=1,
+        description="Number of splits to make in the buffer when detecting noisy areas."
+        "This further splits the buffer into smaller patches to detect small noisy areas."
+        "This is used in the mean_error method.",
+    )
+    diff_multiply: int = Field(
+        default=1,
+        description="Multiplier for visualizing the diff between the current and previous frame.",
+    )
+
+    _device_config: Optional[StreamDevConfig] = None
+
+    @property
+    def device_config(self) -> StreamDevConfig:
+        """
+        Get the device configuration based on the device_config_id.
+        This is used in the mean_error method to compare frames in the units of data buffers.
+        """
+        if self._device_config is None:
+            self._device_config = StreamDevConfig.from_any(self.device_config_id)
+        return self._device_config
+
+
+class GradientDetectorConfig(BaseModel):
+    """
+    Configraiton for detecting invalid frames based on gradient.
+    """
+
+    threshold: float = Field(
+        ...,
+        description="Threshold for detecting invalid frames based on gradient.",
+    )
+
+
+class BlackAreaDetectorConfig(BaseModel):
+    """
+    Configraiton for detecting invalid frames based on black area.
+    """
+
+    consecutive_threshold: int = Field(
+        default=5,
+        description="Number of consecutive black pixels required to classify a row as noisy.",
+    )
+    value_threshold: int = Field(
+        default=0,
+        description="Pixel intensity value below which a pixel is considered 'black'.",
+    )
+
+
 class NoisePatchConfig(BaseModel):
     """
     Configuration for patch based noise handling.
@@ -55,40 +125,17 @@ class NoisePatchConfig(BaseModel):
         "mean_error: Detection based on the mean error with the same row of the previous frame."
         "black_area: Detection based on the number of consecutive black pixels in a row.",
     )
-    threshold: float = Field(
-        default=20,
-        description="Threshold for detecting noise."
-        "This is used together with the method to determine whether a frame is noisy."
-        "Currently, the value needs to be empirically determined.",
-    )
-    device_config_id: Optional[str] = Field(
+    mean_error_config: Optional[MSEDetectorConfig] = Field(
         default=None,
-        description="ID of the stream device configuration used for aquiring the video."
-        "This is used in the mean_error method to compare frames"
-        " in the units of data transfer buffers.",
+        description="Configuration for detecting invalid frames based on mean squared error.",
     )
-    black_pixel_consecutive_threshold: int = Field(
-        default=5,
-        description="Number of consecutive black pixels required to classify a row as noisy.",
+    gradient_config: Optional[GradientDetectorConfig] = Field(
+        default=None,
+        description="Configuration for detecting invalid frames based on gradient.",
     )
-    black_pixel_value_threshold: int = Field(
-        default=20,
-        description="Pixel intensity value below which a pixel is considered 'black'.",
-    )
-    buffer_size: int = Field(
-        default=5032,
-        description="Size of the buffers composing the image."
-        "This premises that the noisy area will appear in units of buffer_size.",
-    )
-    buffer_split: int = Field(
-        default=1,
-        description="Number of splits to make in the buffer when detecting noisy areas."
-        "This further splits the buffer into smaller patches to detect small noisy areas."
-        "This is used in the mean_error method.",
-    )
-    diff_multiply: int = Field(
-        default=1,
-        description="Multiplier for visualizing the diff between the current and previous frame.",
+    black_area_config: Optional[BlackAreaDetectorConfig] = Field(
+        default=None,
+        description="Configuration for detecting invalid frames based on black area.",
     )
     output_result: bool = Field(
         default=False,
@@ -109,18 +156,6 @@ class NoisePatchConfig(BaseModel):
         default=True,
         description="Output the stack of noisy frames as an independent video stream.",
     )
-
-    _device_config: Optional[StreamDevConfig] = None
-
-    @property
-    def device_config(self) -> StreamDevConfig:
-        """
-        Get the device configuration based on the device_config_id.
-        This is used in the mean_error method to compare frames in the units of data buffers.
-        """
-        if self._device_config is None:
-            self._device_config = StreamDevConfig.from_any(self.device_config_id)
-        return self._device_config
 
 
 class FreqencyMaskingConfig(BaseModel):

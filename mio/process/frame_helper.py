@@ -9,7 +9,13 @@ import cv2
 import numpy as np
 
 from mio import init_logger
-from mio.models.process import FreqencyMaskingConfig, NoisePatchConfig
+from mio.models.process import (
+    BlackAreaDetectorConfig,
+    FreqencyMaskingConfig,
+    GradientDetectorConfig,
+    MSEDetectorConfig,
+    NoisePatchConfig,
+)
 
 logger = init_logger("frame_helper")
 
@@ -75,11 +81,11 @@ class InvalidFrameDetector(BaseSingleFrameHelper):
         self.methods = noise_patch_config.method
 
         if "mean_error" in self.methods:
-            self.mse_detector = MSENoiseDetector(noise_patch_config)
+            self.mse_detector = MSENoiseDetector(noise_patch_config.mean_error_config)
         if "gradient" in self.methods:
-            self.gradient_detector = GradientNoiseDetector(noise_patch_config)
+            self.gradient_detector = GradientNoiseDetector(noise_patch_config.gradient_config)
         if "black_area" in self.methods:
-            self.black_detector = BlackAreaDetector(noise_patch_config)
+            self.black_detector = BlackAreaDetector(noise_patch_config.black_area_config)
 
     def find_invalid_area(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
         """
@@ -117,7 +123,7 @@ class GradientNoiseDetector(BaseSingleFrameHelper):
     Helper class for gradient noise detection.
     """
 
-    def __init__(self, noise_patch_config: NoisePatchConfig):
+    def __init__(self, config: GradientDetectorConfig):
         """
         Initialize the GradientNoiseDetectionHelper object.
 
@@ -127,7 +133,7 @@ class GradientNoiseDetector(BaseSingleFrameHelper):
         Returns:
             GradientNoiseDetectionHelper: A GradientNoiseDetectionHelper object.
         """
-        self.config = noise_patch_config
+        self.config = config
 
     def find_invalid_area(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
         """
@@ -172,7 +178,7 @@ class BlackAreaDetector(BaseSingleFrameHelper):
     Helper class for black area detection.
     """
 
-    def __init__(self, noise_patch_config: NoisePatchConfig):
+    def __init__(self, config: BlackAreaDetectorConfig):
         """
         Initialize the BlackAreaDetectionHelper object.
 
@@ -182,7 +188,7 @@ class BlackAreaDetector(BaseSingleFrameHelper):
         Returns:
             BlackAreaDetectionHelper: A BlackAreaDetectionHelper object.
         """
-        self.config = noise_patch_config
+        self.config = config
 
     def find_invalid_area(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
         """
@@ -213,10 +219,10 @@ class BlackAreaDetector(BaseSingleFrameHelper):
 
         # Read values from YAML config
         consecutive_threshold = (
-            self.config.black_pixel_consecutive_threshold
+            self.config.consecutive_threshold
         )  # How many consecutive pixels must be black
         black_pixel_value_threshold = (
-            self.config.black_pixel_value_threshold
+            self.config.value_threshold
         )  # Max pixel value considered "black"
 
         logger.debug(f"Using black pixel threshold: <= {black_pixel_value_threshold}")
@@ -252,7 +258,7 @@ class MSENoiseDetector(BaseSingleFrameHelper):
     Helper class for mean squared error noise detection.
     """
 
-    def __init__(self, noise_patch_config: NoisePatchConfig):
+    def __init__(self, config: MSEDetectorConfig):
         """
         Initialize the MeanErrorNoiseDetectionHelper object.
 
@@ -262,7 +268,7 @@ class MSENoiseDetector(BaseSingleFrameHelper):
         Returns:
             MeanErrorNoiseDetectionHelper: A MeanErrorNoiseDetectionHelper object.
         """
-        self.config = noise_patch_config
+        self.config = config
         self.previous_frame = None
 
     def register_previous_frame(self, previous_frame: np.ndarray) -> None:
