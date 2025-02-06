@@ -3,6 +3,7 @@ This module contains a helper class for frame operations.
 It should be organized in a different way to make it more readable and maintainable.
 """
 
+from abc import abstractmethod
 from typing import Optional, Tuple
 
 import cv2
@@ -12,6 +13,34 @@ from mio import init_logger
 from mio.models.process import FreqencyMaskingConfig, NoisePatchConfig
 
 logger = init_logger("frame_helper")
+
+
+class SingleFrameHelper:
+    """
+    Helper class for single frame operations.
+    """
+
+    def __init__(self):
+        """
+        Initialize the SingleFrameHelper object.
+
+        Returns:
+            SingleFrameHelper: A SingleFrameHelper object.
+        """
+        pass
+
+    @abstractmethod
+    def process_frame(self, frame: np.ndarray) -> np.ndarray:
+        """
+        Process a single frame.
+
+        Parameters:
+            frame (np.ndarray): The frame to process.
+
+        Returns:
+            np.ndarray: The processed frame.
+        """
+        pass
 
 
 class NoiseDetectionHelper:
@@ -246,84 +275,113 @@ class NoiseDetectionHelper:
         return frame_is_noisy, noisy_mask
 
 
-class FrequencyMaskHelper:
+class FrequencyMaskHelper(SingleFrameHelper):
     """
-    Helper class for frame operations.
+    Helper class for frequency masking operations.
     """
 
-    def __init__(self):
+    def __init__(self, height: int, width: int, freq_mask_config: FreqencyMaskingConfig):
         """
-        Initialize the FrameProcessor object.
-        Block size/buffer size will be set by dev config later.
+        Initialize the FreqMaskHelper object and generate a frequency mask.
+
+        Parameters:
+            height (int): The height of the image.
+            width (int): The width of the image.
+            freq_mask_config (FreqencyMaskingConfig): Configuration for frequency masking
 
         Returns:
-            FrequencyMaskHelper: A FrequencyMaskHelper object.
+            FreqMaskHelper: A FreqMaskHelper object.
         """
+        self._height = height
+        self._width = width
+        self._freq_mask_config = freq_mask_config
+        self._freq_mask = self._gen_freq_mask()
 
-    def apply_freq_mask(self, img: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    @property
+    def freq_mask(self) -> np.ndarray:
+        """
+        Get the frequency mask.
+
+        Returns:
+            np.ndarray: The frequency mask.
+        """
+        return self._freq_mask
+
+    def process_frame(self, img: np.ndarray) -> np.ndarray:
         """
         Perform FFT/IFFT to remove horizontal stripes from a single frame.
 
         Parameters:
             img (np.ndarray): The image to process.
-            mask (np.ndarray): The frequency mask to apply.
 
         Returns:
             np.ndarray: The filtered image
         """
         f = np.fft.fft2(img)
         fshift = np.fft.fftshift(f)
-        magnitude_spectrum = np.log(np.abs(fshift) + 1)  # Use log for better visualization
+
+        # Apply mask and inverse FFT
+        fshift *= self.freq_mask
+        f_ishift = np.fft.ifftshift(fshift)
+        img_back = np.fft.ifft2(f_ishift)
+        img_back = np.abs(img_back)
+
+        return np.uint8(img_back)
+
+    def freq_domain(self, img: np.ndarray) -> np.ndarray:
+        """
+        Compute the frequency spectrum of an image.
+
+        Parameters:
+            img (np.ndarray): The image to process.
+
+        Returns:
+            np.ndarray: The frequency spectrum of the image.
+        """
+        f = np.fft.fft2(img)
+        fshift = np.fft.fftshift(f)
+        magnitude_spectrum = np.log(np.abs(fshift) + 1)
 
         # Normalize the magnitude spectrum for visualization
         magnitude_spectrum = cv2.normalize(
             magnitude_spectrum, None, 0, np.iinfo(np.uint8).max, cv2.NORM_MINMAX
         )
 
-        # Apply mask and inverse FFT
-        fshift *= mask
-        f_ishift = np.fft.ifftshift(fshift)
-        img_back = np.fft.ifft2(f_ishift)
-        img_back = np.abs(img_back)
+        return np.uint8(magnitude_spectrum)
 
-        return np.uint8(img_back), np.uint8(magnitude_spectrum)
-
-    def gen_freq_mask(
+    def _gen_freq_mask(
         self,
-        width: int,
-        height: int,
-        freq_mask_config: FreqencyMaskingConfig,
     ) -> np.ndarray:
         """
         Generate a mask to filter out horizontal and vertical frequencies.
         A central circular region can be removed to allow low frequencies to pass.
         """
-        crow, ccol = height // 2, width // 2
+        crow, ccol = self._height // 2, self._width // 2
 
         # Create an initial mask filled with ones (pass all frequencies)
-        mask = np.ones((height, width), np.uint8)
+        mask = np.ones((self._height, self._width), np.uint8)
 
         # Zero out a vertical stripe at the frequency center
         mask[
             :,
             ccol
-            - freq_mask_config.vertical_BEF_cutoff : ccol
-            + freq_mask_config.vertical_BEF_cutoff,
+            - self._freq_mask_config.vertical_BEF_cutoff : ccol
+            + self._freq_mask_config.vertical_BEF_cutoff,
         ] = 0
 
         # Zero out a horizontal stripe at the frequency center
         mask[
             crow
-            - freq_mask_config.horizontal_BEF_cutoff : crow
-            + freq_mask_config.horizontal_BEF_cutoff,
+            - self._freq_mask_config.horizontal_BEF_cutoff : crow
+            + self._freq_mask_config.horizontal_BEF_cutoff,
             :,
         ] = 0
 
         # Define spacial low pass filter
-        y, x = np.ogrid[:height, :width]
+        y, x = np.ogrid[: self._height, : self._width]
         center_mask = (x - ccol) ** 2 + (
             y - crow
-        ) ** 2 <= freq_mask_config.spatial_LPF_cutoff_radius**2
+        ) ** 2 <= self._freq_mask_config.spatial_LPF_cutoff_radius**2
 
         # Restore the center circular area to allow low frequencies to pass
         mask[center_mask] = 1

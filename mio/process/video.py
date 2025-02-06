@@ -308,8 +308,10 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
         freq_mask_config (FreqencyMaskingConfig): The frequency masking configuration.
         """
         super().__init__(name, output_dir)
-        self.freq_mask_helper = FrequencyMaskHelper()
         self.freq_mask_config: FreqencyMaskingConfig = freq_mask_config
+        self.freq_mask_helper = FrequencyMaskHelper(
+            height=height, width=width, freq_mask_config=freq_mask_config
+        )
         self.freq_domain_frames = []
         self._freq_mask: np.ndarray = None
         self.frame_width: int = width
@@ -322,11 +324,7 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
         Get the frequency mask.
         """
         if self._freq_mask is None:
-            self._freq_mask = self.freq_mask_helper.gen_freq_mask(
-                freq_mask_config=self.freq_mask_config,
-                width=self.frame_width,
-                height=self.frame_height,
-            )
+            self._freq_mask = self.freq_mask_helper.freq_mask
         return self._freq_mask
 
     @property
@@ -357,10 +355,8 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
         if input_frame is None:
             return None
         if self.freq_mask_config.enable:
-            freq_filtered_frame, frame_freq_domain = self.freq_mask_helper.apply_freq_mask(
-                img=input_frame,
-                mask=self.freq_mask,
-            )
+            freq_filtered_frame = self.freq_mask_helper.process_frame(img=input_frame)
+            frame_freq_domain = self.freq_mask_helper.freq_domain(img=input_frame)
             self.append_output_frame(freq_filtered_frame)
             self.freq_domain_frames.append(frame_freq_domain)
 
