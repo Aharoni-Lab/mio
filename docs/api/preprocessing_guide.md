@@ -1,4 +1,4 @@
-# preprocessing video files
+# Preprocessing videos
 
 
 ## Filtering of frames with broken buffers (blocks of a frame) 

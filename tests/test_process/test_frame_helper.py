@@ -8,7 +8,7 @@ from pprint import pformat
 from pydantic import BaseModel
 
 from mio.models.process import DenoiseConfig, NoisePatchConfig
-from mio.process.frame_helper import NoiseDetectionHelper
+from mio.process.frame_helper import InvalidFrameDetector
 
 from ..conftest import DATA_DIR
 
@@ -48,18 +48,19 @@ class NoiseGroundTruth(BaseModel):
 @pytest.mark.parametrize(
     "noise_detection_method,noise_category",
     [
-        ("gradient", GroundTruthCategory.check_pattern),
-        ("mean_error", GroundTruthCategory.check_pattern),
+        (["gradient"], GroundTruthCategory.check_pattern),
+        (["black_area"], GroundTruthCategory.blacked_out),
+        (["mean_error"], GroundTruthCategory.check_pattern),
     ],
 )
-def test_noise_detection_contrast(video, ground_truth, noise_detection_method, noise_category):
+def test_noisy_frame_detection(video, ground_truth, noise_detection_method, noise_category):
     """
     Contrast method of noise detection should correctly label frames corrupted
     by speckled noise
     """
-    if noise_detection_method == "gradient":
+    if "gradient" in noise_detection_method:
         global_config: DenoiseConfig = DenoiseConfig.from_id("denoise_example")
-    elif noise_detection_method == "mean_error":
+    elif "mean_error" in noise_detection_method:
         if "extended" in video:
             # FIXME: resolve this before merging `feat-preprocess` to `main`
             pytest.xfail(
@@ -67,6 +68,8 @@ def test_noise_detection_contrast(video, ground_truth, noise_detection_method, n
                 "see https://github.com/Aharoni-Lab/mio/pull/97"
             )
         global_config: DenoiseConfig = DenoiseConfig.from_id("denoise_example_mean_error")
+    elif "black_area" in noise_detection_method:
+        global_config: DenoiseConfig = DenoiseConfig.from_id("denoise_example")
     else:
         raise ValueError("Invalid noise detection method")
 
@@ -81,10 +84,7 @@ def test_noise_detection_contrast(video, ground_truth, noise_detection_method, n
 
     video = cv2.VideoCapture(video)
 
-    detector = NoiseDetectionHelper(
-        height=int(video.get(cv2.CAP_PROP_FRAME_HEIGHT)),
-        width=int(video.get(cv2.CAP_PROP_FRAME_WIDTH)),
-    )
+    detector = InvalidFrameDetector(noise_patch_config=config)
 
     detected_frames = []
     previous_frame = None
@@ -97,9 +97,7 @@ def test_noise_detection_contrast(video, ground_truth, noise_detection_method, n
         if previous_frame is None:
             previous_frame = frame
 
-        is_noisy, mask = detector.detect_frame_with_noisy_buffer(
-            current_frame=frame, previous_frame=previous_frame, config=config
-        )
+        is_noisy, mask = detector.find_invalid_area(frame=frame)
         if not is_noisy:
             previous_frame = frame
 
