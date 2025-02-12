@@ -1,0 +1,12 @@
+frames:
+  check_pattern:
+    several_rows:
+      - 7
+      - 21
+      - 23
+      - 24
+      - 32
+      - 34
+    several_blocks:
+      - 33
+      - 35
