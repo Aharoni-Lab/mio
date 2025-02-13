@@ -525,8 +525,6 @@ def denoise_run(
         output_dir=output_dir,
         name=pathstem + "_patch",
         noise_patch_config=config.noise_patch,
-        width=reader.width,
-        height=reader.height,
     )
 
     freq_mask_processor = FreqencyMaskProcessor(
