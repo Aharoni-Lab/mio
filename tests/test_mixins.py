@@ -77,7 +77,7 @@ def test_config_from_any(yaml_config, id, id_or_path, path, valid):
         assert loaded.child == instance.child
         assert isinstance(loaded.child, NestedModel)
     else:
-        with pytest.raises(KeyError, ValueError):
+        with pytest.raises((KeyError, ValueError)):
             MyModel.from_any(id_or_path)
 
     # and we should always be able to load an absolute path
