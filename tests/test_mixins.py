@@ -52,6 +52,38 @@ def test_config_from_id(yaml_config, id, path, valid):
             MyModel.from_id(id)
 
 
+@pytest.mark.parametrize(
+    "id,id_or_path,path,valid",
+    [
+        ("default-path", "default-path", None, True),
+        (
+            "nested-path",
+            Path("nested/path/config.yaml"),
+            Path("configs/nested/path/config.yaml"),
+            True,
+        ),
+        ("not-valid", Path("not_in_dir/config.yaml"), Path("not_in_dir/config.yaml"), False),
+    ],
+)
+def test_config_from_any(yaml_config, id, id_or_path, path, valid):
+    """
+    Configs can be looked up with a path or an id field if they're within a config directory
+    """
+    instance = MyModel(id=id)
+    abs_path = yaml_config(id, instance.model_dump(), path)
+    if valid:
+        loaded = MyModel.from_any(id_or_path)
+        assert loaded == instance
+        assert loaded.child == instance.child
+        assert isinstance(loaded.child, NestedModel)
+    else:
+        with pytest.raises(KeyError, ValueError):
+            MyModel.from_any(id_or_path)
+
+    # and we should always be able to load an absolute path
+    _ = MyModel.from_yaml(abs_path)
+
+
 def test_roundtrip_to_from_yaml(tmp_config_source):
     """Config models can roundtrip to and from yaml"""
     yaml_file = tmp_config_source / "test_config.yaml"
