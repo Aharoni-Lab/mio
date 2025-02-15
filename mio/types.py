@@ -63,4 +63,6 @@ def valid_config_id(val: Any) -> TypeIs[ConfigID]:
     """
     Checks whether a string is a valid config id.
     """
+    if not isinstance(val, str):
+        return False
     return bool(re.fullmatch(CONFIG_ID_PATTERN, val))

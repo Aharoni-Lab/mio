@@ -158,8 +158,6 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
         elif valid_config_id(source):
             return cls.from_id(source)
         else:
-            from mio import Config
-
             source = Path(source)
             if source.suffix not in (".yaml", ".yml"):
                 raise ValueError(
