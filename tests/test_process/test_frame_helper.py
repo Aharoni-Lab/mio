@@ -8,7 +8,7 @@ from pprint import pformat
 from pydantic import BaseModel
 
 from mio.models.process import DenoiseConfig, NoisePatchConfig
-from mio.process.frame_helper import NoiseDetectionHelper
+from mio.frame_helper import NoiseDetectionHelper
 
 from ..conftest import DATA_DIR
 

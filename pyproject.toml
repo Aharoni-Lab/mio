@@ -68,10 +68,10 @@ docs = [
     "sphinx>=6.2.1",
     "sphinx-click>=6.0.0",
     "furo>2023.07.26",
-    "myst-parser>3.0.0",
     "autodoc-pydantic>=2.0.1",
     "sphinxcontrib-programoutput>=0.17",
     "sphinx-design>=0.6.1",
+    "myst-nb>=1.1.2",
 ]
 dev = [
     "black>=24.1.1",

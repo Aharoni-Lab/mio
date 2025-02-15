@@ -29,6 +29,7 @@ api/logging
 api/models/index
 api/exceptions
 api/plots/index
+api/process/index
 api/utils
 api/stream_daq
 api/preprocessing

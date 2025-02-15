@@ -23,8 +23,8 @@ html_title = "mio"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
+    "myst_nb",
     "sphinx.ext.graphviz",
-    "myst_parser",
     "sphinx.ext.napoleon",
     "sphinx.ext.autodoc",
     "sphinxcontrib.autodoc_pydantic",
@@ -43,6 +43,12 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = "furo"
+
+html_static_path = ["_static"]
+
+html_css_files = [
+    "css/notebooks.css",  # when using myst_nb
+]
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
@@ -84,3 +90,7 @@ autodoc_mock_imports = ["routine"]
 
 # todo
 todo_include_todos = True
+
+# myst-nb
+nb_render_markdown_format = "myst"
+nb_execution_show_tb = True

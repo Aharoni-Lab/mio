@@ -1,3 +1,14 @@
+---
+file_format: mystnb
+mystnb:
+    output_stderr: remove
+    render_text_lexer: python
+    render_markdown_format: myst
+myst:
+    enable_extensions: ["colon_fence"]
+---
+
+
 # preprocessing video files
 
 
@@ -6,15 +17,20 @@
 ### Broken buffer detection methods:
 
 - **Local Contrast Analysis**
+ 
+    - The `_detect_with_gradient` function in {mod}`~mio.process.frame_helper` detects noise in video frames by 
+      analyzing local contrast. 
 
-    - The `_detect_with_gradient` function in `frame_helper.py` detects noise in video frames by analyzing local contrast.
-
-    - second derivative in the **horizontal direction (x-axis)** is computed using `np.diff(block, n=2, axis=1)`, highlighting abrupt changes in pixel intensity across rows
+    - second derivative in the **horizontal direction (x-axis)** is computed using {func}`np.diff(block, n=2, axis=1) 
+      <numpy.diff>` , highlighting abrupt changes in pixel intensity across rows
         - more effective for spotting localized discontinuities compard to only using first derivative
 
     - Computes the absolute mean of the second derivative for each row.
 
-    - If the mean contrast exceeds the noise detection threshold (`config.threshold`), the entire row is marked as noisy
+    - If the mean contrast exceeds the noise detection threshold
+      ({attr}`NoisePatchConfig.threshold <mio.models.process.NoisePatchConfig.threshold>`), 
+      the entire row is marked as 
+      noisy
 
     - binary mask is generated where noisy rows are assigned a value of `1`, indicating regions with broken buffers
 
@@ -63,4 +79,67 @@ for a 200x200 pixel frame
 
 ##### majority of frame broken (more than 25 rows of a frame are black)
 ![Image 11](../images/preprocess_broken_buffers/black_majority_frame1.png)
+
+
+## Examples
+
+### Speckle Noise Detection
+
+Say we have this nice image of a donut
+
+```{admonition} Hey
+SUp
+```
+
+```{code-cell}
+:tags: ["hide-input"]
+
+import numpy as np
+import matplotlib.pyplot as plt
+import cv2
+
+xx, yy = np.mgrid[:200, :200]
+circle = (xx - 100) ** 2 + (yy - 100) ** 2
+donut = np.logical_and(circle < (4000 + 3200), circle > (4000 - 3200))
+donut = donut.astype(np.uint8) * 255
+donut = cv2.GaussianBlur(donut, (25, 25), 25)
+
+fig, ax = plt.subplots()
+
+_ = plt.imshow(donut)
+```  
+
+But oh no! some speckly noise has corrupted it!    
+
+```{code-cell}
+:tags: ["hide-input"]
+
+noise = np.random.default_rng().random((10,200)) > 0.5
+noise = noise.astype(np.uint8) * 255
+donut[100:110, :] = noise
+
+_ = plt.imshow(donut)
+```
+
+Internally, the gradient-based noise detection method 
+
+- converts the image to a signed 16 bit integer to avoid the diff wrapping around zero
+- takes the second derivative across rows to detect abrubt changes in values between pixels
+- takes the absolute value of that change
+
+```{code-cell}
+noise_values = np.diff(donut.astype(np.int16), n=2, axis=1)
+noise_values = np.abs(noise_values)
+_ = plt.imshow(noise_values)
+```
+
+And then collapses across columns to find any rows whose mean gradient is above threshold
+
+```{code-cell}
+row_values = noise_values.mean(axis=1)
+
+plt.plot(row_values)
+_ = plt.axhline(y=5, color='r')
+``` 
+
 
