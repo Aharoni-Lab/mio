@@ -158,18 +158,20 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
         elif valid_config_id(source):
             return cls.from_id(source)
         else:
-            from mio import Config
-
             source = Path(source)
-            if source.suffix in (".yaml", ".yml"):
-                if source.exists():
-                    # either relative to cwd or absolute
-                    return cls.from_yaml(source)
-                elif (
-                    not source.is_absolute()
-                    and (user_source := Config().config_dir / source).exists()
-                ):
-                    return cls.from_yaml(user_source)
+            if source.suffix not in (".yaml", ".yml"):
+                raise ValueError(
+                    "If not instantiating from a config id, "
+                    "must pass a relative or absolute path to a yaml file. "
+                    f"Got {source}"
+                )
+            if source.exists():
+                # either relative to cwd or absolute
+                return cls.from_yaml(source)
+            elif not source.is_absolute():
+                for config_source in cls.config_sources:
+                    if (user_source := config_source / source).exists():
+                        return cls.from_yaml(user_source)
 
         raise ValueError(
             f"Instance of config model {cls.__name__} could not be instantiated from "
