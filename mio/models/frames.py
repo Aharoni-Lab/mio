@@ -51,10 +51,11 @@ class NamedFrame(NamedBaseFrame):
         Export the frame data to a file.
         """
         output_path = Path(output_path)
+        if self.frame is None:
+            logger.warning(f"No frame data provided for {self.name}. Skipping export.")
+            return
         if suffix:
             output_path = output_path.with_name(output_path.stem + f"_{self.name}")
-        if self.frame is None:
-            raise ValueError("No frame data provided.")
         cv2.imwrite(str(output_path.with_suffix(".png")), self.frame)
         logger.info(
             f"Writing frame to {output_path}.png: {self.frame.shape[1]}x{self.frame.shape[0]}"
@@ -70,7 +71,8 @@ class NamedFrame(NamedBaseFrame):
             If True, the frame will be scaled to the full range of uint8.
         """
         if self.frame is None:
-            raise ValueError("No frame data provided.")
+            logger.warning(f"No frame data provided for {self.name}. Skipping display.")
+            return
 
         frame_to_display = self.frame
         if binary:
@@ -99,11 +101,12 @@ class NamedVideo(NamedBaseFrame):
         """
         Export the frame data to a file.
         """
+        if self.video is None or self.video == []:
+            logger.warning(f"No frame data provided for {self.name}. Skipping export.")
+            return
         output_path = Path(output_path)
         if suffix:
             output_path = output_path.with_name(output_path.stem + f"_{self.name}")
-        if self.video is None:
-            raise ValueError("No frame data provided.")
         if not all(isinstance(frame, np.ndarray) for frame in self.video):
             raise ValueError("Not all frames are numpy arrays.")
         writer = VideoWriter.init_video(
