@@ -8,6 +8,7 @@ device
 stream
 update
 process
+hash
 ```
 
 Refer to the following page for details regarding ``stream_daq`` device config files.
