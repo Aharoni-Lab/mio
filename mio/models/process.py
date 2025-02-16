@@ -168,6 +168,11 @@ class FreqencyMaskingConfig(BaseModel):
         default=True,
         description="Enable frequency filtering.",
     )
+    cast_float32: bool = Field(
+        default=False,
+        description="Cast the input video stream to float32 before processing."
+        "This is probably unnecessary and could be removed in the future.",
+    )
     spatial_LPF_cutoff_radius: int = Field(
         default=...,
         description="Radius for the spatial low pass filter cutoff in pixels.",

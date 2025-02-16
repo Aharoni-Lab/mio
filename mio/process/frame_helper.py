@@ -373,10 +373,15 @@ class FrequencyMaskHelper(BaseSingleFrameHelper):
 
         Parameters:
             img (np.ndarray): The image to process.
+            cast_f32 (bool): Cast the image to float32 before processing.
 
         Returns:
             np.ndarray: The filtered image
+
+        .. todo:: Confirm if the option for casting to float32 is necessary. See issue #104.
         """
+        if self._freq_mask_config.cast_float32:
+            img = img.astype(np.float32)
         f = np.fft.fft2(img)
         fshift = np.fft.fftshift(f)
 
