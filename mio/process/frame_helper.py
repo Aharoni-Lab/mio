@@ -449,13 +449,9 @@ class FrequencyMaskHelper(BaseSingleFrameHelper):
         A central circular region can be removed to allow low frequencies to pass.
 
         Parameters:
-        ----------
-        vertical_BEF_cutoff : int
-            Cutoff for the vertical band elimination filter in pixels.
-        horizontal_BEF_cutoff : int
-            Cutoff for the horizontal band elimination filter in pixels.
-        spatial_LPF_cutoff_radius : int
-            Radius for the spatial low pass filter cutoff in pixels.
+            vertical_BEF_cutoff (int): Cutoff for the vertical band elimination filter in px.
+            horizontal_BEF_cutoff (int): Cutoff for the horizontal band elimination filter in px.
+            spatial_LPF_cutoff_radius (int): Radius for the spatial low pass filter cutoff in px.
         """
         crow, ccol = self._height // 2, self._width // 2
 
