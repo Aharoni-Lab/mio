@@ -305,6 +305,18 @@ class FreqencyMaskProcessor(BaseVideoProcessor):
         """
         return NamedVideo(name="freq_domain", video=self.freq_domain_frames)
 
+    def update_freq_mask(
+        self, vertical_BEF_cutoff: int, horizontal_BEF_cutoff: int, spatial_LPF_cutoff_radius: int
+    ) -> None:
+        """
+        Update the frequency mask.
+        """
+        self.freq_mask_helper.update_freq_mask(
+            vertical_BEF_cutoff=vertical_BEF_cutoff,
+            horizontal_BEF_cutoff=horizontal_BEF_cutoff,
+            spatial_LPF_cutoff_radius=spatial_LPF_cutoff_radius,
+        )
+
     def process_frame(self, input_frame: np.ndarray) -> Optional[np.ndarray]:
         """
         Process a single frame.

@@ -355,7 +355,7 @@ class FrequencyMaskHelper(BaseSingleFrameHelper):
         self._height = height
         self._width = width
         self._freq_mask_config = freq_mask_config
-        self._freq_mask = self._gen_freq_mask()
+        self._freq_mask = None
 
     @property
     def freq_mask(self) -> np.ndarray:
@@ -365,7 +365,31 @@ class FrequencyMaskHelper(BaseSingleFrameHelper):
         Returns:
             np.ndarray: The frequency mask.
         """
+        if self._freq_mask is None:
+            self._freq_mask = self._gen_freq_mask(
+                self._freq_mask_config.vertical_BEF_cutoff,
+                self._freq_mask_config.horizontal_BEF_cutoff,
+                self._freq_mask_config.spatial_LPF_cutoff_radius,
+            )
         return self._freq_mask
+
+    def update_freq_mask(
+        self, vertical_BEF_cutoff: int, horizontal_BEF_cutoff: int, spatial_LPF_cutoff_radius: int
+    ) -> None:
+        """
+        Update the frequency mask.
+
+        Parameters:
+            vertical_BEF_cutoff (int): Cutoff for the vertical band elimination filter in px.
+            horizontal_BEF_cutoff (int): Cutoff for the horizontal band elimination filter in px.
+            spatial_LPF_cutoff_radius (int): Radius for the spatial low pass filter cutoff in px.
+        """
+
+        self._freq_mask = self._gen_freq_mask(
+            vertical_BEF_cutoff,
+            horizontal_BEF_cutoff,
+            spatial_LPF_cutoff_radius,
+        )
 
     def process_frame(self, img: np.ndarray) -> np.ndarray:
         """
@@ -416,10 +440,22 @@ class FrequencyMaskHelper(BaseSingleFrameHelper):
 
     def _gen_freq_mask(
         self,
+        vertical_BEF_cutoff: int,
+        horizontal_BEF_cutoff: int,
+        spatial_LPF_cutoff_radius: int,
     ) -> np.ndarray:
         """
         Generate a mask to filter out horizontal and vertical frequencies.
         A central circular region can be removed to allow low frequencies to pass.
+
+        Parameters:
+        ----------
+        vertical_BEF_cutoff : int
+            Cutoff for the vertical band elimination filter in pixels.
+        horizontal_BEF_cutoff : int
+            Cutoff for the horizontal band elimination filter in pixels.
+        spatial_LPF_cutoff_radius : int
+            Radius for the spatial low pass filter cutoff in pixels.
         """
         crow, ccol = self._height // 2, self._width // 2
 
@@ -429,24 +465,18 @@ class FrequencyMaskHelper(BaseSingleFrameHelper):
         # Zero out a vertical stripe at the frequency center
         mask[
             :,
-            ccol
-            - self._freq_mask_config.vertical_BEF_cutoff : ccol
-            + self._freq_mask_config.vertical_BEF_cutoff,
+            ccol - vertical_BEF_cutoff : ccol + vertical_BEF_cutoff,
         ] = 0
 
         # Zero out a horizontal stripe at the frequency center
         mask[
-            crow
-            - self._freq_mask_config.horizontal_BEF_cutoff : crow
-            + self._freq_mask_config.horizontal_BEF_cutoff,
+            crow - horizontal_BEF_cutoff : crow + horizontal_BEF_cutoff,
             :,
         ] = 0
 
         # Define spacial low pass filter
         y, x = np.ogrid[: self._height, : self._width]
-        center_mask = (x - ccol) ** 2 + (
-            y - crow
-        ) ** 2 <= self._freq_mask_config.spatial_LPF_cutoff_radius**2
+        center_mask = (x - ccol) ** 2 + (y - crow) ** 2 <= spatial_LPF_cutoff_radius**2
 
         # Restore the center circular area to allow low frequencies to pass
         mask[center_mask] = 1
