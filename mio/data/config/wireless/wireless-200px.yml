@@ -38,6 +38,8 @@ adc_scale:
   bitdepth: 8
   battery_div_factor: 5
   vin_div_factor: 11.3
+  battery_max_voltage: 10.0
+  vin_max_voltage: 20.0
 
 runtime:
   serial_buffer_queue_size: 10
