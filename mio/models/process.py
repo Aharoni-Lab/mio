@@ -175,15 +175,18 @@ class FreqencyMaskingConfig(BaseModel):
     )
     spatial_LPF_cutoff_radius: int = Field(
         default=...,
-        description="Radius for the spatial low pass filter cutoff in pixels.",
+        description="Default radius for the spatial low pass filter cutoff in pixels."
+        "This value will be used unless the value is modified using the update_freq_mask method.",
     )
     vertical_BEF_cutoff: int = Field(
         default=5,
-        description="Cutoff for the vertical band elimination filter in pixels.",
+        description="Cutoff for the vertical band elimination filter in pixels."
+        "This value will be used unless the value is modified using the update_freq_mask method.",
     )
     horizontal_BEF_cutoff: int = Field(
         default=0,
-        description="Cutoff for the horizontal band elimination filter in pixels.",
+        description="Cutoff for the horizontal band elimination filter in pixels."
+        "This value will be used unless the value is modified using the update_freq_mask method.",
     )
     output_result: bool = Field(
         default=False,
