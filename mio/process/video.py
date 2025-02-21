@@ -505,6 +505,7 @@ class ButterworthProcessor(BaseVideoProcessor):
         self.output_enable = butter_config.enable and SCIPY_AVAILABLE
         self.intensity_data = []
         self.frames = []
+        self.output_video = []  # Add this to store processed frames
 
     def process_frame(self, input_frame: np.ndarray) -> np.ndarray:
         """
@@ -517,9 +518,7 @@ class ButterworthProcessor(BaseVideoProcessor):
         mean_int = mean_intensity(input_frame)
         self.intensity_data.append(mean_int)
         self.frames.append(input_frame)
-
-        if len(self.intensity_data) % 1000 == 0:  # Log progress
-            logger.debug(f"Processed {len(self.intensity_data)} frames")
+        self.output_video.append(input_frame)  # Store original frame for later filtering
 
         return input_frame
 
@@ -546,16 +545,43 @@ class ButterworthProcessor(BaseVideoProcessor):
         y = filtfilt(b, a, data)
         return y
 
+    def apply_filter_to_frames(self, filtered_data: np.ndarray) -> list[np.ndarray]:
+        """Apply the filtered intensity values to scale the frames."""
+        if len(filtered_data) != len(self.frames):
+            logger.warning("Filtered data length doesn't match frame count")
+            return []
+
+        filtered_frames = []
+        for i, frame in enumerate(self.frames):
+            # Scale the frame based on filtered vs original intensity
+            if self.intensity_data[i] != 0:  # Avoid division by zero
+                scale_factor = filtered_data[i] / self.intensity_data[i]
+                filtered_frame = (frame * scale_factor).astype(np.uint8)
+            else:
+                filtered_frame = frame
+            filtered_frames.append(filtered_frame)
+
+        return filtered_frames
+
     def batch_export_videos(self) -> None:
         """Export the filtered data and plot if enabled."""
         if not self.output_enable:
+            logger.info("Butterworth filter disabled, skipping export")
             return
 
+        logger.info(f"Processing {len(self.frames)} frames with Butterworth filter")
         filtered_data = self.apply_filter()
         if len(filtered_data) > 0:
+
             np.save(self.output_dir / f"{self.name}_filtered_intensity.npy", filtered_data)
-            if self.config.plot:
-                self.plot_filtered_data(filtered_data)
+
+            filtered_frames = self.apply_filter_to_frames(filtered_data)
+            if filtered_frames:
+                logger.info("Saving Butterworth filtered video")
+                output_video = NamedVideo(name=self.name, video=filtered_frames)
+                output_video.export(self.output_dir)
+            else:
+                logger.warning("No frames to save after Butterworth filtering")
 
     def plot_filtered_data(self, filtered_data: np.ndarray) -> None:
         """Plot the original and filtered intensity data."""
@@ -654,7 +680,7 @@ def denoise_run(
     )
 
     butter_processor = ButterworthProcessor(
-        name=pathstem + "_butter",
+        name=pathstem + "_butter_filter",
         butter_config=config.butter_filter,
         output_dir=output_dir,
     )
@@ -695,17 +721,18 @@ def denoise_run(
         reader.release()
         logger.info("Processing complete, exporting results...")
 
+        output_frames = output_frame_processor.output_video
+
+        # First export all the intermediate results
+        noise_patch_processor.batch_export_videos()
+        freq_mask_processor.batch_export_videos()
+
+        # Then do the Butterworth processing and export
         if config.butter_filter and config.butter_filter.enable:
             logger.info("Exporting Butterworth filter results...")
             butter_processor.batch_export_videos()
 
-        output_frames = output_frame_processor.output_video
-
-        if not isinstance(output_frames, list):
-            raise ValueError("Output frames must be a list.")
-        for frame in output_frames:
-            if not isinstance(frame, np.ndarray):
-                logger.warning(f"Frame is not a numpy array: {type(frame)}")
+        # Finally do minimum projection
         minimum_projection_processor = MinProjSubtractProcessor(
             name=pathstem + "min_proj",
             output_dir=output_dir,
@@ -713,9 +740,6 @@ def denoise_run(
             minimum_projection_config=config.minimum_projection,
         )
         minimum_projection_processor.normalize_stack()
-
-        noise_patch_processor.batch_export_videos()
-        freq_mask_processor.batch_export_videos()
         minimum_projection_processor.batch_export_videos()
 
         if len(noise_patch_processor.output_named_video.video) == 0:
