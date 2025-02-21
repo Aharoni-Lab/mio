@@ -572,7 +572,6 @@ class ButterworthProcessor(BaseVideoProcessor):
         logger.info(f"Processing {len(self.frames)} frames with Butterworth filter")
         filtered_data = self.apply_filter()
         if len(filtered_data) > 0:
-
             np.save(self.output_dir / f"{self.name}_filtered_intensity.npy", filtered_data)
 
             filtered_frames = self.apply_filter_to_frames(filtered_data)
@@ -582,6 +581,9 @@ class ButterworthProcessor(BaseVideoProcessor):
                 output_video.export(self.output_dir)
             else:
                 logger.warning("No frames to save after Butterworth filtering")
+
+            if self.config.plot:
+                self.plot_filtered_data(filtered_data)
 
     def plot_filtered_data(self, filtered_data: np.ndarray) -> None:
         """Plot the original and filtered intensity data."""
@@ -613,13 +615,21 @@ class ButterworthProcessor(BaseVideoProcessor):
         plt.ylabel("Mean Intensity")
         plt.grid(True, alpha=0.3)
         plt.legend()
-
         plt.savefig(
             self.output_dir / f"{self.name}_intensity_plot.png", dpi=300, bbox_inches="tight"
         )
 
         if plt.get_backend() != "agg":
-            plt.show()
+            plt.savefig("temp_plot.png")  # Save temporarily
+            plot_img = cv2.imread("temp_plot.png")
+            cv2.imshow("Butterworth Filter Plot", plot_img)
+            while True:
+                if cv2.waitKey(1) == 27:  # Wait for ESC key
+                    break
+            cv2.destroyAllWindows()
+            cv2.waitKey(1)  # Extra waitKey to properly close the window
+            Path("temp_plot.png").unlink()  # Remove temporary file
+
         plt.close()
 
 
