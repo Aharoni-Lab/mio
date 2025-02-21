@@ -41,3 +41,11 @@ interactive_display:
 end_frame: -1 #-1 means all frames
 output_result: true
 output_dir: user_data/output
+butter_filter:
+  enable: true
+  plot: true
+  order: 3
+  cutoff_frequency: 3
+  sampling_rate: 20
+  plot_start_frame: 40
+  plot_end_frame: 140
