@@ -104,21 +104,31 @@ class NamedVideo(NamedBaseFrame):
         if self.video is None or self.video == []:
             logger.warning(f"No frame data provided for {self.name}. Skipping export.")
             return
+
         output_path = Path(output_path)
+
+        # Add output_ prefix to the filename
+        filename = f"output_{self.name}" if not self.name.startswith("output_") else self.name
+        output_path = output_path / filename
+
         if suffix:
             output_path = output_path.with_name(output_path.stem + f"_{self.name}")
+
         if not all(isinstance(frame, np.ndarray) for frame in self.video):
             raise ValueError("Not all frames are numpy arrays.")
+
         writer = VideoWriter.init_video(
             path=output_path.with_suffix(".avi"),
             width=self.video[0].shape[1],
             height=self.video[0].shape[0],
             fps=fps,
         )
+
         logger.info(
             f"Writing video to {output_path}.avi:"
             f"{self.video[0].shape[1]}x{self.video[0].shape[0]}"
         )
+
         try:
             for frame in self.video:
                 picture = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)

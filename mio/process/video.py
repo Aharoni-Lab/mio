@@ -577,7 +577,10 @@ class ButterworthProcessor(BaseVideoProcessor):
             filtered_frames = self.apply_filter_to_frames(filtered_data)
             if filtered_frames:
                 logger.info("Saving Butterworth filtered video")
-                output_video = NamedVideo(name=self.name, video=filtered_frames)
+                output_video = NamedVideo(
+                    name=self.name,  # Remove "output_" prefix to match other processors
+                    video=filtered_frames,
+                )
                 output_video.export(self.output_dir)
             else:
                 logger.warning("No frames to save after Butterworth filtering")
