@@ -26,7 +26,7 @@ pix_depth: 12
 # Buffer data format. These have to match the firmware value
 header_len: 384 # 12 * 32 (in bits)
 buffer_block_length: 12 # originally 12 how many words per block length 
-block_size: 800 # 4000 # just buffer (header+data)
+block_size: 4000 # 4000 # just buffer (header+data)
 num_buffers: 9 # num of data buffers inside mcu 
 dummy_words: 12 # num of dummy words before header file
 
