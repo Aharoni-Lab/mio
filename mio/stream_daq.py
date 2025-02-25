@@ -265,6 +265,7 @@ class StreamDaq:
         else:
             dev = okDev()
 
+        self.logger.info("after of device init")
         dev.upload_bit(str(BIT_FILE))
         dev.set_wire(0x00, 0b0010)
         time.sleep(0.01)
@@ -272,6 +273,7 @@ class StreamDaq:
         dev.set_wire(0x00, 0b1000)
         time.sleep(0.01)
         dev.set_wire(0x00, 0b0)
+        self.logger.info("end of device init")
         return dev
 
     def _fpga_recv(
@@ -324,7 +326,9 @@ class StreamDaq:
             raise RuntimeError(f"Configured to use bitfile at {BIT_FILE} but no such file exists")
 
         # set up fpga devices
+        locallogs.info('before init okdev')
         dev = self._init_okdev(BIT_FILE)
+        locallogs.info('after init okdev')
 
         # read loop
         cur_buffer = BitArray()
@@ -351,7 +355,10 @@ class StreamDaq:
 
                 dat = BitArray(buf)
                 cur_buffer = cur_buffer + dat
+                locallogs.debug(dat.tobytes())
+                locallogs.debug(pre.tobytes())
                 pre_pos = list(cur_buffer.findall(pre))
+                locallogs.debug(pre_pos)
                 for buf_start, buf_stop in zip(pre_pos[:-1], pre_pos[1:]):
                     if not pre_first:
                         buf_start, buf_stop = (
