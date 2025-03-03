@@ -22,7 +22,7 @@ mio_version: "v5.0.0"
 linked_list: 1
 frame_num: 7
 buffer_count: 3
-frame_buffer_count: 3
+frame_buffer_count: 2
 write_buffer_count: 4
 dropped_buffer_count: 0
 timestamp: 6

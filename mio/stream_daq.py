@@ -355,10 +355,14 @@ class StreamDaq:
 
                 dat = BitArray(buf)
                 cur_buffer = cur_buffer + dat
-                locallogs.debug(dat.tobytes())
-                locallogs.debug(pre.tobytes())
+                locallogs.debug(dat.tobytes()) ## Jonny, helping to debug, output data in terminal 
+                locallogs.debug(pre.tobytes()) ## Jonny, helping to debug, output data in terminal 
+                # locallogs.debug(f'dat: {dat.tobytes()}') # Takuya recommended 
+                # locallogs.debug(f'pre: {pre.tobytes()}') # Takuya recommended 
+
+
                 pre_pos = list(cur_buffer.findall(pre))
-                locallogs.debug(pre_pos)
+                # locallogs.debug(pre_pos)
                 for buf_start, buf_stop in zip(pre_pos[:-1], pre_pos[1:]):
                     if not pre_first:
                         buf_start, buf_stop = (
