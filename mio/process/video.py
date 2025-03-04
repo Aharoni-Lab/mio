@@ -2,6 +2,8 @@
 This module contains functions for pre-processing video data.
 """
 
+import json
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -780,3 +782,93 @@ def denoise_run(
                 end_frame=config.interactive_display.end_frame,
             )
             video_plotter.show()
+
+        # Keep just the JSON logging
+        log_processing_metadata(output_dir, video_path, config, pathstem)
+
+
+def log_processing_metadata(
+    output_dir: Path, video_path: str, config: DenoiseConfig, pathstem: str
+) -> None:
+    """Log processing metadata to a JSON file."""
+
+    metadata = {
+        "timestamp": datetime.now().isoformat(),
+        "input_video": str(video_path),
+        "output_directory": str(output_dir),
+        "processing_config": {
+            "noise_patch": {
+                "enabled": config.noise_patch.enable if config.noise_patch else False,
+                "method": config.noise_patch.method if config.noise_patch else None,
+                "gradient_config": (
+                    {
+                        "threshold": (
+                            config.noise_patch.gradient_config.threshold
+                            if config.noise_patch
+                            else None
+                        ),
+                    }
+                    if config.noise_patch and config.noise_patch.gradient_config
+                    else None
+                ),
+                "black_area_config": (
+                    {
+                        "consecutive_threshold": (
+                            config.noise_patch.black_area_config.consecutive_threshold
+                            if config.noise_patch
+                            else None
+                        ),
+                        "value_threshold": (
+                            config.noise_patch.black_area_config.value_threshold
+                            if config.noise_patch
+                            else None
+                        ),
+                    }
+                    if config.noise_patch and config.noise_patch.black_area_config
+                    else None
+                ),
+            },
+            "frequency_masking": {
+                "enabled": config.frequency_masking.enable if config.frequency_masking else False,
+                "cast_float32": (
+                    config.frequency_masking.cast_float32 if config.frequency_masking else False
+                ),
+                "cutoff_radius": (
+                    config.frequency_masking.spatial_LPF_cutoff_radius
+                    if config.frequency_masking
+                    else None
+                ),
+                "vertical_BEF": (
+                    config.frequency_masking.vertical_BEF_cutoff
+                    if config.frequency_masking
+                    else None
+                ),
+                "horizontal_BEF": (
+                    config.frequency_masking.horizontal_BEF_cutoff
+                    if config.frequency_masking
+                    else None
+                ),
+            },
+            "butterworth": {
+                "enabled": config.butter_filter.enable,
+                "order": config.butter_filter.order,
+                "cutoff_frequency": config.butter_filter.cutoff_frequency,
+                "sampling_rate": config.butter_filter.sampling_rate,
+            },
+        },
+        "output_files": {
+            "noise_patch": f"output_{pathstem}_patch.avi",
+            "freq_mask": f"output_{pathstem}_freq_mask.avi",
+            "butter_filter": f"output_{pathstem}_butter_filter.avi",
+            "butter_plot": f"{pathstem}_butter_filter_intensity_plot.png",
+        },
+    }
+
+    # Save as JSON (overwrite any existing file)
+    log_file = output_dir / "processing_log.json"
+    logs = {"processing_runs": [metadata]}  # Just create new log with single run
+
+    with open(log_file, "w") as f:  # "w" mode overwrites existing file
+        json.dump(logs, f, indent=2)
+
+    logger.info(f"Saved processing metadata to {log_file}")
