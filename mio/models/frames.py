@@ -112,7 +112,7 @@ class NamedVideo(NamedBaseFrame):
         output_dir = output_path.parent
         base_name = output_path.stem
 
-        if suffix:
+        if suffix and not base_name.endswith(self.name):
             base_name = f"{base_name}_{self.name}"
 
         full_output_path = (output_dir / base_name).with_suffix(".avi")
