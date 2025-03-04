@@ -106,27 +106,31 @@ class NamedVideo(NamedBaseFrame):
             return
 
         output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Add output_ prefix to the filename
-        filename = f"output_{self.name}" if not self.name.startswith("output_") else self.name
-        output_path = output_path / filename
+        # Get the directory and base filename parts
+        output_dir = output_path.parent
+        base_name = output_path.stem
 
         if suffix:
-            output_path = output_path.with_name(output_path.stem + f"_{self.name}")
+            base_name = f"{base_name}_{self.name}"
+
+        full_output_path = (output_dir / base_name).with_suffix(".avi")
 
         if not all(isinstance(frame, np.ndarray) for frame in self.video):
             raise ValueError("Not all frames are numpy arrays.")
 
         writer = VideoWriter.init_video(
-            path=output_path.with_suffix(".avi"),
+            path=full_output_path,
             width=self.video[0].shape[1],
             height=self.video[0].shape[0],
             fps=fps,
+            fourcc="XVID",
         )
 
         logger.info(
-            f"Writing video to {output_path}.avi:"
-            f"{self.video[0].shape[1]}x{self.video[0].shape[0]}"
+            f"Writing video to {full_output_path}:"
+            f" {self.video[0].shape[1]}x{self.video[0].shape[0]}"
         )
 
         try:

@@ -91,7 +91,7 @@ class BaseVideoProcessor:
         if self.output_enable:
             logger.info(f"Exporting {self.name} video to {self.output_dir}")
             self.output_named_video.export(
-                output_path=self.output_dir / "output",
+                output_path=self.output_dir / self.name,
                 fps=20,
                 suffix=True,
             )
