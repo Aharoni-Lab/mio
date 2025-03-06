@@ -6,23 +6,28 @@ mio_version: "v5.0.0"
 device: "OK"
 
 # bitstream file to upload to Opal Kelly board
-# bitstream: "XEM7310-A75/USBInterface-12_5mhz-J2_2-3v3-IEEE.bit"
-bitstream: "XEM7310-A75/USBInterface-5mhz-J2_2-3v3-IEEE.bit"
-# bitstream: "XEM7310-A75/USBInterface-6_67mhz-J2_2-3v3-IEEE.bit"
-# bitstream: "XEM7310-A75/USBInterface-8_33mhz-J2_2-3v3-IEEE.bit" # original
 # bitstream: "XEM7310-A75/USBInterface-3_03mhz-J2_2-3v3-IEEE.bit"
+# bitstream: "XEM7310-A75/USBInterface-5mhz-J2_2-3v3-IEEE.bit"
+# bitstream: "XEM7310-A75/USBInterface-6_67mhz-J2_2-3v3-IEEE.bit"
+bitstream: "XEM7310-A75/USBInterface-8_33mhz-J2_2-3v3-IEEE.bit" # original
+# bitstream: "XEM7310-A75/USBInterface-12_5mhz-J2_2-3v3-IEEE.bit"
+# bitstream: "XEM7310-A75/USBInterface-16_67mhz-J2_2-3v3-IEEE.bit"
+# bitstream: "XEM7310-A75/USBInterface-20mhz-J2_2-3v3-IEEE.bit" 
 
 # COM port and baud rate is only required for UART mode
 port: null
 baudrate: null
 
 # Preamble for each data buffer.
-preamble: 0x12345678 # original preamble
+# preamble: 0x12345678 # original preamble
+preamble: 0x11111111 # original preamble
+
+# preamble: 0xff00cccc # original preamble
 
 # Image format. StreamDaq will calculate buffer size, etc. based on these parameters
 frame_width: 320
 frame_height: 320
-pix_depth: 8
+pix_depth: 10
 
 # Buffer data format. These have to match the firmware value
 header_len: 384 # 12 * 32 (in bits)
