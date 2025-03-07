@@ -57,6 +57,9 @@ documentation = "https://miniscope-io.readthedocs.io/"
 
 [project.optional-dependencies]
 plot = ["matplotlib>=3.9.2"]
+signal = [
+    "scipy>=1.10.0",  # For Butterworth filter
+]
 tests = [
     "pytest>=8.2.2",
     "pytest-cov>=5.0.0",

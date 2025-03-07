@@ -223,6 +223,18 @@ class InteractiveDisplayConfig(BaseModel):
     )
 
 
+class ButterworthFilterConfig(BaseModel):
+    """Configuration for Butterworth lowpass filter."""
+
+    enable: bool = Field(default=False, description="Enable Butterworth filtering")
+    order: int = Field(default=3, description="Filter order")
+    cutoff_frequency: float = Field(default=3.0, description="Cutoff frequency in Hz")
+    sampling_rate: float = Field(default=20.0, description="Sampling rate in Hz")
+    plot: bool = Field(default=False, description="Plot the filtered data")
+    plot_start_frame: Optional[int] = Field(default=None, description="Start frame for plotting")
+    plot_end_frame: Optional[int] = Field(default=None, description="End frame for plotting")
+
+
 class DenoiseConfig(MiniscopeConfig, ConfigYAMLMixin):
     """
     Configuration for denoising a video.
@@ -255,4 +267,7 @@ class DenoiseConfig(MiniscopeConfig, ConfigYAMLMixin):
     output_dir: Optional[str] = Field(
         default=None,
         description="Directory to save the output video streams and frames.",
+    )
+    butter_filter: ButterworthFilterConfig = Field(
+        default_factory=ButterworthFilterConfig, description="Configuration for Butterworth filter"
     )

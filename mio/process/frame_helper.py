@@ -480,3 +480,16 @@ class FrameSplitter:
             pixel_index += px_per_buffer
         logger.debug(f"Split shape: {buffer_shape}")
         return buffer_shape
+
+
+def mean_intensity(frame: np.ndarray) -> float:
+    """
+    Calculate the mean pixel intensity for a frame.
+
+    Parameters:
+        frame (np.ndarray): The frame whose mean intensity is to be calculated
+                           on filtered data (broken frames replaced, spatial mask filter).
+    Returns:
+        float: The mean intensity of the frame.
+    """
+    return frame.mean()

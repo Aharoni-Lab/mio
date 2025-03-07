@@ -8,17 +8,25 @@ from typing import Optional
 import cv2
 import numpy as np
 
+try:
+    from scipy.signal import butter, filtfilt
+
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+
 from mio import init_logger
 from mio.io import VideoReader
 from mio.models.frames import NamedFrame, NamedVideo
 from mio.models.process import (
+    ButterworthFilterConfig,
     DenoiseConfig,
     FreqencyMaskingConfig,
     MinimumProjectionConfig,
     NoisePatchConfig,
 )
 from mio.plots.video import VideoPlotter
-from mio.process.frame_helper import FrequencyMaskHelper, InvalidFrameDetector
+from mio.process.frame_helper import FrequencyMaskHelper, InvalidFrameDetector, mean_intensity
 from mio.process.zstack_helper import ZStackHelper
 
 logger = init_logger("video")
@@ -83,7 +91,7 @@ class BaseVideoProcessor:
         if self.output_enable:
             logger.info(f"Exporting {self.name} video to {self.output_dir}")
             self.output_named_video.export(
-                output_path=self.output_dir / "output",
+                output_path=self.output_dir / self.name,
                 fps=20,
                 suffix=True,
             )
@@ -479,6 +487,250 @@ class MinProjSubtractProcessor(BaseVideoProcessor):
         self.export_minimum_projection()
 
 
+class ButterworthProcessor(BaseVideoProcessor):
+    """
+    Processor for applying a Butterworth filter to video frames.
+
+    This class applies a Butterworth filter to each frame in the video,
+    using the specified Butterworth filter configuration.
+    """
+
+    def __init__(self, name: str, butter_config: ButterworthFilterConfig, output_dir: Path):
+        """
+        Initialize the ButterworthProcessor.
+        """
+
+        super().__init__(name, output_dir)
+        self.config = butter_config
+        self.output_enable = butter_config.enable and SCIPY_AVAILABLE
+        self.intensity_data = []
+        self.frames = []
+        self.output_video = []  # Add this to store processed frames
+
+    def process_frame(self, input_frame: np.ndarray) -> np.ndarray:
+        """
+        Process a single frame using Butterworth filter.
+        """
+
+        if input_frame is None:
+            return None
+
+        mean_int = mean_intensity(input_frame)
+        self.intensity_data.append(mean_int)
+        self.frames.append(input_frame)
+        self.output_video.append(input_frame)  # Store original frame for later filtering
+
+        return input_frame
+
+    def apply_filter(self) -> np.ndarray:
+        """Apply the Butterworth filter to the collected intensity data."""
+        if not self.intensity_data:
+            return np.array([])
+
+        data = np.array(self.intensity_data)
+        return self.butter_lowpass_filter(
+            data=data,
+            cutoff=self.config.cutoff_frequency,
+            fs=self.config.sampling_rate,
+            order=self.config.order,
+        )
+
+    def butter_lowpass_filter(
+        self, data: np.ndarray, cutoff: float, fs: float, order: int
+    ) -> np.ndarray:
+        """Apply a Butterworth lowpass filter to the data."""
+        nyquist = 0.5 * fs
+        normal_cutoff = cutoff / nyquist
+        b, a = butter(order, normal_cutoff, btype="low", analog=False)
+        y = filtfilt(b, a, data)
+        return y
+
+    def apply_filter_to_frames(self, filtered_data: np.ndarray) -> list[np.ndarray]:
+        """Apply the filtered intensity values to scale the frames.
+
+        The scaling is done by multiplying each frame by the ratio of filtered to original intensity
+        Values are properly scaled and can optionally be clipped to the valid uint8 range.
+        """
+        if len(filtered_data) != len(self.frames):
+            logger.warning("Filtered data length doesn't match frame count")
+            return []
+
+        filtered_frames = []
+        for i, frame in enumerate(self.frames):
+            # Scale the frame based on filtered vs original intensity
+            if self.intensity_data[i] != 0:  # Avoid division by zero
+                scale_factor = filtered_data[i] / self.intensity_data[i]
+                # Apply scaling in float32 precision
+                filtered_frame = frame.astype(np.float32) * scale_factor
+
+                # Log warning if values will be clipped
+                if np.any(filtered_frame < 0) or np.any(filtered_frame > 255):
+                    logger.warning(
+                        f"Frame {i}: Values outside valid range "
+                        f"(min={filtered_frame.min():.1f}, max={filtered_frame.max():.1f})"
+                    )
+
+                # Clip to valid range and convert to uint8
+                filtered_frame = np.clip(filtered_frame, 0, 255).astype(np.uint8)
+            else:
+                filtered_frame = frame
+            filtered_frames.append(filtered_frame)
+
+        return filtered_frames
+
+    def batch_export_videos(self) -> None:
+        """Export the filtered data and plot if enabled."""
+        if not self.output_enable:
+            logger.info("Butterworth filter disabled, skipping export")
+            return
+
+        logger.info(f"Processing {len(self.frames)} frames with Butterworth filter")
+        filtered_data = self.apply_filter()
+        if len(filtered_data) > 0:
+            np.save(self.output_dir / f"{self.name}_filtered_intensity.npy", filtered_data)
+
+            filtered_frames = self.apply_filter_to_frames(filtered_data)
+            if filtered_frames:
+                logger.info("Saving Butterworth filtered video")
+                # Store the filtered frames in output_video for display
+                self.output_video = filtered_frames
+                output_video = NamedVideo(
+                    name=self.name,
+                    video=filtered_frames,
+                )
+                # Save directly in output_dir with high quality GREY codec
+                output_video.export(
+                    output_path=self.output_dir / self.name,
+                    fps=self.config.sampling_rate,
+                    suffix=False,
+                    codec="GREY",
+                    isColor=False,  # Explicitly specify grayscale
+                )
+            else:
+                logger.warning("No frames to save after Butterworth filtering")
+
+            if self.config.plot:
+                self.plot_filtered_data(filtered_data)
+
+    def plot_filtered_data(self, filtered_data: np.ndarray) -> None:
+        """Plot the original and filtered intensity data."""
+        if not self.config.plot or plt is None:
+            return
+
+        start_frame = self.config.plot_start_frame or 0
+        end_frame = self.config.plot_end_frame or len(self.intensity_data)
+
+        start_frame = max(0, min(start_frame, len(self.intensity_data) - 1))
+        end_frame = max(start_frame + 1, min(end_frame, len(self.intensity_data)))
+
+        frame_indices = np.arange(start_frame, end_frame)
+        original_data = np.array(self.intensity_data)[start_frame:end_frame]
+        filtered_data_slice = filtered_data[start_frame:end_frame]
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(frame_indices, original_data, "b-", label="Mean Intensity", linewidth=1, alpha=0.7)
+        plt.plot(
+            frame_indices,
+            filtered_data_slice,
+            "orange",
+            label=f"Filtered (Order={self.config.order})",
+            linewidth=2,
+        )
+
+        plt.title(f"Mean Intensity per Frame ({start_frame} to {end_frame})")
+        plt.xlabel("Frame Index")
+        plt.ylabel("Mean Intensity")
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        plt.savefig(
+            self.output_dir / f"{self.name}_intensity_plot.png", dpi=300, bbox_inches="tight"
+        )
+
+        if plt.get_backend() != "agg":
+            plt.savefig("temp_plot.png")  # Save temporarily
+            plot_img = cv2.imread("temp_plot.png")
+            cv2.imshow("Butterworth Filter Plot", plot_img)
+            while True:
+                if cv2.waitKey(1) == 27:  # Wait for ESC key
+                    break
+            cv2.destroyAllWindows()
+            cv2.waitKey(1)  # Extra waitKey to properly close the window
+            Path("temp_plot.png").unlink()  # Remove temporary file
+
+        plt.close()
+
+
+def plot_video_comparison(
+    spatial_video: list[np.ndarray],
+    butter_video: list[np.ndarray],
+    num_frames: int,
+    output_dir: Path,
+    name: str,
+    start_frame: int = 0,
+) -> None:
+    """Plot comparison between spatially filtered and Butterworth filtered videos.
+
+    Parameters:
+    -----------
+    spatial_video : list[np.ndarray]
+        Video after spatial filtering
+    butter_video : list[np.ndarray]
+        Video after Butterworth filtering
+    num_frames : int
+        Number of frames to plot
+    output_dir : Path
+        Directory to save the plot
+    name : str
+        Base name for the plot file
+    start_frame : int
+        First frame to include in plot
+    """
+    if plt is None:
+        return
+
+    # Calculate mean pixel values for both videos
+    spatial_means = [
+        np.mean(frame) for frame in spatial_video[start_frame : start_frame + num_frames]
+    ]
+    butter_means = [
+        np.mean(frame) for frame in butter_video[start_frame : start_frame + num_frames]
+    ]
+
+    # Calculate pixel-wise difference
+    diff_means = [abs(s - b) for s, b in zip(spatial_means, butter_means)]
+
+    frame_indices = np.arange(start_frame, start_frame + num_frames)
+
+    plt.figure(figsize=(12, 8))
+
+    # Plot mean pixel values
+    plt.subplot(2, 1, 1)
+    plt.plot(frame_indices, spatial_means, "b-", label="Spatial Filter", linewidth=2)
+    plt.plot(frame_indices, butter_means, "r-", label="Butterworth Filter", linewidth=2)
+    plt.title(f"Mean Pixel Values Comparison (Frames {start_frame} to {start_frame + num_frames})")
+    plt.xlabel("Frame Index")
+    plt.ylabel("Mean Pixel Value")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+
+    # Plot absolute difference
+    plt.subplot(2, 1, 2)
+    plt.plot(frame_indices, diff_means, "g-", label="Absolute Difference", linewidth=2)
+    plt.title("Absolute Difference in Mean Pixel Values")
+    plt.xlabel("Frame Index")
+    plt.ylabel("Difference")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+
+    plt.tight_layout()
+    plt.savefig(output_dir / f"{name}_comparison_plot.png", dpi=300, bbox_inches="tight")
+
+    if plt.get_backend() != "agg":
+        plt.show()
+
+    plt.close()
+
+
 def denoise_run(
     video_path: str,
     config: DenoiseConfig,
@@ -494,6 +746,14 @@ def denoise_run(
         raise ModuleNotFoundError(
             "matplotlib is not a required dependency of miniscope-io, to use it, "
             "install it manually or install miniscope-io with `pip install miniscope-io[plot]`"
+        )
+
+    # Check for scipy if Butterworth filter is enabled
+    if config.butter_filter and config.butter_filter.enable and not SCIPY_AVAILABLE:
+        logger.warning(
+            "Butterworth filter is enabled but scipy is not installed. "
+            "Install with 'pip install miniscope-io[signal]' to use the filter. "
+            "Continuing without Butterworth filtering..."
         )
 
     reader = VideoReader(video_path)
@@ -527,6 +787,12 @@ def denoise_run(
         height=reader.height,
     )
 
+    butter_processor = ButterworthProcessor(
+        name=pathstem + "_butter_filter",
+        butter_config=config.butter_filter,
+        output_dir=output_dir,
+    )
+
     if config.interactive_display.display_freq_mask:
         freq_mask_processor.freq_mask_named_frame.display()
 
@@ -537,20 +803,44 @@ def denoise_run(
 
             raw_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             input_frame = raw_frame_processor.process_frame(raw_frame)
-            patched_frame = noise_patch_processor.process_frame(input_frame)
-            freq_masked_frame = freq_mask_processor.process_frame(patched_frame)
-            _ = output_frame_processor.process_frame(freq_masked_frame)
+
+            # Stage 1: Noise Patch
+            if config.noise_patch and config.noise_patch.enable:
+                patched_frame = noise_patch_processor.process_frame(input_frame)
+            else:
+                patched_frame = input_frame
+
+            # Stage 2: Frequency Mask
+            if config.frequency_masking and config.frequency_masking.enable:
+                freq_masked_frame = freq_mask_processor.process_frame(patched_frame)
+            else:
+                freq_masked_frame = patched_frame
+
+            # Stage 3: Butterworth
+            if config.butter_filter and config.butter_filter.enable:
+                logger.debug("Processing frame through Butterworth filter")
+                butter_frame = butter_processor.process_frame(freq_masked_frame)
+            else:
+                butter_frame = freq_masked_frame
+
+            _ = output_frame_processor.process_frame(butter_frame)
 
     finally:
         reader.release()
+        logger.info("Processing complete, exporting results...")
 
         output_frames = output_frame_processor.output_video
 
-        if not isinstance(output_frames, list):
-            raise ValueError("Output frames must be a list.")
-        for frame in output_frames:
-            if not isinstance(frame, np.ndarray):
-                logger.warning(f"Frame is not a numpy array: {type(frame)}")
+        # First export all the intermediate results
+        noise_patch_processor.batch_export_videos()
+        freq_mask_processor.batch_export_videos()
+
+        # Then do the Butterworth processing and export
+        if config.butter_filter and config.butter_filter.enable:
+            logger.info("Exporting Butterworth filter results...")
+            butter_processor.batch_export_videos()
+
+        # Finally do minimum projection
         minimum_projection_processor = MinProjSubtractProcessor(
             name=pathstem + "min_proj",
             output_dir=output_dir,
@@ -558,9 +848,6 @@ def denoise_run(
             minimum_projection_config=config.minimum_projection,
         )
         minimum_projection_processor.normalize_stack()
-
-        noise_patch_processor.batch_export_videos()
-        freq_mask_processor.batch_export_videos()
         minimum_projection_processor.batch_export_videos()
 
         if len(noise_patch_processor.output_named_video.video) == 0:
@@ -576,9 +863,16 @@ def denoise_run(
                 " Skipping interactive display."
             )
         elif config.interactive_display.show_videos:
+            start = config.interactive_display.start_frame
+            end = config.interactive_display.end_frame
+
             videos = [
                 noise_patch_processor.output_named_video,
                 freq_mask_processor.output_named_video,
+                NamedVideo(
+                    name=pathstem + "_butter_filter",
+                    video=butter_processor.output_video[start:end],
+                ),
                 freq_mask_processor.freq_domain_named_video,
                 minimum_projection_processor.min_proj_named_frame,
             ]
@@ -588,3 +882,14 @@ def denoise_run(
                 end_frame=config.interactive_display.end_frame,
             )
             video_plotter.show()
+
+            # Add comparison plot using the same frame range as Butterworth filter plot
+            plot_video_comparison(
+                spatial_video=freq_mask_processor.output_video,
+                butter_video=butter_processor.output_video,
+                num_frames=config.butter_filter.plot_end_frame
+                - config.butter_filter.plot_start_frame,
+                output_dir=output_dir,
+                name=pathstem,
+                start_frame=config.butter_filter.plot_start_frame,
+            )
