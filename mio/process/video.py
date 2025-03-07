@@ -592,6 +592,8 @@ class ButterworthProcessor(BaseVideoProcessor):
             filtered_frames = self.apply_filter_to_frames(filtered_data)
             if filtered_frames:
                 logger.info("Saving Butterworth filtered video")
+                # Store the filtered frames in output_video for display
+                self.output_video = filtered_frames
                 output_video = NamedVideo(
                     name=self.name,
                     video=filtered_frames,
@@ -656,6 +658,77 @@ class ButterworthProcessor(BaseVideoProcessor):
             Path("temp_plot.png").unlink()  # Remove temporary file
 
         plt.close()
+
+
+def plot_video_comparison(
+    spatial_video: list[np.ndarray],
+    butter_video: list[np.ndarray],
+    num_frames: int,
+    output_dir: Path,
+    name: str,
+    start_frame: int = 0,
+) -> None:
+    """Plot comparison between spatially filtered and Butterworth filtered videos.
+
+    Parameters:
+    -----------
+    spatial_video : list[np.ndarray]
+        Video after spatial filtering
+    butter_video : list[np.ndarray]
+        Video after Butterworth filtering
+    num_frames : int
+        Number of frames to plot
+    output_dir : Path
+        Directory to save the plot
+    name : str
+        Base name for the plot file
+    start_frame : int
+        First frame to include in plot
+    """
+    if plt is None:
+        return
+
+    # Calculate mean pixel values for both videos
+    spatial_means = [
+        np.mean(frame) for frame in spatial_video[start_frame : start_frame + num_frames]
+    ]
+    butter_means = [
+        np.mean(frame) for frame in butter_video[start_frame : start_frame + num_frames]
+    ]
+
+    # Calculate pixel-wise difference
+    diff_means = [abs(s - b) for s, b in zip(spatial_means, butter_means)]
+
+    frame_indices = np.arange(start_frame, start_frame + num_frames)
+
+    plt.figure(figsize=(12, 8))
+
+    # Plot mean pixel values
+    plt.subplot(2, 1, 1)
+    plt.plot(frame_indices, spatial_means, "b-", label="Spatial Filter", linewidth=2)
+    plt.plot(frame_indices, butter_means, "r-", label="Butterworth Filter", linewidth=2)
+    plt.title(f"Mean Pixel Values Comparison (Frames {start_frame} to {start_frame + num_frames})")
+    plt.xlabel("Frame Index")
+    plt.ylabel("Mean Pixel Value")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+
+    # Plot absolute difference
+    plt.subplot(2, 1, 2)
+    plt.plot(frame_indices, diff_means, "g-", label="Absolute Difference", linewidth=2)
+    plt.title("Absolute Difference in Mean Pixel Values")
+    plt.xlabel("Frame Index")
+    plt.ylabel("Difference")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+
+    plt.tight_layout()
+    plt.savefig(output_dir / f"{name}_comparison_plot.png", dpi=300, bbox_inches="tight")
+
+    if plt.get_backend() != "agg":
+        plt.show()
+
+    plt.close()
 
 
 def denoise_run(
@@ -790,9 +863,16 @@ def denoise_run(
                 " Skipping interactive display."
             )
         elif config.interactive_display.show_videos:
+            start = config.interactive_display.start_frame
+            end = config.interactive_display.end_frame
+
             videos = [
                 noise_patch_processor.output_named_video,
                 freq_mask_processor.output_named_video,
+                NamedVideo(
+                    name=pathstem + "_butter_filter",
+                    video=butter_processor.output_video[start:end],
+                ),
                 freq_mask_processor.freq_domain_named_video,
                 minimum_projection_processor.min_proj_named_frame,
             ]
@@ -802,3 +882,14 @@ def denoise_run(
                 end_frame=config.interactive_display.end_frame,
             )
             video_plotter.show()
+
+            # Add comparison plot using the same frame range as Butterworth filter plot
+            plot_video_comparison(
+                spatial_video=freq_mask_processor.output_video,
+                butter_video=butter_processor.output_video,
+                num_frames=config.butter_filter.plot_end_frame
+                - config.butter_filter.plot_start_frame,
+                output_dir=output_dir,
+                name=pathstem,
+                start_frame=config.butter_filter.plot_start_frame,
+            )

@@ -22,7 +22,7 @@ noise_patch:
 frequency_masking:
   enable: true
   cast_float32: true
-  spatial_LPF_cutoff_radius: 3
+  spatial_LPF_cutoff_radius: 2
   vertical_BEF_cutoff: 3
   horizontal_BEF_cutoff: 0
   output_mask: true
@@ -47,5 +47,6 @@ butter_filter:
   order: 6
   cutoff_frequency: 3
   sampling_rate: 20
-  plot_start_frame: 40
-  plot_end_frame: 140
+  plot_start_frame: 0
+  plot_end_frame: 600
+  
