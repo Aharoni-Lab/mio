@@ -546,7 +546,11 @@ class ButterworthProcessor(BaseVideoProcessor):
         return y
 
     def apply_filter_to_frames(self, filtered_data: np.ndarray) -> list[np.ndarray]:
-        """Apply the filtered intensity values to scale the frames."""
+        """Apply the filtered intensity values to scale the frames.
+
+        The scaling is done by multiplying each frame by the ratio of filtered to original intensity
+        Values are properly scaled and can optionally be clipped to the valid uint8 range.
+        """
         if len(filtered_data) != len(self.frames):
             logger.warning("Filtered data length doesn't match frame count")
             return []
@@ -556,7 +560,18 @@ class ButterworthProcessor(BaseVideoProcessor):
             # Scale the frame based on filtered vs original intensity
             if self.intensity_data[i] != 0:  # Avoid division by zero
                 scale_factor = filtered_data[i] / self.intensity_data[i]
-                filtered_frame = (frame * scale_factor).astype(np.uint8)
+                # Apply scaling in float32 precision
+                filtered_frame = frame.astype(np.float32) * scale_factor
+
+                # Log warning if values will be clipped
+                if np.any(filtered_frame < 0) or np.any(filtered_frame > 255):
+                    logger.warning(
+                        f"Frame {i}: Values outside valid range "
+                        f"(min={filtered_frame.min():.1f}, max={filtered_frame.max():.1f})"
+                    )
+
+                # Clip to valid range and convert to uint8
+                filtered_frame = np.clip(filtered_frame, 0, 255).astype(np.uint8)
             else:
                 filtered_frame = frame
             filtered_frames.append(filtered_frame)
@@ -578,10 +593,17 @@ class ButterworthProcessor(BaseVideoProcessor):
             if filtered_frames:
                 logger.info("Saving Butterworth filtered video")
                 output_video = NamedVideo(
-                    name=self.name,  # Remove "output_" prefix to match other processors
+                    name=self.name,
                     video=filtered_frames,
                 )
-                output_video.export(self.output_dir)
+                # Save directly in output_dir with high quality GREY codec
+                output_video.export(
+                    output_path=self.output_dir / self.name,
+                    fps=self.config.sampling_rate,
+                    suffix=False,
+                    codec="GREY",
+                    isColor=False,  # Explicitly specify grayscale
+                )
             else:
                 logger.warning("No frames to save after Butterworth filtering")
 

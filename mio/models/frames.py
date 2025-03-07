@@ -97,9 +97,33 @@ class NamedVideo(NamedBaseFrame):
         description="List of frames.",
     )
 
-    def export(self, output_path: Union[Path, str], suffix: bool = False, fps: float = 20) -> None:
+    def export(
+        self,
+        output_path: Union[Path, str],
+        suffix: bool = False,
+        fps: float = 20,
+        codec: str = "GREY",
+        isColor: bool = False,
+    ) -> None:
         """
         Export the frame data to a file.
+
+        Parameters:
+        -----------
+        output_path : Union[Path, str]
+            Path where to save the video file
+        suffix : bool, optional
+            Whether to append the video name as suffix to the filename
+        fps : float, optional
+            Frames per second for the output video
+        codec : str, optional
+            Video codec to use. Options:
+            - 'GREY': Uncompressed grayscale (best quality for scientific data)
+            - 'XVID': XVID compression (good compression, decent quality)
+            - 'mp4v': MP4 compression (high compression)
+        isColor : bool, optional
+            Whether to treat the video as color. For grayscale scientific data,
+            set this to False.
         """
         if self.video is None or self.video == []:
             logger.warning(f"No frame data provided for {self.name}. Skipping export.")
@@ -125,17 +149,21 @@ class NamedVideo(NamedBaseFrame):
             width=self.video[0].shape[1],
             height=self.video[0].shape[0],
             fps=fps,
-            fourcc="XVID",
+            fourcc=codec,
+            isColor=isColor,
         )
 
         logger.info(
             f"Writing video to {full_output_path}:"
             f" {self.video[0].shape[1]}x{self.video[0].shape[0]}"
+            f" using codec {codec} ({'color' if isColor else 'grayscale'})"
         )
 
         try:
             for frame in self.video:
-                picture = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-                writer.write(picture)
+                # Only convert to BGR if using a color codec
+                if isColor and codec != "GREY":
+                    frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+                writer.write(frame)
         finally:
             writer.release()
