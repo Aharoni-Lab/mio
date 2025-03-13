@@ -355,7 +355,7 @@ class StreamDaq:
 
                 dat = BitArray(buf)
                 cur_buffer = cur_buffer + dat
-                locallogs.debug(dat.tobytes()) ## Jonny, helping to debug, output data in terminal 
+                # locallogs.debug(dat.tobytes()) ## Jonny, helping to debug, output data in terminal 
                 # locallogs.debug(pre.tobytes()) ## Jonny, helping to debug, output data in terminal 
                 # locallogs.debug(f'dat: {dat.tobytes()}') # Takuya recommended 
                 # locallogs.debug(f'pre: {pre.tobytes()}') # Takuya recommended 

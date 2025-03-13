@@ -1,36 +1,48 @@
 # Original
 # ctrl k+c = comment, ctrl k+u = uncomment multiple lines
 
-id: stream-buffer-header
-mio_model: mio.models.stream.StreamBufferHeaderFormat
-mio_version: "v5.0.0"
-linked_list: 0
-frame_num: 1
-buffer_count: 2
-frame_buffer_count: 3
-write_buffer_count: 4
-dropped_buffer_count: 5
-timestamp: 6
-write_timestamp: 8
-pixel_count: 7
-battery_voltage_raw: 9
-input_voltage_raw: 10
-
-# MSUS
 # id: stream-buffer-header
 # mio_model: mio.models.stream.StreamBufferHeaderFormat
 # mio_version: "v5.0.0"
-# linked_list: 1
-# frame_num: 7
-# buffer_count: 3
-# frame_buffer_count: 2
+# linked_list: 0
+# frame_num: 1
+# buffer_count: 2
+# frame_buffer_count: 3
 # write_buffer_count: 4
-# dropped_buffer_count: 0
+# dropped_buffer_count: 5
 # timestamp: 6
 # write_timestamp: 8
 # pixel_count: 7
 # battery_voltage_raw: 9
 # input_voltage_raw: 10
 
+# https://miniscope-io.readthedocs.io/en/latest/api/models/buffer.html#mio.models.buffer.BufferHeader.frame_buffer_count
+# MSUS
+id: stream-buffer-header
+mio_model: mio.models.stream.StreamBufferHeaderFormat
+mio_version: "v5.0.0"
+linked_list: 1
+frame_num: 7
+buffer_count: 4
+frame_buffer_count: 3
+write_buffer_count: 5
+dropped_buffer_count: 6
+timestamp: 2
+write_timestamp: 2
+pixel_count: 7
+battery_voltage_raw: 9
+input_voltage_raw: 10
 
+
+#define HEADER_POS_HEADER_LEN					(0) // We dont really need this
+#define HEADER_POS_LINKED_LIST			  (1)
+#define HEADER_POS_TIMESTAMP					(2)
+#define HEADER_POS_BUFFER_COUNT				(3)
+#define HEADER_POS_READ_INDEX					(4)
+#define HEADER_POS_WRITE_INDEX				(5)
+#define HEADER_POS_DROPPED_BUFFER			(6)
+#define HEADER_POS_FRAMENUMBER				(7)
+#define HEADER_POS_DATA_LEN						(8)
+#define HEADER_POS_BATTERY_VOLTAGE		(9)
+#define HEADER_POS_WPT_VOLTAGE				(10)
 
