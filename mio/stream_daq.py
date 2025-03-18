@@ -649,6 +649,7 @@ class StreamDaq:
         else:
             raise ValueError(f"source can be one of uart or fpga. Got {source}")
 
+        writer = None
         if video:
             writer = VideoWriter(
                 path=video,
