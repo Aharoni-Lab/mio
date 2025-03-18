@@ -649,17 +649,10 @@ class StreamDaq:
         else:
             raise ValueError(f"source can be one of uart or fpga. Got {source}")
 
-        # Video output
-        writer = None
         if video:
-            if video_kwargs is None:
-                video_kwargs = {}
-            writer = VideoWriter.init_video(
+            writer = VideoWriter(
                 path=video,
-                width=self.config.frame_width,
-                height=self.config.frame_height,
                 fps=self.config.fs,
-                **video_kwargs,
             )
 
         p_buffer_to_frame = multiprocessing.Process(
@@ -730,7 +723,7 @@ class StreamDaq:
             self.terminate.set()
         finally:
             if writer:
-                writer.release()
+                writer.close()
                 self.logger.debug("VideoWriter released")
             if show_video:
                 cv2.destroyAllWindows()
@@ -756,7 +749,7 @@ class StreamDaq:
         image: np.ndarray,
         header_list: list[StreamBufferHeader],
         show_video: bool,
-        writer: Optional[cv2.VideoWriter],
+        writer: Optional[VideoWriter],
         show_metadata: bool,
         metadata: Optional[Path] = None,
     ) -> None:
@@ -795,8 +788,7 @@ class StreamDaq:
                 self.logger.exception(f"Error displaying frame: {e}")
         if writer:
             try:
-                picture = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)  # If your image is grayscale
-                writer.write(picture)
+                writer.write_frame(image)
             except cv2.error as e:
                 self.logger.exception(f"Exception writing frame: {e}")
 
