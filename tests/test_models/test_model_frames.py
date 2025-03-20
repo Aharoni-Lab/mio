@@ -22,11 +22,10 @@ class TestNamedFrame(unittest.TestCase):
         # Check that cv2.imwrite was called correctly
         mock_imwrite.assert_called_once_with("output_path_test.png", self.image_frame)
 
-    @patch('mio.models.frames.VideoWriter.init_video')
-    def test_export_video_frame(self, mock_init_video):
-        # Create a mock writer instance
-        mock_writer = MagicMock()
-        mock_init_video.return_value = mock_writer
+    @patch('mio.models.frames.VideoWriter')
+    def test_export_video_frame(self, mock_VideoWriter):
+        mock_instance = MagicMock()
+        mock_VideoWriter.return_value = mock_instance
 
         # Create instance of NamedFrame with a video
         named_frame = NamedVideo(name=self.name, video=self.video_frames)
@@ -34,20 +33,16 @@ class TestNamedFrame(unittest.TestCase):
         named_frame.export(output_path="output_path", fps=20, suffix=True)
 
         # Verify init_video was called with correct parameters
-        mock_init_video.assert_called_once_with(
+        mock_VideoWriter.assert_called_once_with(
             path=Path("output_path_test.avi"),
-            width=self.video_frames[0].shape[1],
-            height=self.video_frames[0].shape[0],
             fps=20
         )
 
-        # Check that the writer's write method was called for each frame
-        self.assertEqual(mock_writer.write.call_count, len(self.video_frames))
+        self.assertEqual(mock_instance.write_frame.call_count, len(self.video_frames))
 
-    @patch('cv2.imwrite')
-    @patch('mio.models.frames.VideoWriter.init_video')
-    def test_invalid_frame_type_raises_exception(self, mock_init_video, mock_imwrite):
-        # Test with an invalid type (e.g., integer)
+    @patch('mio.models.frames.VideoWriter')
+    def test_invalid_frame_type_raises_exception(self, mock_VideoWriter):
+        # Test with an invalid type
         with self.assertRaises(ValueError):
             named_frame = NamedFrame(name=self.name, frame=12345)
             named_frame.export("output_path", 20, True)
@@ -58,8 +53,8 @@ class TestNamedFrame(unittest.TestCase):
             named_frame.export("output_path", 20, True)
 
         # Ensure that no write methods are called
-        mock_imwrite.assert_not_called()
-        mock_init_video.assert_not_called()
+        mock_VideoWriter.write_frame.assert_not_called()
+        mock_VideoWriter.assert_not_called()
 
 if __name__ == '__main__':
     unittest.main()

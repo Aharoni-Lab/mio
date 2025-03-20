@@ -109,10 +109,8 @@ class NamedVideo(NamedBaseFrame):
             output_path = output_path.with_name(output_path.stem + f"_{self.name}")
         if not all(isinstance(frame, np.ndarray) for frame in self.video):
             raise ValueError("Not all frames are numpy arrays.")
-        writer = VideoWriter.init_video(
+        writer = VideoWriter(
             path=output_path.with_suffix(".avi"),
-            width=self.video[0].shape[1],
-            height=self.video[0].shape[0],
             fps=fps,
         )
         logger.info(
@@ -122,6 +120,6 @@ class NamedVideo(NamedBaseFrame):
         try:
             for frame in self.video:
                 picture = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-                writer.write(picture)
+                writer.write_frame(picture)
         finally:
-            writer.release()
+            writer.close()

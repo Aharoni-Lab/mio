@@ -24,19 +24,38 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
+
       - name: Install dependencies
         run: pip install -e .[tests] pytest-md
+      
+      - name: show runner.os
+        run: echo ${{ runner.os }}
+
+      - name: Install FFmpeg on Windows
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg
+
+      - name: Install FFmpeg on macOS
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+
+      - name: Install FFmpeg on Ubuntu
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y ffmpeg
+
       - name: Run tests
         uses: pavelzw/pytest-action@v2
         with:
           verbose: true
           emoji: false
           job-summary: true
+
       - name: Report to coveralls
         uses: coverallsapp/github-action@v2
         with:

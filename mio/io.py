@@ -10,6 +10,7 @@ from typing import Any, BinaryIO, Iterator, List, Literal, Optional, Tuple, Unio
 
 import cv2
 import numpy as np
+from skvideo.io import FFmpegWriter
 from tqdm import tqdm
 
 from mio.exceptions import EndOfRecordingException, ReadHeaderException
@@ -21,50 +22,44 @@ from mio.types import ConfigSource
 
 class VideoWriter:
     """
-    Write data to a video file using OpenCV.
+    Write data to a video file using FFMpegWriter.
     """
 
-    @staticmethod
-    def init_video(
-        path: Union[Path, str],
-        width: int,
-        height: int,
+    def __init__(
+        self,
+        path: Union[str, Path],
         fps: int,
-        fourcc: str = "Y800",
-        **kwargs: dict,
-    ) -> cv2.VideoWriter:
+        output_dict: dict = None,
+    ):
         """
-        Create a parameterized video writer
-
-        Parameters
-        ----------
-        frame_buffer_queue : multiprocessing.Queue[list[bytes]]
-            Input buffer queue.
-        path : Union[Path, str]
-            Video file to write to
-        width : int
-            Width of video
-        height : int
-            Height of video
-        frame_rate : int
-            Frame rate of video
-        fourcc : str
-            Fourcc code to use
-        kwargs : dict
-            passed to :class:`cv2.VideoWriter`
-
-        Returns:
-        ---------
-            :class:`cv2.VideoWriter`
+        Initialize the VideoWriter object.
         """
-        if isinstance(path, str):
-            path = Path(path)
+        if output_dict is None:
+            output_dict = {
+                "-vcodec": "rawvideo",
+                "-f": "avi",
+                "-filter:v": "format=gray",
+                "-r": str(fps),
+            }
+        else:
+            output_dict["-r"] = str(fps)
 
-        fourcc = cv2.VideoWriter_fourcc(*fourcc)
-        frame_rate = fps
-        frame_size = (width, height)
-        out = cv2.VideoWriter(str(path), fourcc, frame_rate, frame_size, **kwargs)
-        return out
+        self.writer = FFmpegWriter(filename=str(path), outputdict=output_dict)
+
+    def write_frame(self, frame: np.ndarray) -> None:
+        """
+        Write a frame to the video file.
+
+        Parameters:
+        frame (np.ndarray): The frame to write.
+        """
+        self.writer.writeFrame(frame)
+
+    def close(self) -> None:
+        """
+        Close the video file.
+        """
+        self.writer.close()
 
 
 class VideoReader:

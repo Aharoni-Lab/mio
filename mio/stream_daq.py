@@ -9,11 +9,10 @@ import queue
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, Generator, List, Literal, Optional, Tuple, Union
+from typing import Any, Callable, Generator, List, Literal, Optional, Union
 
 import cv2
 import numpy as np
-import serial
 from bitstring import BitArray, Bits
 
 from mio import init_logger
@@ -31,6 +30,8 @@ from mio.types import ConfigSource
 
 HAVE_OK = False
 ok_error = None
+BIT_PER_WORD = 32
+
 try:
     from mio.devices.opalkelly import okDev
 
@@ -143,38 +144,6 @@ class StreamDaq:
             self._nbuffer_per_fm = len(self.buffer_npix)
         return self._nbuffer_per_fm
 
-    def _parse_header(self, buffer: bytes) -> Tuple[StreamBufferHeader, np.ndarray]:
-        """
-        Function to parse header from each buffer.
-
-        Parameters
-        ----------
-        buffer : bytes
-            Input buffer.
-
-        Returns
-        -------
-        Tuple[BufferHeader, ndarray]
-            The returned header data and payload (uint8).
-        """
-
-        header, payload = BufferFormatter.bytebuffer_to_ndarrays(
-            buffer=buffer,
-            header_length_words=int(self.config.header_len / 32),
-            preamble_length_words=int(len(Bits(self.config.preamble)) / 32),
-            reverse_header_bits=self.config.reverse_header_bits,
-            reverse_header_bytes=self.config.reverse_header_bytes,
-            reverse_payload_bits=self.config.reverse_payload_bits,
-            reverse_payload_bytes=self.config.reverse_payload_bytes,
-        )
-
-        header_data = StreamBufferHeader.from_format(
-            header.astype(int), self.header_fmt, construct=True
-        )
-        header_data.adc_scaling = self.config.adc_scale
-
-        return header_data, payload
-
     def _trim(
         self,
         data: np.ndarray,
@@ -212,51 +181,6 @@ class StreamDaq:
                 data = np.pad(data, (0, expected_data_size - data.shape[0]))
 
         return data
-
-    def _uart_recv(
-        self, serial_buffer_queue: multiprocessing.Queue, comport: str, baudrate: int
-    ) -> None:
-        """
-        Receive buffers and push into serial_buffer_queue.
-        Currently not supported.
-
-        Parameters
-        ----------
-        serial_buffer_queue : multiprocessing.Queue
-            _description_
-        comport : str
-            _description_
-        baudrate : int
-            _description_
-        """
-        pre_bytes = self.preamble.tobytes()
-        if self.config.reverse_header_bits:
-            pre_bytes = bytes(bytearray(pre_bytes)[::-1])
-
-        # set up serial port
-        serial_port = serial.Serial(port=comport, baudrate=baudrate, timeout=5, stopbits=1)
-        self.logger.info("Serial port open: " + str(serial_port.name))
-
-        # Throw away the first buffer because it won't fully come in
-        uart_bites = serial_port.read_until(pre_bytes)
-        log_uart_buffer = BitArray([x for x in uart_bites])
-
-        try:
-            while not self.terminate.is_set():
-                # read UART data until preamble and put into queue
-                uart_bites = serial_port.read_until(pre_bytes)
-                log_uart_buffer = [x for x in uart_bites]
-                try:
-                    serial_buffer_queue.put(
-                        log_uart_buffer, block=True, timeout=self.config.runtime.queue_put_timeout
-                    )
-                except queue.Full:
-                    self.logger.warning("Serial buffer queue full, skipping buffer.")
-        finally:
-            time.sleep(1)  # time for ending other process
-            serial_port.close()
-            self.logger.info("Close serial port")
-            sys.exit(1)
 
     def _init_okdev(self, BIT_FILE: Path) -> Union[okDev, okDevMock]:
         # FIXME: when multiprocessing bug resolved, remove this and just mock in tests
@@ -342,7 +266,6 @@ class StreamDaq:
                     break
                 except StreamReadError:
                     locallogs.exception("Read failed, continuing")
-                    # It might be better to choose continue or break with a continuous flag
                     continue
 
                 if capture_binary:
@@ -359,8 +282,19 @@ class StreamDaq:
                             buf_stop + len(self.preamble),
                         )
                     try:
+                        header, serial_buffer = BufferFormatter.bytebuffer_to_ndarrays(
+                            buffer=cur_buffer[buf_start:buf_stop].tobytes(),
+                            header_length_words=int(self.config.header_len / BIT_PER_WORD),
+                            preamble_length_words=int(
+                                len(Bits(self.config.preamble)) / BIT_PER_WORD
+                            ),
+                            reverse_header_bits=self.config.reverse_header_bits,
+                            reverse_header_bytes=self.config.reverse_header_bytes,
+                            reverse_payload_bits=self.config.reverse_payload_bits,
+                            reverse_payload_bytes=self.config.reverse_payload_bytes,
+                        )
                         serial_buffer_queue.put(
-                            cur_buffer[buf_start:buf_stop].tobytes(),
+                            [header, serial_buffer],
                             block=True,
                             timeout=self.config.runtime.queue_put_timeout,
                         )
@@ -377,6 +311,28 @@ class StreamDaq:
                 )
             except queue.Full:
                 locallogs.error("Serial buffer queue full, Could not put sentinel.")
+
+    def _parse_header(self, header: np.ndarray) -> StreamBufferHeader:
+        """
+        Parse the header from the buffer.
+
+        Parameters
+        ----------
+        header : np.ndarray
+            Header data from the buffer.
+
+        Returns
+        -------
+        StreamBufferHeader
+            Parsed header. The header is parsed according to the format defined in
+            `self.header_fmt`, and the `adc_scaling` is set to the value defined in
+            `self.config.adc_scale`.
+        """
+        parsed_header = StreamBufferHeader.from_format(
+            header.astype(int), self.header_fmt, construct=True
+        )
+        parsed_header.adc_scaling = self.config.adc_scale
+        return parsed_header
 
     def _buffer_to_frame(
         self,
@@ -408,8 +364,8 @@ class StreamDaq:
         header_list = []
 
         try:
-            for serial_buffer in exact_iter(serial_buffer_queue.get, None):
-                header_data, serial_buffer = self._parse_header(serial_buffer)
+            for [header, serial_buffer] in exact_iter(serial_buffer_queue.get, None):
+                header_data = self._parse_header(header)
                 header_list.append(header_data)
 
                 try:
@@ -649,17 +605,11 @@ class StreamDaq:
         else:
             raise ValueError(f"source can be one of uart or fpga. Got {source}")
 
-        # Video output
         writer = None
         if video:
-            if video_kwargs is None:
-                video_kwargs = {}
-            writer = VideoWriter.init_video(
+            writer = VideoWriter(
                 path=video,
-                width=self.config.frame_width,
-                height=self.config.frame_height,
                 fps=self.config.fs,
-                **video_kwargs,
             )
 
         p_buffer_to_frame = multiprocessing.Process(
@@ -730,7 +680,7 @@ class StreamDaq:
             self.terminate.set()
         finally:
             if writer:
-                writer.release()
+                writer.close()
                 self.logger.debug("VideoWriter released")
             if show_video:
                 cv2.destroyAllWindows()
@@ -756,7 +706,7 @@ class StreamDaq:
         image: np.ndarray,
         header_list: list[StreamBufferHeader],
         show_video: bool,
-        writer: Optional[cv2.VideoWriter],
+        writer: Optional[VideoWriter],
         show_metadata: bool,
         metadata: Optional[Path] = None,
     ) -> None:
@@ -795,8 +745,7 @@ class StreamDaq:
                 self.logger.exception(f"Error displaying frame: {e}")
         if writer:
             try:
-                picture = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)  # If your image is grayscale
-                writer.write(picture)
+                writer.write_frame(image)
             except cv2.error as e:
                 self.logger.exception(f"Exception writing frame: {e}")
 
