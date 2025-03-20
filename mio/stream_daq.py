@@ -312,6 +312,28 @@ class StreamDaq:
             except queue.Full:
                 locallogs.error("Serial buffer queue full, Could not put sentinel.")
 
+    def _parse_header(self, header: np.ndarray) -> StreamBufferHeader:
+        """
+        Parse the header from the buffer.
+
+        Parameters
+        ----------
+        header : np.ndarray
+            Header data from the buffer.
+
+        Returns
+        -------
+        StreamBufferHeader
+            Parsed header. The header is parsed according to the format defined in
+            `self.header_fmt`, and the `adc_scaling` is set to the value defined in
+            `self.config.adc_scale`.
+        """
+        parsed_header = StreamBufferHeader.from_format(
+            header.astype(int), self.header_fmt, construct=True
+        )
+        parsed_header.adc_scaling = self.config.adc_scale
+        return parsed_header
+
     def _buffer_to_frame(
         self,
         serial_buffer_queue: multiprocessing.Queue,
@@ -343,11 +365,7 @@ class StreamDaq:
 
         try:
             for [header, serial_buffer] in exact_iter(serial_buffer_queue.get, None):
-                header_data = StreamBufferHeader.from_format(
-                    header.astype(int), self.header_fmt, construct=True
-                )
-                header_data.adc_scaling = self.config.adc_scale
-
+                header_data = self._parse_header(header)
                 header_list.append(header_data)
 
                 try:
