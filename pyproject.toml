@@ -23,6 +23,7 @@ dependencies = [
     "click>=8.1.7",
     "platformdirs>=4.3.6",
     'typing-extensions>=4.10.0; python_version<"3.13"',
+    "scikit-video>=1.1.11",
 ]
 
 readme = "README.md"
