@@ -23,13 +23,13 @@ mio_model: mio.models.stream.StreamBufferHeaderFormat
 mio_version: "v5.0.0"
 linked_list: 1
 frame_num: 7
-buffer_count: 4
-frame_buffer_count: 3
+buffer_count: 7
+frame_buffer_count: 4
 write_buffer_count: 5
 dropped_buffer_count: 6
 timestamp: 2
 write_timestamp: 2
-pixel_count: 7
+pixel_count: 8
 battery_voltage_raw: 9
 input_voltage_raw: 10
 
