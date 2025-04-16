@@ -30,7 +30,7 @@ dropped_buffer_count: 10 # set to 0, good
 timestamp: 2 # good
 write_timestamp: 2 # good
 pixel_count: 8 # not needed yet
-battery_voltage_raw: 9 # not needed yet
+battery_voltage_raw: 10 # not needed yet
 input_voltage_raw: 10 # not needed yet
 
 # linked_list: 1
