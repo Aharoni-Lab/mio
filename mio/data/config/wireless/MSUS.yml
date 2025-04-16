@@ -13,6 +13,7 @@ bitstream: "XEM7310-A75/USBInterface-5mhz-J2_2-3v3-IEEE.bit"
 # bitstream: "XEM7310-A75/USBInterface-12_5mhz-J2_2-3v3-IEEE.bit"
 # bitstream: "XEM7310-A75/USBInterface-16_67mhz-J2_2-3v3-IEEE.bit"
 # bitstream: "XEM7310-A75/USBInterface-20mhz-J2_2-3v3-IEEE.bit" 
+scope: 2 # scope number, 0 msv4, 1 wv4, 2 MSUS
 
 # COM port and baud rate is only required for UART mode
 port: null
