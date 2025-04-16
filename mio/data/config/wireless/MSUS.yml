@@ -24,8 +24,8 @@ preamble: 0x12345678 # original preamble
 # preamble: 0xff00cccc # original preamble
 
 # Image format. StreamDaq will calculate buffer size, etc. based on these parameters
-frame_width: 328
-frame_height: 328
+frame_width: 320
+frame_height: 320
 pix_depth: 12
 
 # Buffer data format. These have to match the firmware value
