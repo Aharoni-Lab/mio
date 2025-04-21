@@ -503,6 +503,7 @@ class StreamDaq:
             except queue.Full:
                 locallogs.error("Frame buffer queue full, Could not put sentinel.")
 
+# start
     def _format_frame(
         self,
         frame_buffer_queue: multiprocessing.Queue,
