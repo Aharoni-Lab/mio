@@ -543,68 +543,12 @@ class StreamDaq:
                     continue
                 frame_data = np.concatenate(frame_data, axis=0)
 
-                # start of the attempt
-
-                bytes_to_skip = 12 # 12 bytes skipped
-                bytes_to_keep = 480 # 320 bytes kept
-                repetitions = 320 # do this 320 times
-            
-                processed_data = np.zeros(bytes_to_keep * repetitions, dtype=np.uint8)
-                # Process according to pattern: skip 12 bytes, keep 480 bytes, repeat 320 times
-                byte_position = 0
-                total_bytes = frame_data.size
-
-                for i in range(repetitions):
-                # Skip 12 bytes (96 bits)
-                    next_position = byte_position + bytes_to_skip
-                    
-                    # Check if we have enough data remaining
-                    if next_position + bytes_to_keep > total_bytes:
-                        locallogs.warning(
-                            f"Not enough data for complete pattern: "
-                            f"Needed {next_position + bytes_to_keep}, had {total_bytes}"
-                        )
-                        break
-                    
-                    # Move position after skipped bytes
-                    byte_position = next_position
-                    
-                    # Keep 480 bytes (3840 bits)
-                    processed_data[i * bytes_to_keep:(i + 1) * bytes_to_keep] = \
-                        frame_data[byte_position:byte_position + bytes_to_keep]
-                    
-                    # Move position after kept bytes
-                    byte_position += bytes_to_keep
-                frame_data = processed_data
-
-                new_width = 480
-                new_height = 320
-
-                # end of my attempt
-
                 try:
                     frame = np.reshape(
-                        frame_data, (new_width, new_height)
+                        frame_data, (self.config.frame_width, self.config.frame_height)
                     )
-                    # Temporarily update the config dimensions for display purposes
-                    original_width = self.config.frame_width
-                    original_height = self.config.frame_height
-                    self.config.frame_width = new_width
-                    self.config.frame_height = new_height
-
-                    try:
-                        imagearray.put(
-                            (frame, header_list),
-                            block=True,
-                            timeout=self.config.runtime.queue_put_timeout,
-                        )
-                    finally:
-                        # Restore original dimensions after putting in queue
-                        self.config.frame_width = original_width
-                        self.config.frame_height = original_height
-                    
                 except ValueError as e:
-                    expected_size = new_width * new_height
+                    expected_size = self.config.frame_width * self.config.frame_height
                     provided_size = frame_data.size
                     locallogs.exception(
                         "Frame size doesn't match: %s. "
@@ -614,23 +558,23 @@ class StreamDaq:
                         expected_size,
                         provided_size,
                     )
-                    frame = np.zeros((new_width, new_height), dtype=np.uint8)
-                    try:
-                        imagearray.put(
-                            (frame, header_list),
-                            block=True,
-                            timeout=self.config.runtime.queue_put_timeout,
-                        )
-                    except queue.Full:
-                        locallogs.warning("Image array queue full, skipping frame.")
-                
+                    frame = np.zeros(
+                        (self.config.frame_width, self.config.frame_height), dtype=np.uint8
+                    )
+                try:
+                    imagearray.put(
+                        (frame, header_list),
+                        block=True,
+                        timeout=self.config.runtime.queue_put_timeout,
+                    )
+                except queue.Full:
+                    locallogs.warning("Image array queue full, skipping frame.")
         finally:
             locallogs.debug("Quitting, putting sentinel in queue")
             try:
                 imagearray.put(None, block=True, timeout=self.config.runtime.queue_put_timeout)
             except queue.Full:
                 locallogs.error("Image array queue full, Could not put sentinel.")
-
 
     def init_video(
         self, path: Union[Path, str], fourcc: str = "Y800", **kwargs: dict
