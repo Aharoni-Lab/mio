@@ -552,7 +552,7 @@ class StreamDaq:
 
                 # Create an array for the processed frame (without training words)
                 processed_data = np.zeros(num_rows * pixels_per_row, dtype=frame_data.dtype)
-                
+                locallogs.debug(f'dat: {processed_data.tobytes()}') # Takuya recommended 
                 # Remove training words from each row
                 for row in range(num_rows):
                     # Calculate source indices (in original data with training words)
