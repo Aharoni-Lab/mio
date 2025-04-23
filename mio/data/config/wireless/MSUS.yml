@@ -37,7 +37,7 @@ num_buffers: 6 # num of data buffers inside mcu
 dummy_words: 12 # num of dummy words before header file
 
 # Flags to flip bit/byte order when recovering headers and data. See model document for details.
-reverse_header_bits:  False
+reverse_header_bits: True # False
 reverse_header_bytes: False
 reverse_payload_bits: False # True
 reverse_payload_bytes: False #  True
