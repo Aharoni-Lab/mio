@@ -1,3 +1,5 @@
+# https://miniscope-io.readthedocs.io/en/latest/api/models/buffer.html#mio.models.buffer.BufferHeader.frame_buffer_count
+
 id: MSUS-test
 mio_model: mio.models.stream.StreamDevConfig
 mio_version: "v5.0.0"
@@ -20,9 +22,9 @@ port: null
 baudrate: null
 
 # Preamble for each data buffer.
-preamble: 0x12345678 # original preamble
-
-# preamble: 0xff00cccc # original preamble
+# preamble: 0x12345678 # original preamble
+preamble: 0x78563412 # new preamble
+# preamble: 0x482C6A1E # original preamble
 
 # Image format. StreamDaq will calculate buffer size, etc. based on these parameters
 frame_width: 320
@@ -31,16 +33,16 @@ pix_depth: 12
 
 # Buffer data format. These have to match the firmware value
 header_len: 384 # 12 * 32 (in bits)
-buffer_block_length: 1 # 4  # 10 # originally 12 how many words per block length 
-block_size: 997 # 3988 # just buffer (header+data-header)
+buffer_block_length: 4  # 10 # originally 12 how many words per block length 
+block_size: 3988 # 3988 # just buffer (header+data-header)
 num_buffers: 6 # num of data buffers inside mcu 
 dummy_words: 12 # num of dummy words before header file
 
 # Flags to flip bit/byte order when recovering headers and data. See model document for details.
-reverse_header_bits: True # False
-reverse_header_bytes: True
-reverse_payload_bits: True # True
-reverse_payload_bytes: True #  True
+reverse_header_bits: False # False
+reverse_header_bytes: False
+reverse_payload_bits: False # True
+reverse_payload_bytes: False #  True
 
 adc_scale:
   ref_voltage: 1.1

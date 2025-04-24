@@ -544,43 +544,18 @@ class StreamDaq:
                     continue
                 frame_data = np.concatenate(frame_data, axis=0)
 
-                # Parameters for processing
-                training_words_per_row = 8
-                pixels_per_row = 320
-                total_words_per_row = pixels_per_row + training_words_per_row
+                # here, try processing data
+                row_length_byte = 492
                 num_rows = 320
-
-                # Create an array for the processed frame (without training words)
-                processed_data = np.zeros(num_rows * pixels_per_row, dtype=frame_data.dtype)
-                locallogs.debug(f'dat: {processed_data.tobytes()}') # Takuya recommended 
-                # Remove training words from each row
-                for row in range(num_rows):
-                    # Calculate source indices (in original data with training words)
-                    src_row_start = row * total_words_per_row
-                    src_pixels_start = src_row_start + training_words_per_row
-                    src_row_end = src_row_start + total_words_per_row
-                    
-                    # Calculate destination indices (in processed data without training words)
-                    dst_row_start = row * pixels_per_row
-                    dst_row_end = dst_row_start + pixels_per_row
-                    
-                    # Check if we have enough data for this row
-                    if src_row_end <= len(frame_data):
-                        # Copy only the pixel data (skip training words)
-                        processed_data[dst_row_start:dst_row_end] = frame_data[src_pixels_start:src_row_end]
-                    else:
-                        locallogs.warning(
-                            f"Row {row} exceeds frame data length. Expected end at {src_row_end}, "
-                            f"but frame data length is {len(frame_data)}."
-                        )
+                start_of_row_byte = 12
 
                 try:
                     frame = np.reshape(
-                        processed_data, (self.config.frame_width, self.config.frame_height)
+                        frame_data, (self.config.frame_width, self.config.frame_height)
                     )
                 except ValueError as e:
                     expected_size = self.config.frame_width * self.config.frame_height
-                    provided_size = processed_data.size
+                    provided_size = frame_data.size
                     locallogs.exception(
                         "Frame size doesn't match: %s. "
                         " Expected size: %d, got size: %d."
