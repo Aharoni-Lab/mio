@@ -798,8 +798,12 @@ class StreamDaq:
         metadata: Optional[Path] = None,
     ) -> None:
         """
-        Inner handler for frame processing, display, and storage.
-        Handles 10-bit image data appropriately.
+        Inner handler for :meth:`.capture` to process the frames from the frame queue.
+
+        .. todo::
+
+            Further refactor to break into smaller pieces, not have to pass 100 args every time.
+
         """
         if show_metadata or metadata:
             for header in header_list:
@@ -817,33 +821,18 @@ class StreamDaq:
                         )
                     except Exception as e:
                         self.logger.exception(f"Exception saving headers: \n{e}")
-        
         if image is None or image.size == 0:
             self.logger.warning("Empty frame received, skipping.")
             return
-            
         if show_video:
             try:
-                # Convert 10-bit to 8-bit for display
-                if image.dtype == np.uint16:
-                    display_image = (image / 1023.0 * 255).astype(np.uint8)
-                else:
-                    display_image = image
-                    
-                cv2.imshow("NanEye Camera - 320x320", display_image)
+                cv2.imshow("image", image)
                 cv2.waitKey(1)
             except cv2.error as e:
                 self.logger.exception(f"Error displaying frame: {e}")
-                
         if writer:
             try:
-                # Convert to BGR format for video writer
-                if image.dtype == np.uint16:
-                    # For 10-bit depth, normalize to 8-bit for video
-                    picture = cv2.cvtColor((image / 1023.0 * 255).astype(np.uint8), cv2.COLOR_GRAY2BGR)
-                else:
-                    picture = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-                    
+                picture = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)  # If your image is grayscale
                 writer.write(picture)
             except cv2.error as e:
                 self.logger.exception(f"Exception writing frame: {e}")
