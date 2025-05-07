@@ -4,12 +4,13 @@ CLI commands for running streamDaq
 
 import os
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Literal
 
 import click
 
 from mio.cli.common import ConfigIDOrPath
 from mio.stream_daq import StreamDaq
+from mio.devices.gs.daq import GSStreamDaq
 
 
 @click.group()
@@ -70,19 +71,25 @@ def _capture_options(fn: Callable) -> Callable:
 @stream.command()
 @_common_options
 @_capture_options
+@click.option("-d", "--device", type=click.Choice(["streamdaq", "gs"]))
 def capture(
     device_config: Path,
-    output: Optional[Path],
-    okwarg: Optional[dict],
-    no_display: Optional[bool],
-    binary_export: Optional[bool],
-    metadata_display: Optional[bool],
+    device: Literal["streamdaq", "gs"] = "streamdaq",
+    output: Optional[Path] = None,
+    okwarg: Optional[dict] = None,
+    no_display: Optional[bool] = None,
+    binary_export: Optional[bool] = None,
+    metadata_display: Optional[bool] = None,
     **kwargs: dict,
 ) -> None:
     """
     Capture video from a StreamDaq device, optionally saving as an encoded video or as raw binary
     """
-    daq_inst = StreamDaq(device_config=device_config)
+    if device == "gs":
+        daq_inst = GSStreamDaq(device_config=device_config)
+    else:
+        daq_inst = StreamDaq(device_config=device_config)
+
     okwargs = dict(okwarg)
 
     if output:

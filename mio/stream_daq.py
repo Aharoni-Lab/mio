@@ -102,14 +102,6 @@ class StreamDaq:
         self.logger = init_logger("streamDaq")
         self.config = StreamDevConfig.from_any(device_config)
         self.header_fmt = StreamBufferHeaderFormat.from_any(header_fmt)
-        if isinstance(header_fmt, str):
-            self.header_fmt = StreamBufferHeaderFormat.from_id(header_fmt)
-        elif isinstance(header_fmt, StreamBufferHeaderFormat):
-            self.header_fmt = header_fmt
-        else:
-            raise TypeError(
-                "header_fmt should be an instance of StreamBufferHeaderFormat or a config ID."
-            )
         self.preamble = self.config.preamble
         self.terminate: multiprocessing.Event = multiprocessing.Event()
 
@@ -503,6 +495,7 @@ class StreamDaq:
             except queue.Full:
                 locallogs.error("Frame buffer queue full, Could not put sentinel.")
 
+
     def _format_frame(
         self,
         frame_buffer_queue: multiprocessing.Queue,
@@ -528,26 +521,8 @@ class StreamDaq:
             Output image array queue.
         """
         locallogs = init_logger("streamDaq.frame")
-        # Calculate new frame dimensions after processing
-        # Original dimensions: 328x320x12
-        # After removing start of row sequence: Each row loses 96 bits (12 bytes)
-        original_width = 328  # Original width
-        original_height = 320  # Original height
-        
-        # Each row is 3936 bits (492 bytes) with 96 bits (12 bytes) as start sequence
-        row_data_bits = 3936 - 96  # 3840 bits of data per row
-        
-        # For the 10-bit pixels, we need to determine actual width
-        # This should be 320 pixels per row (3840/12 = 320)
-        processed_width = 320
-        processed_height = original_height  # Height stays the same
-        
         try:
             for frame_data, header_list in exact_iter(frame_buffer_queue.get, None):
-                # Check for termination signal
-                if self.terminate.is_set():
-                    locallogs.debug("Termination signal received, breaking frame processing loop")
-                    break
 
                 if not frame_data or len(frame_data) == 0:
                     try:
@@ -559,25 +534,23 @@ class StreamDaq:
                     except queue.Full:
                         locallogs.warning("Image array queue full, skipping frame.")
                     continue
-                    
-                # Concatenate all buffer data
-                frame_data = np.concatenate(frame_data, axis=0)
-                
+
                 try:
-                    # Process the frame data
-                    processed_frame_data = self._process_frame_data(frame_data, processed_width, processed_height)
-                    
-                    # Update configuration with new dimensions
-                    self.config.frame_width = processed_width
-                    self.config.frame_height = processed_height
-                    
-                    # Reshape the processed data into the frame
-                    frame = np.reshape(processed_frame_data, (processed_height, processed_width))
-                    
-                except Exception as e:
-                    locallogs.exception(f"Error processing frame: {e}")
-                    frame = np.zeros((processed_height, processed_width), dtype=np.uint8)
-                    
+                    frame = self._format_frame_inner(frame_data)
+                except ValueError as e:
+                    expected_size = self.config.frame_width * self.config.frame_height
+                    provided_size = frame_data.size
+                    locallogs.exception(
+                        "Frame size doesn't match: %s. "
+                        " Expected size: %d, got size: %d."
+                        "Replacing with zeros.",
+                        e,
+                        expected_size,
+                        provided_size,
+                    )
+                    frame = np.zeros(
+                        (self.config.frame_width, self.config.frame_height), dtype=np.uint8
+                    )
                 try:
                     imagearray.put(
                         (frame, header_list),
@@ -593,99 +566,16 @@ class StreamDaq:
             except queue.Full:
                 locallogs.error("Image array queue full, Could not put sentinel.")
 
-
-    def _process_frame_data(self, frame_data: np.ndarray, width: int, height: int) -> np.ndarray:
-        """
-        Process frame data by removing start of row sequences and extracting pixels.
+    def _format_frame_inner(
+        self,
+        frame_data: list[np.array],
+    ) -> np.array:
+        frame_data = np.concatenate(frame_data, axis=0)
+        frame = np.reshape(
+            frame_data, (self.config.frame_width, self.config.frame_height)
+        )
+        return frame
         
-        Instead of checking for [1][10 bits][0] pattern, this function directly extracts
-        10-bit values from the data stream after removing start of row sequences.
-        
-        Parameters
-        ----------
-        frame_data : np.ndarray
-            The raw frame data.
-        width : int
-            The width of the processed frame.
-        height : int
-            The height of the processed frame.
-            
-        Returns
-        -------
-        np.ndarray
-            Processed frame data.
-        """
-        logger = init_logger("streamDaq.process_frame")
-        
-        try:
-            # Constants
-            row_size_bytes = 492  # 3936 bits
-            start_of_row_size_bytes = 12  # 96 bits
-            total_rows = height
-            
-            # Step 1: Remove start of row sequences
-            data_without_start_seq = bytearray()
-            
-            for row in range(min(total_rows, len(frame_data) // row_size_bytes)):
-                row_start = row * row_size_bytes
-                
-                # Skip if we don't have enough data for this row
-                if row_start + row_size_bytes > len(frame_data):
-                    logger.warning(f"Incomplete row data at row {row}, skipping")
-                    break
-                    
-                # Copy data after the start of row sequence
-                data_start = row_start + start_of_row_size_bytes
-                data_end = row_start + row_size_bytes
-                
-                data_without_start_seq.extend(frame_data[data_start:data_end])
-            
-            # Step 2: Extract 10-bit pixels
-            # Instead of validating [1][10 bits][0], we'll just extract 10 bits at a time
-            # and assume the data is already in the correct format
-            
-            from bitstring import BitArray
-            
-            # Create a BitArray from the data
-            bit_array = BitArray(bytes=bytes(data_without_start_seq))
-            
-            # Create an array for the output pixels
-            output_pixels = np.zeros(width * height, dtype=np.uint8)
-            
-            # Determine the appropriate bit interval to extract pixels
-            # Since we're having issues with the [1][10 bits][0] pattern,
-            # we'll try a direct approach of extracting every 12 bits
-            
-            for i in range(min(width * height, bit_array.len // 12)):
-                # Extract 10 bits (ignoring the first and last bit of each 12-bit sequence)
-                start_bit = i * 12 + 1  # Skip the first bit
-                
-                # Make sure we have enough bits
-                if start_bit + 10 > bit_array.len:
-                    break
-                    
-                # Extract 10 bits and convert to uint
-                try:
-                    value = bit_array[start_bit:start_bit + 10].uint
-                    # Scale from 10-bit (0-1023) to 8-bit (0-255)
-                    output_pixels[i] = (value * 255) // 1023
-                except Exception as e:
-                    logger.debug(f"Error extracting bits at position {start_bit}: {e}")
-                    output_pixels[i] = 0
-            
-            # Ensure we have the correct number of pixels
-            if len(output_pixels) < width * height:
-                logger.warning(f"Not enough pixel data: got {len(output_pixels)}, need {width * height}")
-                output_pixels = np.pad(output_pixels, (0, width * height - len(output_pixels)))
-            elif len(output_pixels) > width * height:
-                output_pixels = output_pixels[:width * height]
-                
-            return output_pixels
-        
-        except Exception as e:
-            logger.exception(f"Error in _process_frame_data: {e}")
-            # Return a blank frame on error
-            return np.zeros(width * height, dtype=np.uint8)
 
 
     def init_video(
@@ -908,12 +798,8 @@ class StreamDaq:
         metadata: Optional[Path] = None,
     ) -> None:
         """
-        Inner handler for :meth:`.capture` to process the frames from the frame queue.
-
-        .. todo::
-
-            Further refactor to break into smaller pieces, not have to pass 100 args every time.
-
+        Inner handler for frame processing, display, and storage.
+        Handles 10-bit image data appropriately.
         """
         if show_metadata or metadata:
             for header in header_list:
@@ -931,18 +817,33 @@ class StreamDaq:
                         )
                     except Exception as e:
                         self.logger.exception(f"Exception saving headers: \n{e}")
+        
         if image is None or image.size == 0:
             self.logger.warning("Empty frame received, skipping.")
             return
+            
         if show_video:
             try:
-                cv2.imshow("image", image)
+                # Convert 10-bit to 8-bit for display
+                if image.dtype == np.uint16:
+                    display_image = (image / 1023.0 * 255).astype(np.uint8)
+                else:
+                    display_image = image
+                    
+                cv2.imshow("NanEye Camera - 320x320", display_image)
                 cv2.waitKey(1)
             except cv2.error as e:
                 self.logger.exception(f"Error displaying frame: {e}")
+                
         if writer:
             try:
-                picture = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)  # If your image is grayscale
+                # Convert to BGR format for video writer
+                if image.dtype == np.uint16:
+                    # For 10-bit depth, normalize to 8-bit for video
+                    picture = cv2.cvtColor((image / 1023.0 * 255).astype(np.uint8), cv2.COLOR_GRAY2BGR)
+                else:
+                    picture = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+                    
                 writer.write(picture)
             except cv2.error as e:
                 self.logger.exception(f"Exception writing frame: {e}")
