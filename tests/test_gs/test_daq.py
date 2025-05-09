@@ -1,10 +1,9 @@
 import pytest
 from mio.devices.gs import daq
 import numpy as np
-
-
-# create a pattern
 import matplotlib.pyplot as plt
+
+
 
 def create_naneye_frame(width=320, height=320, pattern="cross"):
     """

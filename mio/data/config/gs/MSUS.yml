@@ -15,7 +15,6 @@ bitstream: "XEM7310-A75/USBInterface-5mhz-J2_2-3v3-IEEE.bit"
 # bitstream: "XEM7310-A75/USBInterface-12_5mhz-J2_2-3v3-IEEE.bit"
 # bitstream: "XEM7310-A75/USBInterface-16_67mhz-J2_2-3v3-IEEE.bit"
 # bitstream: "XEM7310-A75/USBInterface-20mhz-J2_2-3v3-IEEE.bit" 
-Scope_version: 2 # scope number, 0 msv4, 1 wv4, 2 MSUS, replace with enum (?)
 
 # COM port and baud rate is only required for UART mode
 port: null
@@ -34,7 +33,7 @@ pix_depth: 12 # pixel depth, or, pixel period
 header_len: 384 # 12 * 32 (in bits)
 buffer_block_length: 4  # 10 # originally 12 how many words per block length 
 block_size: 3988 # 3988 # just buffer (header+data-header)
-num_buffers: 6 # num of data buffers inside mcu 
+num_buffers: 6 # (maybe change to 10 num of data buffers inside mcu 
 dummy_words: 12 # num of dummy words before header file
 
 # Flags to flip bit/byte order when recovering headers and data. See model document for details.
