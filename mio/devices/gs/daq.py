@@ -2,7 +2,9 @@ import numpy as np
 import multiprocessing as mp
 from typing import Union, Optional
 import queue
+import cv2
 
+from pathlib import Path
 from mio import init_logger
 from mio.stream_daq import StreamDaq, exact_iter
 from mio.devices.gs.config import GSDevConfig
@@ -79,13 +81,9 @@ class GSStreamDaq(StreamDaq):
             Output image array queue.
         """
         locallogs = init_logger("streamDaq.frame")
-        # Set display size to 320x320 as specified
-        # Target dimensions
-        output_width = 320
-        output_height = 320
-        
         try:
             for frame_data, header_list in exact_iter(frame_buffer_queue.get, None):
+
                 if not frame_data or len(frame_data) == 0:
                     try:
                         imagearray.put(
@@ -96,96 +94,26 @@ class GSStreamDaq(StreamDaq):
                     except queue.Full:
                         locallogs.warning("Image array queue full, skipping frame.")
                     continue
-                
-                # Concatenate all buffer data
-                frame_data = np.concatenate(frame_data, axis=0)
-                
+
                 try:
-                    # Calculate bytes per row (3936 bits = 492 bytes)
-                    bytes_per_row = 3936 // 8
-                    
-                    # Ensure we have enough data for 320 rows
-                    total_needed_bytes = bytes_per_row * 320
-                    
-                    if len(frame_data) < total_needed_bytes:
-                        # Pad with zeros if we don't have enough data
-                        frame_data = np.pad(frame_data, (0, total_needed_bytes - len(frame_data)))
-                    elif len(frame_data) > total_needed_bytes:
-                        # Truncate if we have too much data
-                        frame_data = frame_data[:total_needed_bytes]
-                    
-                    # Reshape into 320 rows of 492 bytes each
-                    raw_frame = np.reshape(frame_data, (320, bytes_per_row))
-                    
-                    # Process each row to extract pixel data
-                    # Final output will be 320 rows x 320 pixels with 10-bit depth
-                    processed_frame = np.zeros((320, 320), dtype=np.uint16)
-                    
-                    for row_idx in range(320):
-                        # Skip first 12 bytes (96 bits)
-                        row_data = raw_frame[row_idx, 12:]
-                        
-                        # Process every 12 bits to extract 10-bit pixels
-                        # Each row should have 320 pixels (3840 bits / 12 bits per pixel = 320 pixels)
-                        for pixel_idx in range(320):
-                            # Calculate byte position and bit offset
-                            bit_pos = pixel_idx * 12  # Each pixel takes 12 bits (1 + 10 + 1)
-                            byte_pos = bit_pos // 8
-                            bit_offset = bit_pos % 8
-                            
-                            # Make sure we don't go out of bounds
-                            if byte_pos + 2 >= len(row_data):
-                                break
-                                
-                            # Extract bytes that contain our 12 bits
-                            # We might need up to 3 bytes depending on the alignment
-                            if bit_offset <= 4:  # If the 12 bits fit in 2 bytes
-                                bytes_chunk = np.array(row_data[byte_pos:byte_pos+2], dtype=np.uint32)
-                                value = (bytes_chunk[0] << 8) | bytes_chunk[1]
-                                # Shift to align with start of our pattern
-                                value = value >> bit_offset
-                            else:  # Need 3 bytes
-                                bytes_chunk = np.array(row_data[byte_pos:byte_pos+3], dtype=np.uint32)
-                                value = (bytes_chunk[0] << 16) | (bytes_chunk[1] << 8) | bytes_chunk[2]
-                                # Shift to align with start of our pattern
-                                value = value >> bit_offset
-                            
-                            # Extract just the 10 bits (positions 1-10) from the [1][10 bits][0] pattern
-                            pixel_value = (value >> 1) & 0x3FF  # 0x3FF = 1023 (10 bits)
-                            
-                            # Store in our output frame
-                            processed_frame[row_idx, pixel_idx] = pixel_value
-                    
-                    # The processed_frame is now 320x320 with 10-bit pixel depth
-                    
-                    # Create 8-bit version for visualization if needed
-                    vis_frame = (processed_frame / 1023.0 * 255).astype(np.uint8)
-                    
-                    # Update header with frame dimensions and depth
-                    for header in header_list:
-                        if hasattr(header, 'original_width'):
-                            header.original_width = 320
-                            header.original_height = 320
-                            header.display_width = 320
-                            header.display_height = 320
-                            header.bit_depth = 10
-                    
-                except Exception as e:
+                    frame = self._format_frame_inner(frame_data)
+                except ValueError as e:
+                    expected_size = self.config.frame_width * self.config.frame_height
+                    provided_size = frame_data.size
                     locallogs.exception(
-                        "Frame processing failed: %s. Replacing with zeros.",
-                        e
+                        "Frame size doesn't match: %s. "
+                        " Expected size: %d, got size: %d."
+                        "Replacing with zeros.",
+                        e,
+                        expected_size,
+                        provided_size,
                     )
-                    # Fall back to empty frame
-                    processed_frame = np.zeros((output_height, output_width), dtype=np.uint16)
-                    vis_frame = np.zeros((output_height, output_width), dtype=np.uint8)
-                
-                # Store visualization frame for display
-                self.current_vis_frame = vis_frame
-                    
+                    frame = np.zeros(
+                        (self.config.frame_width, self.config.frame_height), dtype=np.uint8
+                    )
                 try:
-                    # Send the 10-bit processed frame to the queue
                     imagearray.put(
-                        (processed_frame, header_list),
+                        (frame, header_list),
                         block=True,
                         timeout=self.config.runtime.queue_put_timeout,
                     )
@@ -197,3 +125,54 @@ class GSStreamDaq(StreamDaq):
                 imagearray.put(None, block=True, timeout=self.config.runtime.queue_put_timeout)
             except queue.Full:
                 locallogs.error("Image array queue full, Could not put sentinel.")
+    
+
+
+    def _handle_frame(
+            self,
+            image: np.ndarray,
+            header_list: list[GSBufferHeaderFormat],
+            show_video: bool,
+            writer: Optional[cv2.VideoWriter],
+            show_metadata: bool,
+            metadata: Optional[Path] = None,
+        ) -> None:
+            """
+            Inner handler for :meth:`.capture` to process the frames from the frame queue.
+
+            .. todo::
+
+                Further refactor to break into smaller pieces, not have to pass 100 args every time.
+
+            """
+            if show_metadata or metadata:
+                for header in header_list:
+                    if show_metadata:
+                        self.logger.debug("Plotting header metadata")
+                        try:
+                            self._header_plotter.update(header)
+                        except Exception as e:
+                            self.logger.exception(f"Exception plotting headers: \n{e}")
+                    if metadata:
+                        self.logger.debug("Saving header metadata")
+                        try:
+                            self._buffered_writer.append(
+                                list(header.model_dump(warnings=False).values()) + [time.time()]
+                            )
+                        except Exception as e:
+                            self.logger.exception(f"Exception saving headers: \n{e}")
+            if image is None or image.size == 0:
+                self.logger.warning("Empty frame received, skipping.")
+                return
+            if show_video:
+                try:
+                    cv2.imshow("image", image)
+                    cv2.waitKey(1)
+                except cv2.error as e:
+                    self.logger.exception(f"Error displaying frame: {e}")
+            if writer:
+                try:
+                    picture = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)  # If your image is grayscale
+                    writer.write(picture)
+                except cv2.error as e:
+                    self.logger.exception(f"Exception writing frame: {e}")
