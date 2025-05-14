@@ -16,6 +16,7 @@ from mio.io import BufferedCSVWriter
 def _format_frame(frame_data: list[np.ndarray]) -> np.ndarray:
     return np.concat(frame_data)
 
+
 class GSStreamDaq(StreamDaq):
     """Mystery scope daq"""
     def __init__(
@@ -53,8 +54,9 @@ class GSStreamDaq(StreamDaq):
 
 
     def _format_frame_inner(self, frame_data: list[np.ndarray]) -> np.ndarray:
-
-        return super()._format_frame_inner(frame_data)
+        # return 1
+        # here, process the frame for Naneye camera
+        return super()._format_frame_inner(frame_data) # (super function refers to parent class)
 
     def _format_frame(
         self,

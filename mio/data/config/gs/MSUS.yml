@@ -24,7 +24,8 @@ baudrate: null
 # preamble: 0x12345678 # original preamble
 preamble: 0x78563412 # new preamble
 
-# Image format. StreamDaq will calculate buffer size, etc. based on these parameters
+# Incoming Pre-Processed Image format. 
+# StreamDaq will calculate buffer size, etc. based on these parameters
 frame_width: 328 # 328 * 12 PP, with the extra 8 coming from the start_of_frame sequence
 frame_height: 320 # 320 lines total 
 pix_depth: 12 # pixel depth, or, pixel period

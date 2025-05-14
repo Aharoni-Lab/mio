@@ -95,7 +95,6 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
         """Instantiate this class by passing the contents of a yaml file as kwargs"""
         with open(file_path) as file:
             config_data = yaml.safe_load(file)
-
         # fill in any missing fields in the source file needed for a header
         config_data = cls._complete_header(config_data, file_path)
         try:
