@@ -3,6 +3,7 @@ import multiprocessing as mp
 from typing import Union, Optional
 import queue
 import cv2
+import time
 
 from pathlib import Path
 from mio import init_logger
@@ -54,9 +55,12 @@ class GSStreamDaq(StreamDaq):
 
 
     def _format_frame_inner(self, frame_data: list[np.ndarray]) -> np.ndarray:
-        # return 1
         # here, process the frame for Naneye camera
-        return super()._format_frame_inner(frame_data) # (super function refers to parent class)
+        # return super()._format_frame_inner(frame_data) # (super function refers to parent class)
+
+        raw_data = np.concatenate(frame_data)
+        frame = raw_data.reshape(320,328)
+        return frame
 
     def _format_frame(
         self,
