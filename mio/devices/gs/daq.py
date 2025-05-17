@@ -112,40 +112,8 @@ class GSStreamDaq(StreamDaq):
         # return super()._format_frame_inner(frame_data) # (super function refers to parent class)
 
         raw_data = np.concatenate(frame_data) # concatenates to 1xn
-        # size_of_rawdata = raw_data.size
-        # self.logger.info(f"Raw data size: {size_of_rawdata}")
 
-        # Define constants
-        bits_per_row = 3936
-        bits_to_trim = 96
-
-        # Calculate how many complete rows we have
-        total_bytes = raw_data.size
-        num_rows = 320
-
-        # for the 12->10 bit pixel conversion
-        # trimmed_data = np.zeros(num_rows * (bytes_per_row - bytes_to_trim), dtype=np.uint8)
-        pattern_size = 12  # Each pattern is 12 bits
-
-        mask = np.ones((pattern_size,), dtype=bool)
-        mask[0] = False  # Remove 1st bit (index 0)
-        mask[11] = False  # Remove 12th bit (index 11)
-
-        # Apply mask to keep only desired bits
-        frame = np.zeros(320,320)
-        eight_bit_array = []
-
-        # Loop through each row and copy the data, skipping the first bytes_to_trim bytes
-        for i in range(num_rows):
-            trimmed_segment = raw_data[(bits_per_row)*i + bits_to_trim:(bits_per_row)(i+1)]
-            # now we have removed the first 8x12 start of frame bits
-            filtered_bits = trimmed_segment[:, mask]
-            # now we have extracted the 10 bit pixel from [1][10 bit pixel][0]
-            eight_bit_array = np.round((filtered_bits / 1023) * 255).astype(np.uint8)
-            frame_1d = np.append(frame_1d, eight_bit_array)
-
-
-        frame = frame_1d.reshape(320,320, dtype=np.uint8)
+        frame = raw_data.reshape(320,328)
 
         return frame
 
@@ -191,7 +159,7 @@ class GSStreamDaq(StreamDaq):
                 try:
                     frame = self._format_frame_inner(frame_data)
                 except ValueError as e:
-                    expected_size = 320 * 320 # self.config.frame_width * self.config.frame_height
+                    expected_size = self.config.frame_width * self.config.frame_height
                     provided_size = frame_data.size
                     locallogs.exception(
                         "Frame size doesn't match: %s. "
@@ -201,10 +169,9 @@ class GSStreamDaq(StreamDaq):
                         expected_size,
                         provided_size,
                     )
-                    frame = np.zeros(320,320,dtype=np.uint8)
-                    # frame = np.zeros(
-                        # (self.config.frame_width, self.config.frame_height), dtype=np.uint8
-                    # )
+                    frame = np.zeros(
+                        (self.config.frame_width, self.config.frame_height), dtype=np.uint8
+                    )
                 try:
                     imagearray.put(
                         (frame, header_list),
