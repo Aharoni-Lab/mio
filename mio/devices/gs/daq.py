@@ -113,7 +113,7 @@ class GSStreamDaq(StreamDaq):
 
         raw_data = np.concatenate(frame_data) # concatenates to 1xn
 
-        frame = raw_data.reshape(320,328)
+        frame = raw_data.reshape(328,320)
 
         return frame
 
