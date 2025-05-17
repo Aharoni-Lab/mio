@@ -53,13 +53,100 @@ class GSStreamDaq(StreamDaq):
         self._buffered_writer: Optional[BufferedCSVWriter] = None
         self._header_plotter: Optional[StreamPlotter] = None
 
+    # For bit-level operations (if byte-level trimming isn't precise enough)
+    def trim_camera_data_bit_level(raw_data, bits_per_row=3936, bits_to_trim=96):
+        """
+        Removes the first N bits from every row of camera data at bit level.
+        This is more precise but slower than byte-level operations.
+
+        Parameters:
+        -----------
+        raw_data : np.ndarray
+            The raw 1D camera data
+        bits_per_row : int
+            Number of bits in each row (default: 3936)
+        bits_to_trim : int
+            Number of bits to trim from the start of each row (default: 96)
+
+        Returns:
+        --------
+        np.ndarray
+            Processed data with the first N bits removed from each row
+        """
+        # Ensure raw_data is the right shape
+        if isinstance(raw_data, list):
+            raw_data = np.concatenate(raw_data)
+
+        # Convert to bit array (this is a simple approach - for large data you may need a more optimized method)
+        # Assuming data is in uint8 format
+        bit_array = np.unpackbits(raw_data.astype(np.uint8))
+
+        # Calculate total bits and number of rows
+        total_bits = bit_array.size
+        num_rows = total_bits // bits_per_row
+
+        # Trim incomplete rows if any
+        valid_bits = num_rows * bits_per_row
+        bit_array = bit_array[:valid_bits]
+
+        # Reshape to rows
+        reshaped_bits = bit_array.reshape(num_rows, bits_per_row)
+
+        # Remove the first bits_to_trim bits from each row
+        trimmed_bits = reshaped_bits[:, bits_to_trim:]
+
+        # Flatten and pack back to bytes
+        result_bits = trimmed_bits.flatten()
+
+        # Pad with zeros if needed to make the total a multiple of 8
+        padded_length = ((result_bits.size + 7) // 8) * 8
+        if padded_length > result_bits.size:
+            padding = np.zeros(padded_length - result_bits.size, dtype=np.uint8)
+            result_bits = np.concatenate([result_bits, padding])
+
+        # Pack bits back into bytes
+        return np.packbits(result_bits)
 
     def _format_frame_inner(self, frame_data: list[np.ndarray]) -> np.ndarray:
         # here, process the frame for Naneye camera
         # return super()._format_frame_inner(frame_data) # (super function refers to parent class)
 
-        raw_data = np.concatenate(frame_data)
-        frame = raw_data.reshape(320,328)
+        raw_data = np.concatenate(frame_data) # concatenates to 1xn
+        # size_of_rawdata = raw_data.size
+        # self.logger.info(f"Raw data size: {size_of_rawdata}")
+
+        # Define constants
+        bits_per_row = 3936
+        bits_to_trim = 96
+
+        # Calculate how many complete rows we have
+        total_bytes = raw_data.size
+        num_rows = 320
+
+        # for the 12->10 bit pixel conversion
+        # trimmed_data = np.zeros(num_rows * (bytes_per_row - bytes_to_trim), dtype=np.uint8)
+        pattern_size = 12  # Each pattern is 12 bits
+
+        mask = np.ones((pattern_size,), dtype=bool)
+        mask[0] = False  # Remove 1st bit (index 0)
+        mask[11] = False  # Remove 12th bit (index 11)
+
+        # Apply mask to keep only desired bits
+        frame = np.zeros(320,320)
+        eight_bit_array = []
+
+        # Loop through each row and copy the data, skipping the first bytes_to_trim bytes
+        for i in range(num_rows):
+            trimmed_segment = raw_data[(bits_per_row)*i + bits_to_trim:(bits_per_row)(i+1)]
+            # now we have removed the first 8x12 start of frame bits
+            filtered_bits = trimmed_segment[:, mask]
+            # now we have extracted the 10 bit pixel from [1][10 bit pixel][0]
+            eight_bit_array = np.round((filtered_bits / 1023) * 255).astype(np.uint8)
+            frame_1d = np.append(frame_1d, eight_bit_array)
+
+
+        frame = frame_1d.reshape(320,320, dtype=np.uint8)
+
         return frame
 
     def _format_frame(
@@ -104,7 +191,7 @@ class GSStreamDaq(StreamDaq):
                 try:
                     frame = self._format_frame_inner(frame_data)
                 except ValueError as e:
-                    expected_size = self.config.frame_width * self.config.frame_height
+                    expected_size = 320 * 320 # self.config.frame_width * self.config.frame_height
                     provided_size = frame_data.size
                     locallogs.exception(
                         "Frame size doesn't match: %s. "
@@ -114,9 +201,10 @@ class GSStreamDaq(StreamDaq):
                         expected_size,
                         provided_size,
                     )
-                    frame = np.zeros(
-                        (self.config.frame_width, self.config.frame_height), dtype=np.uint8
-                    )
+                    frame = np.zeros(320,320,dtype=np.uint8)
+                    # frame = np.zeros(
+                        # (self.config.frame_width, self.config.frame_height), dtype=np.uint8
+                    # )
                 try:
                     imagearray.put(
                         (frame, header_list),
