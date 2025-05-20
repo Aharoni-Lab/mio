@@ -53,68 +53,28 @@ class GSStreamDaq(StreamDaq):
         self._buffered_writer: Optional[BufferedCSVWriter] = None
         self._header_plotter: Optional[StreamPlotter] = None
 
-    # For bit-level operations (if byte-level trimming isn't precise enough)
-    @staticmethod
-    def trim_camera_data_bit_level(raw_data, bits_per_row=3936, bits_to_trim=96):
-        """
-        Removes the first N bits from every row of camera data at bit level.
-        This is more precise but slower than byte-level operations.
-
-        Parameters:
-        -----------
-        raw_data : np.ndarray
-            The raw 1D camera data
-        bits_per_row : int
-            Number of bits in each row (default: 3936)
-        bits_to_trim : int
-            Number of bits to trim from the start of each row (default: 96)
-
-        Returns:
-        --------
-        np.ndarray
-            Processed data with the first N bits removed from each row
-        """
-        # Ensure raw_data is the right shape
-        if isinstance(raw_data, list):
-            raw_data = np.concatenate(raw_data)
-
-        # Convert to bit array (this is a simple approach - for large data you may need a more optimized method)
-        # Assuming data is in uint8 format
-        bit_array = np.unpackbits(raw_data.astype(np.uint16)) # HS CHECK HERE
-
-        # Calculate total bits and number of rows
-        total_bits = bit_array.size
-        num_rows = total_bits // bits_per_row
-
-        # Trim incomplete rows if any
-        valid_bits = num_rows * bits_per_row
-        bit_array = bit_array[:valid_bits]
-
-        # Reshape to rows
-        reshaped_bits = bit_array.reshape(num_rows, bits_per_row)
-
-        # Remove the first bits_to_trim bits from each row
-        trimmed_bits = reshaped_bits[:, bits_to_trim:]
-
-        # Flatten and pack back to bytes
-        result_bits = trimmed_bits.flatten()
-
-        # Pad with zeros if needed to make the total a multiple of 8
-        padded_length = ((result_bits.size + 7) // 8) * 8
-        if padded_length > result_bits.size:
-            padding = np.zeros(padded_length - result_bits.size, dtype=np.uint8)
-            result_bits = np.concatenate([result_bits, padding])
-
-        # Pack bits back into bytes
-        return np.packbits(result_bits)
 
     def _format_frame_inner(self, frame_data: list[np.ndarray]) -> np.ndarray:
         # here, process the frame for Naneye camera
         # return super()._format_frame_inner(frame_data) # (super function refers to parent class)
         raw_data = np.concatenate(frame_data) # concatenates to 1xn
-        trimmed_data = self.trim_camera_data_bit_level(raw_data=raw_data)
-        # raise Exception(f"Fuck your code stop here. Raw Data Shape: {raw_data.shape}")
-        frame = trimmed_data.reshape(320,320) # 10 bit value stored in each pixel (formatted in uint16)
+        restructured_data = raw_data.reshape(12, 104960)
+        restructured_data_trimmed = restructured_data[1:-1, :] # removes the top and bottom (start/stop bits)
+
+        # Now create a mask for columns with the pattern you described
+        # Create an array of all column indices
+        all_indices = np.arange(104960)
+
+        # Use modulo arithmetic to identify the pattern
+        # For each 328-column chunk (8 skip + 320 keep):
+        # - Column indices 0-7 in each chunk should be False (skip)
+        # - Column indices 8-327 in each chunk should be True (keep)
+        mask = ((all_indices % 328) >= 8)
+
+        # Apply the mask to filter the data
+        trimmed_data = restructured_data[:, mask] # now a 320x320x10
+        eight_bit_data = (trimmed_data / 4).astype(np.uint8)
+        frame = eight_bit_data.reshape(320, 320)
 
         return frame
 
