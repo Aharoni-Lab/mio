@@ -781,7 +781,7 @@ class StreamDaq:
             # Should never happen except during a force quit, as we wait for all
             # queues to drain, and if they don't do so on their own, it's a bug.
             for p in [p_recv, p_buffer_to_frame, p_format_frame]:
-                p.join(timeout=5)
+                p.join(timeout=1)
                 if p.is_alive():
                     self.logger.warning(f"Termination timeout: force terminating process {p.name}.")
                     p.terminate()

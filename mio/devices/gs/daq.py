@@ -41,7 +41,7 @@ class GSStreamDaq(StreamDaq):
             by default `MetadataHeaderFormat()`.
         """
 
-        self.logger = init_logger("streamDaq")
+        self.logger = init_logger("GSStreamDaq")
         self.config = GSDevConfig.from_any(device_config)
         self.header_fmt = GSBufferHeaderFormat.from_any(header_fmt)
 
@@ -54,6 +54,7 @@ class GSStreamDaq(StreamDaq):
         self._header_plotter: Optional[StreamPlotter] = None
 
     # For bit-level operations (if byte-level trimming isn't precise enough)
+    @staticmethod
     def trim_camera_data_bit_level(raw_data, bits_per_row=3936, bits_to_trim=96):
         """
         Removes the first N bits from every row of camera data at bit level.
@@ -79,7 +80,7 @@ class GSStreamDaq(StreamDaq):
 
         # Convert to bit array (this is a simple approach - for large data you may need a more optimized method)
         # Assuming data is in uint8 format
-        bit_array = np.unpackbits(raw_data.astype(np.uint8))
+        bit_array = np.unpackbits(raw_data.astype(np.uint16)) # HS CHECK HERE
 
         # Calculate total bits and number of rows
         total_bits = bit_array.size
@@ -110,10 +111,10 @@ class GSStreamDaq(StreamDaq):
     def _format_frame_inner(self, frame_data: list[np.ndarray]) -> np.ndarray:
         # here, process the frame for Naneye camera
         # return super()._format_frame_inner(frame_data) # (super function refers to parent class)
-
         raw_data = np.concatenate(frame_data) # concatenates to 1xn
-
-        frame = raw_data.reshape(328,320)
+        trimmed_data = self.trim_camera_data_bit_level(raw_data=raw_data)
+        # raise Exception(f"Fuck your code stop here. Raw Data Shape: {raw_data.shape}")
+        frame = trimmed_data.reshape(320,320) # 10 bit value stored in each pixel (formatted in uint16)
 
         return frame
 

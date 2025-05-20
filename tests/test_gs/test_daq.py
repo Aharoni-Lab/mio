@@ -3,6 +3,7 @@ from mio.devices.gs import daq
 import numpy as np
 import matplotlib.pyplot as plt
 
+from mio.devices.gs.daq import GSStreamDaq
 
 
 def create_naneye_frame(width=320, height=320, pattern="cross"):
@@ -180,13 +181,13 @@ def test_gs_format_frame():
     actual = daq._format_frame(sample_pair['input'])
     assert np.array_equal(actual, sample_pair['output'])
 
-unprocessed_frame = create_naneye_frame(pattern="cross")
-
-# Process the frame
-processed_frame = process_naneye_frame(unprocessed_frame)
-
-# Visualize the frames
-visualize_frames(unprocessed_frame, processed_frame)
+# unprocessed_frame = create_naneye_frame(pattern="cross")
+#
+# # Process the frame
+# processed_frame = process_naneye_frame(unprocessed_frame)
+#
+# # Visualize the frames
+# visualize_frames(unprocessed_frame, processed_frame)
 
 sample_pairs = [
     {
@@ -201,3 +202,9 @@ def test_gs_format_frame(expected):
     assert np.array_equal(actual, expected['output'])
 
 
+def test_trim_camera_data_bit_level():
+    raw_data = np.concatenate(create_naneye_frame(pattern="cross"))  # should be 1xn array, NOT a 12x(320*328) array
+
+    cross_pic = GSStreamDaq.trim_camera_data_bit_level(raw_data)
+
+    plt.imsave("cross_pic.png", cross_pic.reshape(320, 320))
