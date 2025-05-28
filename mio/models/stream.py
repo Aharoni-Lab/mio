@@ -3,15 +3,18 @@ Models for :mod:`mio.stream_daq`
 """
 
 from pathlib import Path
-from typing import Literal, Optional, Union
+from typing import Literal, Optional, Union, Self
 
+import numpy as np
 from pydantic import Field, computed_field, field_validator
+from bitstring import BitArray, Bits
 
 from mio import DEVICE_DIR
 from mio.models import MiniscopeConfig
 from mio.models.buffer import BufferHeader, BufferHeaderFormat
 from mio.models.mixins import ConfigYAMLMixin
 from mio.models.sinks import CSVWriterConfig, StreamPlotterConfig
+from mio.bit_operation import BufferFormatter
 
 
 class ADCScaling(MiniscopeConfig):
@@ -124,6 +127,24 @@ class StreamBufferHeader(BufferHeader):
             return self.input_voltage_raw
         else:
             return self._adc_scaling.scale_input_voltage(self.input_voltage_raw)
+    @classmethod
+    def from_buffer(cls, buffer: bytes, format: BufferHeaderFormat, config: "StreamDevConfig") -> tuple[Self, np.ndarray]:
+
+        header, payload = BufferFormatter.bytebuffer_to_ndarrays(
+            buffer=buffer,
+            header_length_words=int(config.header_len / 32),
+            preamble_length_words=int(len(Bits(config.preamble)) / 32),
+            reverse_header_bits=config.reverse_header_bits,
+            reverse_header_bytes=config.reverse_header_bytes,
+            reverse_payload_bits=config.reverse_payload_bits,
+            reverse_payload_bytes=config.reverse_payload_bytes,
+        )
+
+        header_data = cls.from_format(
+            header.astype(int), format, construct=True
+        )
+        header_data.adc_scaling = config.adc_scale
+        return header_data, payload
 
 
 class StreamDevRuntime(MiniscopeConfig):

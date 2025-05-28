@@ -78,6 +78,9 @@ class StreamDaq:
 
     """
 
+    buffer_header_cls = StreamBufferHeader
+
+
     def __init__(
         self,
         device_config: Union[StreamDevConfig, ConfigSource],
@@ -149,21 +152,7 @@ class StreamDaq:
         Tuple[BufferHeader, ndarray]
             The returned header data and payload (uint8).
         """
-
-        header, payload = BufferFormatter.bytebuffer_to_ndarrays(
-            buffer=buffer,
-            header_length_words=int(self.config.header_len / 32),
-            preamble_length_words=int(len(Bits(self.config.preamble)) / 32),
-            reverse_header_bits=self.config.reverse_header_bits,
-            reverse_header_bytes=self.config.reverse_header_bytes,
-            reverse_payload_bits=self.config.reverse_payload_bits,
-            reverse_payload_bytes=self.config.reverse_payload_bytes,
-        )
-
-        header_data = StreamBufferHeader.from_format(
-            header.astype(int), self.header_fmt, construct=True
-        )
-        header_data.adc_scaling = self.config.adc_scale
+        header_data, payload = self.buffer_header_cls.from_buffer(buffer, self.header_fmt, self.config)
 
         return header_data, payload
 

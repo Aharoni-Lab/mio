@@ -63,6 +63,7 @@ class BufferFormatter:
         """
         return arr.byteswap()
 
+    # do child class method for MSUS
     @classmethod
     def bytebuffer_to_ndarrays(
         cls,

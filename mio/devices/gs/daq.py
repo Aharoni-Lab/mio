@@ -1,6 +1,6 @@
 import numpy as np
 import multiprocessing as mp
-from typing import Union, Optional
+from typing import Union, Optional, Tuple
 import queue
 import cv2
 import time
@@ -9,7 +9,7 @@ from pathlib import Path
 from mio import init_logger
 from mio.stream_daq import StreamDaq, exact_iter
 from mio.devices.gs.config import GSDevConfig
-from mio.devices.gs.header import GSBufferHeaderFormat
+from mio.devices.gs.header import GSBufferHeaderFormat, GSBufferHeader
 from mio.plots.headers import StreamPlotter
 from mio.types import ConfigSource
 from mio.io import BufferedCSVWriter
@@ -20,6 +20,9 @@ def _format_frame(frame_data: list[np.ndarray]) -> np.ndarray:
 
 class GSStreamDaq(StreamDaq):
     """Mystery scope daq"""
+
+    buffer_header_cls = GSBufferHeader
+
     def __init__(
         self,
         device_config: Union[GSDevConfig, ConfigSource],
@@ -57,10 +60,14 @@ class GSStreamDaq(StreamDaq):
     def _format_frame_inner(self, frame_data: list[np.ndarray]) -> np.ndarray:
         # here, process the frame for Naneye camera
         # return super()._format_frame_inner(frame_data) # (super function refers to parent class)
-        raw_data = np.concatenate(frame_data) # concatenates to 1xn
-        restructured_data = raw_data.reshape(12, 104960)
-        restructured_data_trimmed = restructured_data[1:-1, :] # removes the top and bottom (start/stop bits)
 
+        raw_data = np.concatenate(frame_data) # concatenates to 1xn
+
+
+        restructured_data = raw_data.reshape(12, 104960)
+        restructured_data_trimmed = restructured_data[1:-1, :] # removes the top and bottom (start/stop bits) 12->10bit
+
+        # go back to original reshape (and keep in separate methods)
         # Now create a mask for columns with the pattern you described
         # Create an array of all column indices
         all_indices = np.arange(104960)
@@ -72,81 +79,12 @@ class GSStreamDaq(StreamDaq):
         mask = ((all_indices % 328) >= 8)
 
         # Apply the mask to filter the data
-        trimmed_data = restructured_data[:, mask] # now a 320x320x10
+        trimmed_data = restructured_data_trimmed[:, mask] # now a 320x320x10
         eight_bit_data = (trimmed_data / 4).astype(np.uint8)
         frame = eight_bit_data.reshape(320, 320)
 
         return frame
 
-    def _format_frame(
-        self,
-        frame_buffer_queue: mp.Queue,
-        imagearray: mp.Queue,
-    ) -> None:
-        """
-        Construct frame from grouped buffers.
-
-        Each frame data is concatenated from a list of buffers in `frame_buffer_queue`
-        according to `buffer_npix`.
-        If there is any mismatch between the expected length of each buffer
-        (defined by `buffer_npix`) and the actual length, then the buffer is either
-        truncated or zero-padded at the end to make the length appropriate,
-        and a warning is thrown.
-        Finally, the concatenated buffer data are converted into a 1d numpy array with
-        uint8 dtype and put into `imagearray` queue.
-
-        Parameters
-        ----------
-        frame_buffer_queue : mp.Queue[list[bytes]]
-            Input buffer queue.
-        imagearray : mp.Queue[np.ndarray]
-            Output image array queue.
-        """
-        locallogs = init_logger("streamDaq.frame")
-        try:
-            for frame_data, header_list in exact_iter(frame_buffer_queue.get, None):
-
-                if not frame_data or len(frame_data) == 0:
-                    try:
-                        imagearray.put(
-                            (None, header_list),
-                            block=True,
-                            timeout=self.config.runtime.queue_put_timeout,
-                        )
-                    except queue.Full:
-                        locallogs.warning("Image array queue full, skipping frame.")
-                    continue
-
-                try:
-                    frame = self._format_frame_inner(frame_data)
-                except ValueError as e:
-                    expected_size = self.config.frame_width * self.config.frame_height
-                    provided_size = frame_data.size
-                    locallogs.exception(
-                        "Frame size doesn't match: %s. "
-                        " Expected size: %d, got size: %d."
-                        "Replacing with zeros.",
-                        e,
-                        expected_size,
-                        provided_size,
-                    )
-                    frame = np.zeros(
-                        (self.config.frame_width, self.config.frame_height), dtype=np.uint8
-                    )
-                try:
-                    imagearray.put(
-                        (frame, header_list),
-                        block=True,
-                        timeout=self.config.runtime.queue_put_timeout,
-                    )
-                except queue.Full:
-                    locallogs.warning("Image array queue full, skipping frame.")
-        finally:
-            locallogs.debug("Quitting, putting sentinel in queue")
-            try:
-                imagearray.put(None, block=True, timeout=self.config.runtime.queue_put_timeout)
-            except queue.Full:
-                locallogs.error("Image array queue full, Could not put sentinel.")
     
 
 

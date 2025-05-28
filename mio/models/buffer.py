@@ -2,12 +2,15 @@
 Models for a data stream from a miniscope device: header formats,
 containers, etc.
 """
-
+from abc import abstractmethod
 from collections.abc import Sequence
-from typing import Type, TypeVar
+from typing import Type, TypeVar, Self
+
+import numpy as np
 
 from mio.models import Container, MiniscopeConfig
 from mio.models.mixins import ConfigYAMLMixin
+from mio.bit_operation import BufferFormatter
 
 
 class BufferHeaderFormat(MiniscopeConfig, ConfigYAMLMixin):
@@ -47,6 +50,16 @@ class BufferHeaderFormat(MiniscopeConfig, ConfigYAMLMixin):
     dropped_buffer_count: int
     timestamp: int
     write_timestamp: int
+
+    @property
+    def header_length(self) -> int:
+        """
+        Number of values in the header
+        (the word length, not the number of bytes)
+        """
+        values = self.model_dump(exclude_none=True)
+        return len(values)
+
 
 
 _T = TypeVar("_T", bound="BufferHeader")
@@ -95,3 +108,14 @@ class BufferHeader(Container):
             return cls.model_construct(**header_data)
         else:
             return cls(**header_data)
+
+    @classmethod
+    @abstractmethod
+    def from_buffer(cls, buffer: bytes, format: BufferHeaderFormat, config: MiniscopeConfig | None = None) -> tuple[Self, np.ndarray]:
+        """
+        Given a raw binary buffer from a device, split it into header and data,
+        constructing the :class:`.BufferHeader` instance.
+        """
+        pass
+
+
