@@ -20,16 +20,25 @@ def buffer_to_array(buffer: bytes) -> np.ndarray:
     """
     # convert to a binary array
     binary = np.unpackbits(np.frombuffer(buffer, dtype=np.uint8))
-    # reshape to be
-    pixel_cols = binary.reshape((12, -1), order="F")
-    # remove padding pixels 
-    stripped = pixel_cols[1:-1]
-    # Cast to 16 bit ndarray
-    slice0 = np.packbits(stripped[:-8, :], axis=0, bitorder="little").astype(np.uint16) * 16
-    slice1 = np.packbits(stripped[-8:, :], axis=0, bitorder="little").astype(np.uint16)
-    out = slice0 + slice1
 
-    return stripped.flatten(order="F")
+    # reshape to be 12 x n
+    pixel_cols = binary.reshape((12, -1), order="F")
+
+    # remove padding pixels (12 bit x n --> 10 bit x n)
+    stripped = pixel_cols[1:-1]
+
+    # Cast to 16 bit ndarray
+    padded = np.pad(stripped, ((6, 0), (0, 0)), mode='constant', constant_values=0)
+    packed_16bit = np.packbits(padded, axis=0).view(np.uint16)
+
+    # Reshape back to original spatial dimensions
+    reshaped_ = packed_16bit.reshape((320, 328), order="F")
+
+    # slice0 = np.packbits(stripped[:-8, :], axis=0, bitorder="little").astype(np.uint16) * 16
+    # slice1 = np.packbits(stripped[-8:, :], axis=0, bitorder="little").astype(np.uint16)
+    # out = slice0 + slice1
+
+    return packed_16bit.flatten(order="F")
 
 
 
@@ -38,10 +47,17 @@ def buffer_to_array(buffer: bytes) -> np.ndarray:
 class GSBufferHeader(StreamBufferHeader):
     @classmethod
     def from_buffer(cls, buffer: bytes, header_fmt: "GSBufferHeaderFormat", config: "GSDevConfig") -> tuple[Self, np.ndarray]:
-        header_start = len(config.preamble)
-        header_end = header_start + (header_fmt.header_length * 4)
-        header_array = np.ndarray(buffer[header_start:header_end], dtype=np.uint32)
-        header = cls.from_format(header_array, header_fmt, construct=True)
+        try:
+            header_start = len(config.preamble)*config.dummy_words
+            header_end = header_start + (header_fmt.header_length * 4)
+            # header_array = np.ndarray(buffer[header_start:header_end], dtype=np.uint32)
+            header_array = np.frombuffer(buffer[header_start:header_end], dtype=np.uint32)
+            header = cls.from_format(header_array, header_fmt, construct=True)
+        except:
+            print(len(buffer))
+            print(header_start)
+            print(header_end)
+            raise
 
 
 
