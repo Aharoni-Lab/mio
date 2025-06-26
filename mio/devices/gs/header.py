@@ -17,28 +17,14 @@ def buffer_to_array(buffer: bytes) -> np.ndarray:
     e.g. (``1xxxxxxxxxx0``)
 
     Strip the pads, and return a 16-bit ndarray
+
+    TURN INTO 1D PIXEL ARRAY
     """
     # convert to a binary array
     binary = np.unpackbits(np.frombuffer(buffer, dtype=np.uint8))
 
-    # reshape to be 12 x n
-    pixel_cols = binary.reshape((12, -1), order="F")
-
-    # remove padding pixels (12 bit x n --> 10 bit x n)
-    stripped = pixel_cols[1:-1]
-
-    # Cast to 16 bit ndarray
-    padded = np.pad(stripped, ((6, 0), (0, 0)), mode='constant', constant_values=0)
-    packed_16bit = np.packbits(padded, axis=0).view(np.uint16)
-
-    # Reshape back to original spatial dimensions
-    reshaped_ = packed_16bit.reshape((320, 328), order="F")
-
-    # slice0 = np.packbits(stripped[:-8, :], axis=0, bitorder="little").astype(np.uint16) * 16
-    # slice1 = np.packbits(stripped[-8:, :], axis=0, bitorder="little").astype(np.uint16)
-    # out = slice0 + slice1
-
-    return packed_16bit.flatten(order="F")
+    return binary
+    # return packed_16bit.flatten(order="F")
 
 
 
