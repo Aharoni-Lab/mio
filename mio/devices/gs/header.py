@@ -53,11 +53,17 @@ class GSBufferHeader(StreamBufferHeader):
             # header_array = np.ndarray(buffer[header_start:header_end], dtype=np.uint32)
             header_array = np.frombuffer(buffer[header_start:header_end], dtype=np.uint32)
             header = cls.from_format(header_array, header_fmt, construct=True)
+
+            payload = buffer_to_array(buffer)
+            # payload = buffer_to_array(buffer)
+
         except:
             print(len(buffer))
             print(header_start)
             print(header_end)
             raise
+
+        return header, payload
 
 
 
