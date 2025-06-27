@@ -1,18 +1,19 @@
-import numpy as np
 import multiprocessing as mp
-from typing import Union, Optional, Tuple
-import queue
-import cv2
 import time
-
 from pathlib import Path
+from typing import Optional, Union
+
+import cv2
+import numpy as np
+
 from mio import init_logger
-from mio.stream_daq import StreamDaq, exact_iter
 from mio.devices.gs.config import GSDevConfig
-from mio.devices.gs.header import GSBufferHeaderFormat, GSBufferHeader
-from mio.plots.headers import StreamPlotter
-from mio.types import ConfigSource
+from mio.devices.gs.header import GSBufferHeader, GSBufferHeaderFormat
 from mio.io import BufferedCSVWriter
+from mio.plots.headers import StreamPlotter
+from mio.stream_daq import StreamDaq
+from mio.types import ConfigSource
+
 
 def _format_frame(frame_data: list[np.ndarray]) -> np.ndarray:
     return np.concat(frame_data)
@@ -56,16 +57,16 @@ class GSStreamDaq(StreamDaq):
         self._buffered_writer: Optional[BufferedCSVWriter] = None
         self._header_plotter: Optional[StreamPlotter] = None
 
-
     def _format_frame_inner(self, frame_data: list[np.ndarray]) -> np.ndarray:
         # here, process the frame for Naneye camera
         # return super()._format_frame_inner(frame_data) # (super function refers to parent class)
 
-        raw_data = np.concatenate(frame_data) # concatenates to 1xn
-
+        raw_data = np.concatenate(frame_data)  # concatenates to 1xn
 
         restructured_data = raw_data.reshape(12, 104960)
-        restructured_data_trimmed = restructured_data[1:-1, :] # removes the top and bottom (start/stop bits) 12->10bit
+        restructured_data_trimmed = restructured_data[
+            1:-1, :
+        ]  # removes the top and bottom (start/stop bits) 12->10bit
 
         # go back to original reshape (and keep in separate methods)
         # Now create a mask for columns with the pattern you described
@@ -76,63 +77,60 @@ class GSStreamDaq(StreamDaq):
         # For each 328-column chunk (8 skip + 320 keep):
         # - Column indices 0-7 in each chunk should be False (skip)
         # - Column indices 8-327 in each chunk should be True (keep)
-        mask = ((all_indices % 328) >= 8)
+        mask = (all_indices % 328) >= 8
 
         # Apply the mask to filter the data
-        trimmed_data = restructured_data_trimmed[:, mask] # now a 320x320x10
+        trimmed_data = restructured_data_trimmed[:, mask]  # now a 320x320x10
         eight_bit_data = (trimmed_data / 4).astype(np.uint8)
         frame = eight_bit_data.reshape(320, 320)
 
         return frame
 
-    
-
-
     def _handle_frame(
-            self,
-            image: np.ndarray,
-            header_list: list[GSBufferHeaderFormat],
-            show_video: bool,
-            writer: Optional[cv2.VideoWriter],
-            show_metadata: bool,
-            metadata: Optional[Path] = None,
-        ) -> None:
-            """
-            Inner handler for :meth:`.capture` to process the frames from the frame queue.
+        self,
+        image: np.ndarray,
+        header_list: list[GSBufferHeaderFormat],
+        show_video: bool,
+        writer: Optional[cv2.VideoWriter],
+        show_metadata: bool,
+        metadata: Optional[Path] = None,
+    ) -> None:
+        """
+        Inner handler for :meth:`.capture` to process the frames from the frame queue.
 
-            .. todo::
+        .. todo::
 
-                Further refactor to break into smaller pieces, not have to pass 100 args every time.
+            Further refactor to break into smaller pieces, not have to pass 100 args every time.
 
-            """
-            if show_metadata or metadata:
-                for header in header_list:
-                    if show_metadata:
-                        self.logger.debug("Plotting header metadata")
-                        try:
-                            self._header_plotter.update(header)
-                        except Exception as e:
-                            self.logger.exception(f"Exception plotting headers: \n{e}")
-                    if metadata:
-                        self.logger.debug("Saving header metadata")
-                        try:
-                            self._buffered_writer.append(
-                                list(header.model_dump(warnings=False).values()) + [time.time()]
-                            )
-                        except Exception as e:
-                            self.logger.exception(f"Exception saving headers: \n{e}")
-            if image is None or image.size == 0:
-                self.logger.warning("Empty frame received, skipping.")
-                return
-            if show_video:
-                try:
-                    cv2.imshow("image", image)
-                    cv2.waitKey(1)
-                except cv2.error as e:
-                    self.logger.exception(f"Error displaying frame: {e}")
-            if writer:
-                try:
-                    picture = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)  # If your image is grayscale
-                    writer.write(picture)
-                except cv2.error as e:
-                    self.logger.exception(f"Exception writing frame: {e}")
+        """
+        if show_metadata or metadata:
+            for header in header_list:
+                if show_metadata:
+                    self.logger.debug("Plotting header metadata")
+                    try:
+                        self._header_plotter.update(header)
+                    except Exception as e:
+                        self.logger.exception(f"Exception plotting headers: \n{e}")
+                if metadata:
+                    self.logger.debug("Saving header metadata")
+                    try:
+                        self._buffered_writer.append(
+                            list(header.model_dump(warnings=False).values()) + [time.time()]
+                        )
+                    except Exception as e:
+                        self.logger.exception(f"Exception saving headers: \n{e}")
+        if image is None or image.size == 0:
+            self.logger.warning("Empty frame received, skipping.")
+            return
+        if show_video:
+            try:
+                cv2.imshow("image", image)
+                cv2.waitKey(1)
+            except cv2.error as e:
+                self.logger.exception(f"Error displaying frame: {e}")
+        if writer:
+            try:
+                picture = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)  # If your image is grayscale
+                writer.write(picture)
+            except cv2.error as e:
+                self.logger.exception(f"Exception writing frame: {e}")

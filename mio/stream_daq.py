@@ -17,7 +17,6 @@ import serial
 from bitstring import BitArray, Bits
 
 from mio import init_logger
-from mio.bit_operation import BufferFormatter
 from mio.devices.mocks import okDevMock
 from mio.exceptions import EndOfRecordingException, StreamReadError
 from mio.io import BufferedCSVWriter
@@ -79,7 +78,6 @@ class StreamDaq:
     """
 
     buffer_header_cls = StreamBufferHeader
-
 
     def __init__(
         self,
@@ -152,7 +150,9 @@ class StreamDaq:
         Tuple[BufferHeader, ndarray]
             The returned header data and payload (uint8).
         """
-        header_data, payload = self.buffer_header_cls.from_buffer(buffer, self.header_fmt, self.config)
+        header_data, payload = self.buffer_header_cls.from_buffer(
+            buffer, self.header_fmt, self.config
+        )
 
         return header_data, payload
 
@@ -307,9 +307,9 @@ class StreamDaq:
             raise RuntimeError(f"Configured to use bitfile at {BIT_FILE} but no such file exists")
 
         # set up fpga devices
-        locallogs.info('before init okdev')
+        locallogs.info("before init okdev")
         dev = self._init_okdev(BIT_FILE)
-        locallogs.info('after init okdev')
+        locallogs.info("after init okdev")
 
         # read loop
         cur_buffer = BitArray()
@@ -336,11 +336,10 @@ class StreamDaq:
 
                 dat = BitArray(buf)
                 cur_buffer = cur_buffer + dat
-                # locallogs.debug(dat.tobytes()) ## Jonny, helping to debug, output data in terminal 
-                # locallogs.debug(pre.tobytes()) ## Jonny, helping to debug, output data in terminal 
-                # locallogs.debug(f'dat: {dat.tobytes()}') # Takuya recommended 
-                # locallogs.debug(f'pre: {pre.tobytes()}') # Takuya recommended 
-
+                # locallogs.debug(dat.tobytes()) ## Jonny, helping to debug, output data in terminal
+                # locallogs.debug(pre.tobytes()) ## Jonny, helping to debug, output data in terminal
+                # locallogs.debug(f'dat: {dat.tobytes()}') # Takuya recommended
+                # locallogs.debug(f'pre: {pre.tobytes()}') # Takuya recommended
 
                 pre_pos = list(cur_buffer.findall(pre))
                 # locallogs.debug(pre_pos)
@@ -484,7 +483,6 @@ class StreamDaq:
             except queue.Full:
                 locallogs.error("Frame buffer queue full, Could not put sentinel.")
 
-
     def _format_frame(
         self,
         frame_buffer_queue: multiprocessing.Queue,
@@ -560,12 +558,8 @@ class StreamDaq:
         frame_data: list[np.array],
     ) -> np.array:
         frame_data = np.concatenate(frame_data, axis=0)
-        frame = np.reshape(
-            frame_data, (self.config.frame_width, self.config.frame_height)
-        )
+        frame = np.reshape(frame_data, (self.config.frame_width, self.config.frame_height))
         return frame
-        
-
 
     def init_video(
         self, path: Union[Path, str], fourcc: str = "Y800", **kwargs: dict

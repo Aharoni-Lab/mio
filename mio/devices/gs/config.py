@@ -1,6 +1,7 @@
+from pydantic import ConfigDict
 
 from mio.models.stream import StreamDevConfig
-from pydantic import ConfigDict
+
 
 class GSDevConfig(StreamDevConfig):
     # preamble: Annotated[bytes, Len(min_length=12, max_length=12)]
@@ -14,13 +15,10 @@ class GSDevConfig(StreamDevConfig):
     model_config = ConfigDict(validate_default=True)
 
     @property
-    def frame_width_input (self) -> int:
+    def frame_width_input(self) -> int:
         """some description about what it is"""
         return self.frame_width - 8
-    def pix_depth_input (self) -> int:
+
+    def pix_depth_input(self) -> int:
         """some description about what it is"""
         return self.pix_depth - 4
-
-
-
-

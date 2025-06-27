@@ -4,7 +4,7 @@ from mio.devices.gs.config import GSDevConfig
 from mio.devices.gs.header import GSBufferHeaderFormat
 
 
-def patterned_frame(width=320, height=320, pattern="sequence") -> np.ndarray:
+def patterned_frame(width: int = 320, height: int = 320, pattern: str = "sequence") -> np.ndarray:
     """
     Create a frame for the naneye as a uint16 array with a testing pattern
     """
@@ -16,19 +16,19 @@ def patterned_frame(width=320, height=320, pattern="sequence") -> np.ndarray:
     if pattern == "sequence":
         frame = [np.arange(2**10, dtype=np.uint16)] * int(np.ceil((height * width) / (2**10)))
         frame = np.concatenate(frame)
-        frame = frame[:(height * width)].reshape((height,width))
+        frame = frame[: (height * width)].reshape((height, width))
     if pattern == "cross":
         # Draw a horizontal line
-        frame[height//2-5:height//2+5, :] = 800
+        frame[height // 2 - 5 : height // 2 + 5, :] = 800
         # Draw a vertical line
-        frame[:, width//2-5:width//2+5] = 800
+        frame[:, width // 2 - 5 : width // 2 + 5] = 800
     elif pattern == "grid":
         # Draw horizontal lines
         for i in range(0, height, 40):
-            frame[i:i+5, :] = 800
+            frame[i : i + 5, :] = 800
         # Draw vertical lines
         for i in range(0, width, 40):
-            frame[:, i:i+5] = 800
+            frame[:, i : i + 5] = 800
 
     return frame
 
@@ -52,11 +52,14 @@ def frame_to_naneye_buffers(frame: np.ndarray | None = None, n_buffers: int = 11
     # strip 6 leading 0's to get 10-bits
     binarized = binarized[:, -10:]
     # add padding bits
-    binarized = np.concatenate([
-        np.zeros((binarized.shape[0], 1), dtype=np.uint8),
-        binarized,
-        np.ones((binarized.shape[0], 1), dtype=np.uint8),
-    ], axis=1)
+    binarized = np.concatenate(
+        [
+            np.zeros((binarized.shape[0], 1), dtype=np.uint8),
+            binarized,
+            np.ones((binarized.shape[0], 1), dtype=np.uint8),
+        ],
+        axis=1,
+    )
 
     # split into separate buffers
     split = np.array_split(binarized, n_buffers)
@@ -65,7 +68,7 @@ def frame_to_naneye_buffers(frame: np.ndarray | None = None, n_buffers: int = 11
     buffer_bytes = [np.packbits(arr.flatten()).tobytes() for arr in split]
 
     # create headers
-    fmt = GSBufferHeaderFormat.from_id('gs-buffer-header')
+    fmt = GSBufferHeaderFormat.from_id("gs-buffer-header")
     headers = [np.zeros(fmt.header_length, dtype=np.uint32) for _ in range(n_buffers)]
     for i in range(n_buffers):
         headers[i][fmt.buffer_count] = i
