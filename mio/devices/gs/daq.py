@@ -61,47 +61,28 @@ class GSStreamDaq(StreamDaq):
         # here, process the frame for Naneye camera
         # return super()._format_frame_inner(frame_data) # (super function refers to parent class)
 
-        # reshape to be 12 x n
-        pixel_cols = frame_data.reshape((12, -1), order="F")
-
-        # remove padding pixels (12 bit x n --> 10 bit x n)
-        stripped = pixel_cols[1:-1]
-
-        # Cast to 16 bit ndarray
-        padded = np.pad(stripped, ((6, 0), (0, 0)), mode='constant', constant_values=0)
-        packed_16bit = np.packbits(padded, axis=0).view(np.uint16)
-
-        # Reshape back to original spatial dimensions
-        reshaped_ = packed_16bit.reshape((320, 328), order="F")
-
-        # slice0 = np.packbits(stripped[:-8, :], axis=0, bitorder="little").astype(np.uint16) * 16
-        # slice1 = np.packbits(stripped[-8:, :], axis=0, bitorder="little").astype(np.uint16)
-        # out = slice0 + slice1
-
-        # start of old
-        # raw_data = np.concatenate(frame_data) # concatenates to 1xn
+        raw_data = np.concatenate(frame_data) # concatenates to 1xn
 
 
-        # restructured_data = raw_data.reshape(12, 104960)
-        # restructured_data_trimmed = restructured_data[1:-1, :] # removes the top and bottom (start/stop bits) 12->10bit
+        restructured_data = raw_data.reshape(12, 104960)
+        restructured_data_trimmed = restructured_data[1:-1, :] # removes the top and bottom (start/stop bits) 12->10bit
 
         # go back to original reshape (and keep in separate methods)
         # Now create a mask for columns with the pattern you described
         # Create an array of all column indices
-        # all_indices = np.arange(104960)
+        all_indices = np.arange(104960)
 
         # Use modulo arithmetic to identify the pattern
         # For each 328-column chunk (8 skip + 320 keep):
         # - Column indices 0-7 in each chunk should be False (skip)
         # - Column indices 8-327 in each chunk should be True (keep)
-        # mask = ((all_indices % 328) >= 8)
+        mask = ((all_indices % 328) >= 8)
 
         # Apply the mask to filter the data
-        # trimmed_data = restructured_data_trimmed[:, mask] # now a 320x320x10
-        # eight_bit_data = (trimmed_data / 4).astype(np.uint8)
-        # frame = eight_bit_data.reshape(320, 320)
+        trimmed_data = restructured_data_trimmed[:, mask] # now a 320x320x10
+        eight_bit_data = (trimmed_data / 4).astype(np.uint8)
+        frame = eight_bit_data.reshape(320, 320)
 
-        frame = packed_16bit.flatten(order="F")
         return frame
 
     
