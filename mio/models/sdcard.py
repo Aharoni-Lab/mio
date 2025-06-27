@@ -173,7 +173,7 @@ class SDBufferHeader(BufferHeader):
 
     @classmethod
     def from_buffer(
-        cls, buffer: bytes, format: BufferHeaderFormat, config: MiniscopeConfig | None = None
+        cls, buffer: bytes, format: BufferHeaderFormat, config: Optional[MiniscopeConfig] = None
     ) -> tuple[Self, np.ndarray]:
         """no-op! there is no buffer splitting in sd-card devices"""
         raise NotImplementedError(

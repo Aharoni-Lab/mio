@@ -5,7 +5,7 @@ containers, etc.
 
 import sys
 from collections.abc import Sequence
-from typing import Type, TypeVar
+from typing import Optional, Type, TypeVar
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -115,7 +115,7 @@ class BufferHeader(Container):
 
     @classmethod
     def from_buffer(
-        cls, buffer: bytes, format: BufferHeaderFormat, config: MiniscopeConfig | None = None
+        cls, buffer: bytes, format: BufferHeaderFormat, config: Optional[MiniscopeConfig] = None
     ) -> tuple[Self, np.ndarray]:
         """
         Given a raw binary buffer from a device, split it into header and data,
