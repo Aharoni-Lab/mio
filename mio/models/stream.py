@@ -2,8 +2,14 @@
 Models for :mod:`mio.stream_daq`
 """
 
+import sys
 from pathlib import Path
-from typing import Literal, Optional, Self, Union
+from typing import Literal, Optional, Union
+
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
 
 import numpy as np
 from bitstring import Bits
