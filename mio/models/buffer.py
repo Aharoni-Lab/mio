@@ -3,7 +3,6 @@ Models for a data stream from a miniscope device: header formats,
 containers, etc.
 """
 
-from abc import abstractmethod
 from collections.abc import Sequence
 from typing import Self, Type, TypeVar
 
@@ -109,7 +108,6 @@ class BufferHeader(Container):
             return cls(**header_data)
 
     @classmethod
-    @abstractmethod
     def from_buffer(
         cls, buffer: bytes, format: BufferHeaderFormat, config: MiniscopeConfig | None = None
     ) -> tuple[Self, np.ndarray]:
@@ -117,4 +115,4 @@ class BufferHeader(Container):
         Given a raw binary buffer from a device, split it into header and data,
         constructing the :class:`.BufferHeader` instance.
         """
-        pass
+        raise NotImplementedError()
