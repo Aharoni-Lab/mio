@@ -15,8 +15,13 @@ from mio.stream_daq import StreamDaq
 from mio.types import ConfigSource
 
 
-def _format_frame(frame_data: list[np.ndarray]) -> np.ndarray:
-    return np.concat(frame_data)
+def format_frame(frame_data: list[np.ndarray], config: GSDevConfig) -> np.ndarray:
+    pixels = np.concatenate(frame_data)  # concatenates to 1xn
+    frame = pixels.reshape((config.frame_height, config.frame_width_input))
+    # strip training pixels
+    frame = frame[:, 8:]
+
+    return frame
 
 
 class GSStreamDaq(StreamDaq):
@@ -61,30 +66,7 @@ class GSStreamDaq(StreamDaq):
         # here, process the frame for Naneye camera
         # return super()._format_frame_inner(frame_data) # (super function refers to parent class)
 
-        raw_data = np.concatenate(frame_data)  # concatenates to 1xn
-
-        restructured_data = raw_data.reshape(12, 104960)
-        restructured_data_trimmed = restructured_data[
-            1:-1, :
-        ]  # removes the top and bottom (start/stop bits) 12->10bit
-
-        # go back to original reshape (and keep in separate methods)
-        # Now create a mask for columns with the pattern you described
-        # Create an array of all column indices
-        all_indices = np.arange(104960)
-
-        # Use modulo arithmetic to identify the pattern
-        # For each 328-column chunk (8 skip + 320 keep):
-        # - Column indices 0-7 in each chunk should be False (skip)
-        # - Column indices 8-327 in each chunk should be True (keep)
-        mask = (all_indices % 328) >= 8
-
-        # Apply the mask to filter the data
-        trimmed_data = restructured_data_trimmed[:, mask]  # now a 320x320x10
-        eight_bit_data = (trimmed_data / 4).astype(np.uint8)
-        frame = eight_bit_data.reshape(320, 320)
-
-        return frame
+        return format_frame(frame_data, self.config)
 
     def _handle_frame(
         self,

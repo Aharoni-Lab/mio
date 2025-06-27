@@ -33,7 +33,9 @@ def patterned_frame(width: int = 320, height: int = 320, pattern: str = "sequenc
     return frame
 
 
-def frame_to_naneye_buffers(frame: np.ndarray | None = None, buffer_size=1000) -> list[bytes]:
+def frame_to_naneye_buffers(
+    frame: np.ndarray | None = None, buffer_size: int = 1000
+) -> list[bytes]:
     if frame is None:
         frame = patterned_frame()
 

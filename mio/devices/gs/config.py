@@ -17,7 +17,7 @@ class GSDevConfig(StreamDevConfig):
     @property
     def frame_width_input(self) -> int:
         """some description about what it is"""
-        return self.frame_width - 8
+        return self.frame_width + 8
 
     def pix_depth_input(self) -> int:
         """some description about what it is"""
