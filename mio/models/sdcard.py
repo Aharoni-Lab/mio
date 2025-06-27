@@ -4,7 +4,13 @@ specific values. This allows for the model to be reused across different minisco
 for consuming code to use a consistent, introspectable API
 """
 
-from typing import Optional, Self
+import sys
+from typing import Optional
+
+if sys.version_info >= (3, 10):
+    from typing import Self
+else:
+    from typing_extensions import Self
 
 import numpy as np
 
