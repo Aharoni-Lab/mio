@@ -33,7 +33,7 @@ def patterned_frame(width: int = 320, height: int = 320, pattern: str = "sequenc
     return frame
 
 
-def frame_to_naneye_buffers(frame: np.ndarray | None = None, n_buffers: int = 11) -> list[bytes]:
+def frame_to_naneye_buffers(frame: np.ndarray | None = None, buffer_size=1000) -> list[bytes]:
     if frame is None:
         frame = patterned_frame()
 
@@ -62,15 +62,15 @@ def frame_to_naneye_buffers(frame: np.ndarray | None = None, n_buffers: int = 11
     )
 
     # split into separate buffers
-    split = np.array_split(binarized, n_buffers)
+    split = [binarized[i : i + buffer_size, :] for i in range(0, binarized.shape[0], buffer_size)]
 
     # convert to bytes
     buffer_bytes = [np.packbits(arr.flatten()).tobytes() for arr in split]
 
     # create headers
     fmt = GSBufferHeaderFormat.from_id("gs-buffer-header")
-    headers = [np.zeros(fmt.header_length, dtype=np.uint32) for _ in range(n_buffers)]
-    for i in range(n_buffers):
+    headers = [np.zeros(fmt.header_length, dtype=np.uint32) for _ in range(len(buffer_bytes))]
+    for i in range(len(buffer_bytes)):
         headers[i][fmt.buffer_count] = i
 
     # concat preamble and dummy words and cast to bytes

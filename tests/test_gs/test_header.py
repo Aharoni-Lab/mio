@@ -10,7 +10,7 @@ def test_format_header():
     config = GSDevConfig.from_id("MSUS-test")
 
     frame = testing.patterned_frame(pattern="sequence")
-    buffers = testing.frame_to_naneye_buffers(frame, n_buffers=11)
+    buffers = testing.frame_to_naneye_buffers(frame)
 
     for i, buffer in enumerate(buffers):
         header, pixels = GSBufferHeader.from_buffer(buffer, header_fmt=format, config=config)
@@ -19,8 +19,15 @@ def test_format_header():
         assert isinstance(header, GSBufferHeader)
         assert header.buffer_count == i
 
-        # all the buffers should just be a sequence of numbers from 0 to 2**10
-        pix_diff = np.diff(pixels)
-        assert all([diffed in (1, -(2**10)) for diffed in pix_diff])
+        # all the buffers should just be a sequence of numbers from 0 to 2**10,
+        # but they will still have the "training" columns, which are "682" in decimal numbers.
+        # so we filter those out first.
+        # but also since some pixels will *actually* be 682, we allow diffs to also be 2 for the skips
+        pixels = pixels[pixels!=682]
+
+        pix_diff = np.diff(pixels.astype(np.int32))
+        assert all([diffed in (1, 2, -((2**10)-1)) for diffed in pix_diff])
+
+
 
 

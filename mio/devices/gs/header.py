@@ -19,21 +19,17 @@ def buffer_to_array(buffer: bytes) -> np.ndarray:
     # convert to a binary array
     binary = np.unpackbits(np.frombuffer(buffer, dtype=np.uint8))
 
-    # reshape to be 12 x n
-    pixel_cols = binary.reshape((12, -1), order="F")
+    # reshape to be n x 12
+    pixel_cols = binary.reshape((-1, 12))
 
     # remove padding pixels (12 bit x n --> 10 bit x n)
-    stripped = pixel_cols[1:-1]
+    stripped = pixel_cols[:, 1:-1]
 
     # Cast to 16 bit ndarray
-    padded = np.pad(stripped, ((6, 0), (0, 0)), mode="constant", constant_values=0)
-    packed_16bit = np.packbits(padded, axis=0).view(np.uint16)
+    padded = np.pad(stripped, ((0, 0), (6, 0)), mode="constant", constant_values=0)
+    packed_16bit = np.packbits(padded, axis=1).view(np.uint16).byteswap()
 
-    # slice0 = np.packbits(stripped[:-8, :], axis=0, bitorder="little").astype(np.uint16) * 16
-    # slice1 = np.packbits(stripped[-8:, :], axis=0, bitorder="little").astype(np.uint16)
-    # out = slice0 + slice1
-
-    return packed_16bit.flatten(order="F")
+    return packed_16bit.flatten()
 
 
 class GSBufferHeader(StreamBufferHeader):
