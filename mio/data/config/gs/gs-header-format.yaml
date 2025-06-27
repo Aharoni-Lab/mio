@@ -8,3 +8,9 @@ frame_buffer_count: 4 # good
 write_buffer_count: 5 # good
 timestamp: 2 # good\
 pixel_count: 8 # not needed yet
+
+# these are wrong, are these actually output by the gs?
+dropped_buffer_count: 9
+write_timestamp: 10
+battery_voltage_raw: 11
+input_voltage_raw: 12
