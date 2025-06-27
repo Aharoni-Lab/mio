@@ -1,3 +1,5 @@
+# ruff: noqa: D100
+
 from typing import TYPE_CHECKING, Self
 
 import numpy as np
@@ -33,10 +35,19 @@ def buffer_to_array(buffer: bytes) -> np.ndarray:
 
 
 class GSBufferHeader(StreamBufferHeader):
+    """
+    Header at the start of GS buffers -
+
+    prefixed by ... with fields...
+    formatted by :class:`.GSBufferHeaderFormat`
+    (...hemal describe data structure...)
+    """
+
     @classmethod
     def from_buffer(
         cls, buffer: bytes, header_fmt: "GSBufferHeaderFormat", config: "GSDevConfig"
     ) -> tuple[Self, np.ndarray]:
+        """Split buffer into a :class:`.GSBufferHeader` and a 1D, 16-bit pixel array."""
         header_start = len(config.preamble) * config.dummy_words
         header_end = header_start + (header_fmt.header_length * 4)
         header_array = np.frombuffer(buffer[header_start:header_end], dtype=np.uint32)
@@ -47,4 +58,6 @@ class GSBufferHeader(StreamBufferHeader):
 
 
 class GSBufferHeaderFormat(StreamBufferHeaderFormat):
+    """Positions of header fields in GS headers"""
+
     pass

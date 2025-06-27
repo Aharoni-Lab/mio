@@ -1,3 +1,5 @@
+# ruff: noqa: D100
+
 import numpy as np
 
 from mio.devices.gs.config import GSDevConfig
@@ -36,6 +38,19 @@ def patterned_frame(width: int = 320, height: int = 320, pattern: str = "sequenc
 def frame_to_naneye_buffers(
     frame: np.ndarray | None = None, buffer_size: int = 1000
 ) -> list[bytes]:
+    """
+    Convert a video frame to a series of naneye-formatted buffers.
+
+    The frame is formatted such that...
+
+    - Each pixel is 10-bit
+    - Each pixel is flanked by a 0 and a 1, so `0xxxxxxxxxx1` for a total of 12 bits
+    - Each row is preceded by a series of 8 "training" pixels - 0101010101, or 0x555,
+      or 682 in decimal.
+
+    The frame is split into buffers, where a :class:`.GSBufferHeader`
+    in :class:`.GSBufferHeaderFormat` is prepended.
+    """
     if frame is None:
         frame = patterned_frame()
 

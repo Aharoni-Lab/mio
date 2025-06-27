@@ -1,3 +1,6 @@
+# ruff: noqa: D100
+
+
 from pydantic import ConfigDict
 
 from mio.models.stream import StreamDevConfig

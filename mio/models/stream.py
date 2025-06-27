@@ -132,6 +132,10 @@ class StreamBufferHeader(BufferHeader):
     def from_buffer(
         cls, buffer: bytes, format: BufferHeaderFormat, config: "StreamDevConfig"
     ) -> tuple[Self, np.ndarray]:
+        """
+        Split a raw buffer from a streaming device into a header and a data payload,
+        typically a 1-dimensional pixel array from a chunk of a video frame
+        """
 
         header, payload = BufferFormatter.bytebuffer_to_ndarrays(
             buffer=buffer,
