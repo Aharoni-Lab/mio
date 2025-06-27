@@ -2,10 +2,7 @@ from typing import TYPE_CHECKING, Self
 
 import numpy as np
 
-from mio.models.stream import (
-    StreamBufferHeader,
-    StreamBufferHeaderFormat
-)
+from mio.models.stream import StreamBufferHeader, StreamBufferHeaderFormat
 
 if TYPE_CHECKING:
     from mio.devices.gs.config import GSDevConfig

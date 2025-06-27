@@ -4,77 +4,83 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from mio.devices.gs.daq import GSStreamDaq
+from mio.devices.gs.header import GSBufferHeaderFormat, GSBufferHeader
+from mio.devices.gs.config import GSDevConfig
 
 
-def create_naneye_frame(width=320, height=320, pattern="cross"):
+def patterned_frame(width=320, height=320, pattern="sequence") -> np.ndarray:
     """
-    Create a simulated NanEyeC camera frame with a specified pattern.
-    
-    Args:
-        width: Width of the image (default: 320)
-        height: Height of the image (default: 320)
-        pattern: The pattern to generate ('cross', 'grid', etc)
-        
-    Returns:
-        Array containing the unprocessed frame with training patterns and start/stop bits
+    Create a frame for the naneye as a uint16 array with a testing pattern
     """
-    # Initialize the full frame with training patterns and EOF patterns
-    # Each line starts with 8 training PPs (0x555)
-    # Full frame consists of:
-    # - 320 rows, each with:
-    #    - 8 training pixels (each 12 bits with pattern 0x555)
-    #    - 320 data pixels (each 12 bits with 10-bit data wrapped with start/stop bits)
-    # - 8 EOF (end of frame) pixels (each 12 bits with pattern 0x000)
-    
-    # Initialize the frame with zeros
-    unprocessed_frame = []
-    
-    # Training pattern (0x555) in 12-bit format
-    # Start bit (0) + 0101 0101 01 + Stop bit (1)
-    training_pattern = [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1]
-    
-    # EOF pattern (0x000) in 12-bit format
-    # Start bit (0) + 0000 0000 00 + Stop bit (0)
-    eof_pattern = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    
+
     # Create a base image (10-bit values)
-    base_image = np.zeros((height, width), dtype=np.uint16)
+    frame = np.zeros((height, width), dtype=np.uint16)
     
     # Generate the pattern
+    if pattern == "sequence":
+        frame = [np.arange(2**10, dtype=np.uint16)] * int(np.ceil((height * width) / (2**10)))
+        frame = np.concatenate(frame)
+        frame = frame[:(height * width)].reshape((height,width))
     if pattern == "cross":
         # Draw a horizontal line
-        base_image[height//2-5:height//2+5, :] = 800
+        frame[height//2-5:height//2+5, :] = 800
         # Draw a vertical line
-        base_image[:, width//2-5:width//2+5] = 800
+        frame[:, width//2-5:width//2+5] = 800
     elif pattern == "grid":
         # Draw horizontal lines
         for i in range(0, height, 40):
-            base_image[i:i+5, :] = 800
+            frame[i:i+5, :] = 800
         # Draw vertical lines
         for i in range(0, width, 40):
-            base_image[:, i:i+5] = 800
-    
-    # Create the frame row by row
-    for row in range(height):
-        row_data = []
-        
-        # Add 8 training pixels at the start of each row
-        for _ in range(8):
-            row_data.append(training_pattern.copy())
-        
-        # Add the actual pixel data
-        for col in range(width):
-            # Get 10-bit pixel value
-            pixel_value = base_image[row, col]
-            # Convert to binary (10 bits)
-            pixel_bits = [(pixel_value >> bit) & 1 for bit in range(9, -1, -1)]
-            # Add start bit (1) and stop bit (0)
-            pixel_with_start_stop = [1] + pixel_bits + [0]
-            row_data.append(pixel_with_start_stop)
-        
-        unprocessed_frame.append(row_data)
-    
-    return unprocessed_frame
+            frame[:, i:i+5] = 800
+
+    return frame
+
+def frame_to_naneye_buffers(frame: np.ndarray | None = None, n_buffers: int = 11) -> list[bytes]:
+    if frame is None:
+        frame = patterned_frame()
+
+    height, width = frame.shape
+    # add the training columns (10-bit `0101010101`, we'll pad all the pixels at once later)
+    training = np.array([682] * (height * 8), dtype=np.uint16).reshape((height, 8))
+
+    frame = np.concatenate([training, frame], axis=1)
+
+    # convert uint16 to a (npix * 10) binary array
+    # flatten frame, byteswap (so that the top end of the 16-bit number comes first)
+    # i.e. so that 256 is 00000001 00000000 rather than 00000000 00000001
+    # then reshape to 16-wide
+    binarized = np.unpackbits(frame.flatten().byteswap().view(np.uint8), axis=0).reshape((-1, 16))
+
+    # strip 6 leading 0's to get 10-bits
+    binarized = binarized[:, -10:]
+    # add padding bits
+    binarized = np.concatenate([
+        np.zeros((binarized.shape[0], 1), dtype=np.uint8),
+        binarized,
+        np.ones((binarized.shape[0], 1), dtype=np.uint8),
+    ], axis=1)
+
+    # split into separate buffers
+    split = np.array_split(binarized, n_buffers)
+
+    # convert to bytes
+    buffer_bytes = [np.packbits(arr.flatten()).tobytes() for arr in split]
+
+    # create headers
+    fmt = GSBufferHeaderFormat.from_id('gs-buffer-header')
+    headers = [np.zeros(fmt.header_length, dtype=np.uint32) for _ in range(n_buffers)]
+    for i in range(n_buffers):
+        headers[i][fmt.buffer_count] = i
+
+    # concat preamble and dummy words and cast to bytes
+    config = GSDevConfig.from_id("MSUS-test")
+    preamble = config.preamble * config.dummy_words
+    header_bytes = [preamble + h.view(np.uint8).tobytes() for h in headers]
+
+    # combine header and pixel buffers
+    buffers = [header + buffer for header, buffer in zip(header_bytes, buffer_bytes)]
+    return buffers
 
 
 def process_naneye_frame(unprocessed_frame):
