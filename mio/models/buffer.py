@@ -3,8 +3,14 @@ Models for a data stream from a miniscope device: header formats,
 containers, etc.
 """
 
+import sys
 from collections.abc import Sequence
-from typing import Self, Type, TypeVar
+from typing import Type, TypeVar
+
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
 
 import numpy as np
 

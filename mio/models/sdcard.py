@@ -7,7 +7,7 @@ for consuming code to use a consistent, introspectable API
 import sys
 from typing import Optional
 
-if sys.version_info >= (3, 10):
+if sys.version_info >= (3, 11):
     from typing import Self
 else:
     from typing_extensions import Self
