@@ -17,9 +17,9 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from mio.types import ConfigID, ConfigSource, PythonIdentifier, valid_config_id
 
 if sys.version_info >= (3, 11):
-    from typing_extensions import Self
-else:
     from typing import Self
+else:
+    from typing_extensions import Self
 
 
 class YamlDumper(yaml.SafeDumper):
