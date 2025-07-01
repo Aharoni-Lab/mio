@@ -9,6 +9,7 @@ else:
     from typing_extensions import Self
 
 import numpy as np
+import logging
 
 from mio.models.stream import StreamBufferHeader, StreamBufferHeaderFormat
 
@@ -55,10 +56,11 @@ class GSBufferHeader(StreamBufferHeader):
     ) -> tuple[Self, np.ndarray]:
         """Split buffer into a :class:`.GSBufferHeader` and a 1D, 16-bit pixel array."""
         header_start = len(config.preamble) * config.dummy_words
+        print(header_start)
         header_end = header_start + (header_fmt.header_length * 4)
         header_array = np.frombuffer(buffer[header_start:header_end], dtype=np.uint32)
         header = cls.from_format(header_array, header_fmt, construct=True)
-        payload = buffer_to_array(buffer[header_end:])
+        payload = buffer_to_array(buffer[header_end+1:]) # added +1 for header end+1
 
         return header, payload
 

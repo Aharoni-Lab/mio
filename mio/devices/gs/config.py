@@ -8,7 +8,7 @@ from mio.models.stream import StreamDevConfig
 
 class GSDevConfig(StreamDevConfig):
     # preamble: Annotated[bytes, Len(min_length=12, max_length=12)]
-    """Example docstring"""
+    """Sets the hard-limits of the Miniscope"""
     pix_depth: int = 12
 
     # preamble: Annotated[bytes, Len(min_length=12, max_length=12)]
