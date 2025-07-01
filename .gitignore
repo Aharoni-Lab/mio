@@ -161,3 +161,7 @@ wirefree_example.mp4
 wirefree_example.avi
 .pdm-python
 .python-version
+
+*.avi
+*.bin
+*.csv
