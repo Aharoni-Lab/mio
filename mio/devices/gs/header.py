@@ -44,10 +44,20 @@ def buffer_to_array(buffer: bytes) -> np.ndarray:
 class GSBufferHeader(StreamBufferHeader):
     """
     Header at the start of GS buffers -
+    Dummy [0-11 32 bit words]
+    Preamble [12th 32 bit word] ~ 0x12345678 (LSB = 0x78563412)
+    Header [12th 32 bit word]
+    Full Data Buffer [3750 32 bit words]
+    Partial Data Buffer [1860 32 bit words]
 
-    prefixed by ... with fields...
     formatted by :class:`.GSBufferHeaderFormat`
     (...hemal describe data structure...)
+    NEC Camera: 328 columns x 320 rows x 12 bit unprocessed pixel
+    Processing:
+    First 8 columns are alignment buffers
+    12 bit unprocessed pixel includes [1][10 bit processed pixel][0]
+    Final:
+    NE Camera: 320 columns x 320 rows x 10 bit processed pixel
     """
 
     @classmethod
@@ -56,7 +66,6 @@ class GSBufferHeader(StreamBufferHeader):
     ) -> tuple[Self, np.ndarray]:
         """Split buffer into a :class:`.GSBufferHeader` and a 1D, 16-bit pixel array."""
         header_start = len(config.preamble) * config.dummy_words
-        print(header_start)
         header_end = header_start + (header_fmt.header_length * 4)
         header_array = np.frombuffer(buffer[header_start:header_end], dtype=np.uint32)
         header = cls.from_format(header_array, header_fmt, construct=True)
