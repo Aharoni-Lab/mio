@@ -4,13 +4,13 @@ CLI commands for running streamDaq
 
 import os
 from pathlib import Path
-from typing import Any, Callable, Optional, Literal
+from typing import Any, Callable, Literal, Optional
 
 import click
 
 from mio.cli.common import ConfigIDOrPath
-from mio.stream_daq import StreamDaq
 from mio.devices.gs.daq import GSStreamDaq
+from mio.stream_daq import StreamDaq
 
 
 @click.group()

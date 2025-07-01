@@ -2,19 +2,25 @@
 Models for :mod:`mio.stream_daq`
 """
 
+import sys
 from pathlib import Path
-from typing import Literal, Optional, Union, Self
+from typing import Literal, Optional, Union
+
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
 
 import numpy as np
+from bitstring import Bits
 from pydantic import Field, computed_field, field_validator
-from bitstring import BitArray, Bits
 
 from mio import DEVICE_DIR
+from mio.bit_operation import BufferFormatter
 from mio.models import MiniscopeConfig
 from mio.models.buffer import BufferHeader, BufferHeaderFormat
 from mio.models.mixins import ConfigYAMLMixin
 from mio.models.sinks import CSVWriterConfig, StreamPlotterConfig
-from mio.bit_operation import BufferFormatter
 
 
 class ADCScaling(MiniscopeConfig):
@@ -127,8 +133,15 @@ class StreamBufferHeader(BufferHeader):
             return self.input_voltage_raw
         else:
             return self._adc_scaling.scale_input_voltage(self.input_voltage_raw)
+
     @classmethod
-    def from_buffer(cls, buffer: bytes, format: BufferHeaderFormat, config: "StreamDevConfig") -> tuple[Self, np.ndarray]:
+    def from_buffer(
+        cls, buffer: bytes, format: BufferHeaderFormat, config: "StreamDevConfig"
+    ) -> tuple[Self, np.ndarray]:
+        """
+        Split a raw buffer from a streaming device into a header and a data payload,
+        typically a 1-dimensional pixel array from a chunk of a video frame
+        """
 
         header, payload = BufferFormatter.bytebuffer_to_ndarrays(
             buffer=buffer,
@@ -140,9 +153,7 @@ class StreamBufferHeader(BufferHeader):
             reverse_payload_bytes=config.reverse_payload_bytes,
         )
 
-        header_data = cls.from_format(
-            header.astype(int), format, construct=True
-        )
+        header_data = cls.from_format(header.astype(int), format, construct=True)
         header_data.adc_scaling = config.adc_scale
         return header_data, payload
 

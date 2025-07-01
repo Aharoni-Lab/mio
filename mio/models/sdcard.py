@@ -4,7 +4,15 @@ specific values. This allows for the model to be reused across different minisco
 for consuming code to use a consistent, introspectable API
 """
 
+import sys
 from typing import Optional
+
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
+
+import numpy as np
 
 from mio.models import MiniscopeConfig
 from mio.models.buffer import BufferHeader, BufferHeaderFormat
@@ -162,3 +170,12 @@ class SDBufferHeader(BufferHeader):
     data_length: int
     write_timestamp: Optional[int] = None
     battery_voltage: Optional[int] = None
+
+    @classmethod
+    def from_buffer(
+        cls, buffer: bytes, format: BufferHeaderFormat, config: Optional[MiniscopeConfig] = None
+    ) -> tuple[Self, np.ndarray]:
+        """no-op! there is no buffer splitting in sd-card devices"""
+        raise NotImplementedError(
+            "SDCard data isn't streaming, so doesn't need to be parsed from a buffer!"
+        )

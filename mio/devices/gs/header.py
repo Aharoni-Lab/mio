@@ -1,14 +1,21 @@
-from typing import TYPE_CHECKING, Self
+# ruff: noqa: D100
+
+import sys
+from typing import TYPE_CHECKING
+
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
 
 import numpy as np
+import logging
 
-from mio.models.stream import (
-    StreamBufferHeader,
-    StreamBufferHeaderFormat
-)
+from mio.models.stream import StreamBufferHeader, StreamBufferHeaderFormat
 
 if TYPE_CHECKING:
     from mio.devices.gs.config import GSDevConfig
+
 
 def buffer_to_array(buffer: bytes) -> np.ndarray:
     """
@@ -17,58 +24,57 @@ def buffer_to_array(buffer: bytes) -> np.ndarray:
     e.g. (``1xxxxxxxxxx0``)
 
     Strip the pads, and return a 16-bit ndarray
-
-    TURN INTO 1D PIXEL ARRAY
     """
     # convert to a binary array
     binary = np.unpackbits(np.frombuffer(buffer, dtype=np.uint8))
 
-    # reshape to be 12 x n
-    pixel_cols = binary.reshape((12, -1), order="F")
+    # reshape to be n x 12
+    pixel_cols = binary.reshape((-1, 12))
 
     # remove padding pixels (12 bit x n --> 10 bit x n)
-    stripped = pixel_cols[1:-1]
+    stripped = pixel_cols[:, 1:-1]
 
     # Cast to 16 bit ndarray
-    padded = np.pad(stripped, ((6, 0), (0, 0)), mode='constant', constant_values=0)
-    packed_16bit = np.packbits(padded, axis=0).view(np.uint16)
+    padded = np.pad(stripped, ((0, 0), (6, 0)), mode="constant", constant_values=0)
+    packed_16bit = np.packbits(padded, axis=1).view(np.uint16).byteswap()
 
-    # Reshape back to original spatial dimensions
-    # reshaped_ = packed_16bit.reshape((320, 328), order="F")
-
-    # slice0 = np.packbits(stripped[:-8, :], axis=0, bitorder="little").astype(np.uint16) * 16
-    # slice1 = np.packbits(stripped[-8:, :], axis=0, bitorder="little").astype(np.uint16)
-    # out = slice0 + slice1
-
-    return packed_16bit.flatten(order="F")
-
-
-
+    return packed_16bit.flatten()
 
 
 class GSBufferHeader(StreamBufferHeader):
+    """
+    Header at the start of GS buffers -
+    Dummy [0-11 32 bit words]
+    Preamble [12th 32 bit word] ~ 0x12345678 (LSB = 0x78563412)
+    Header [12th 32 bit word]
+    Full Data Buffer [3750 32 bit words]
+    Partial Data Buffer [1860 32 bit words]
+
+    formatted by :class:`.GSBufferHeaderFormat`
+    (...hemal describe data structure...)
+    NEC Camera: 328 columns x 320 rows x 12 bit unprocessed pixel
+    Processing:
+    First 8 columns are alignment buffers
+    12 bit unprocessed pixel includes [1][10 bit processed pixel][0]
+    Final:
+    NE Camera: 320 columns x 320 rows x 10 bit processed pixel
+    """
+
     @classmethod
-    def from_buffer(cls, buffer: bytes, header_fmt: "GSBufferHeaderFormat", config: "GSDevConfig") -> tuple[Self, np.ndarray]:
-        try:
-            header_start = len(config.preamble)*config.dummy_words
-            header_end = header_start + (header_fmt.header_length * 4)
-            # header_array = np.ndarray(buffer[header_start:header_end], dtype=np.uint32)
-            header_array = np.frombuffer(buffer[header_start:header_end], dtype=np.uint32)
-            header = cls.from_format(header_array, header_fmt, construct=True)
-
-            payload = buffer_to_array(buffer)
-            # payload = buffer_to_array(buffer)
-
-        except:
-            print(len(buffer))
-            print(header_start)
-            print(header_end)
-            raise
+    def from_buffer(
+        cls, buffer: bytes, header_fmt: "GSBufferHeaderFormat", config: "GSDevConfig"
+    ) -> tuple[Self, np.ndarray]:
+        """Split buffer into a :class:`.GSBufferHeader` and a 1D, 16-bit pixel array."""
+        header_start = len(config.preamble) * config.dummy_words
+        header_end = header_start + (header_fmt.header_length * 4)
+        header_array = np.frombuffer(buffer[header_start:header_end], dtype=np.uint32)
+        header = cls.from_format(header_array, header_fmt, construct=True)
+        payload = buffer_to_array(buffer[header_end+1:]) # added +1 for header end+1
 
         return header, payload
 
 
-
-
 class GSBufferHeaderFormat(StreamBufferHeaderFormat):
+    """Positions of header fields in GS headers"""
+
     pass
