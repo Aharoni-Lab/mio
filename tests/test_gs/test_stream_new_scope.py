@@ -27,6 +27,7 @@ tests/test_gs/test_new_scope.bin
     @pytest.fixture(params=[pytest.param(5, id="buffer-size-5"), pytest.param(10, id="buffer-size-10")])
 
     def test_binary_output(config, data, set_okdev_input, tmp_path):
+    # test
         daqConfig = GSStreamDaq.from_id(config)
 
         data_file = DATA_DIR / data
