@@ -17,10 +17,10 @@ from mio.devices.gs.header import GSBufferHeaderFormat, GSBufferHeader
 from mio.devices.gs.config import GSDevConfig
 import numpy as np
 from mio.utils import hash_video, hash_file
-from .conftest import DATA_DIR, CONFIG_DIR
+# from .conftest import DATA_DIR, CONFIG_DIR
 
 from mio.stream_daq import StreamDaq
-from test_header import
+# from test_header import
 tests/test_gs/test_new_scope.bin
 
 @classmethod
