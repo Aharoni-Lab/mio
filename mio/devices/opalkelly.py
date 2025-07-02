@@ -3,6 +3,7 @@ Interfaces for OpalKelly (model number?) FPGAs
 """
 
 import sys
+from typing import Optional
 
 if sys.version_info < (3, 11):
     from typing_extensions import Self
@@ -60,7 +61,7 @@ class okDev(ok.okCFrontPanel):
         ret = self.ResetFPGA()
 
     def read_data(
-        self, length: int | None = None, addr: int = 0xA0, blockSize: int = 16
+        self, length: Optional[int] = None, addr: int = 0xA0, blockSize: int = 16
     ) -> bytearray:
         """
         Read a buffer's worth of data

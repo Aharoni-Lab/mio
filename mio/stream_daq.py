@@ -807,7 +807,7 @@ def iter_buffers(
     preamble: Bits,
     pre_first: bool = True,
     capture_binary: Optional[Path] = None,
-) -> Generator[bytes]:
+) -> Generator[bytes, None, None]:
     """
     Given some iterator that yields bytes (like a camera device),
     yield buffers from that iterator as `bytes` objects

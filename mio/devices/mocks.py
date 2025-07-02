@@ -72,7 +72,7 @@ class okDevMock:
         self.bit_file = Path(bit_file)
 
     def read_data(
-        self, length: int | None = None, addr: int = 0xA0, blockSize: int = 16
+        self, length: Optional[int] = None, addr: int = 0xA0, blockSize: int = 16
     ) -> bytearray:
         if length is None:
             length = self.read_length
