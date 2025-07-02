@@ -62,6 +62,12 @@ def test_config_from_id(yaml_config, id, path, valid):
             Path("configs/nested/path/config.yaml"),
             True,
         ),
+        (
+            "nested-path",
+            "nested-path",
+            Path("configs/nested/path/config.yaml"),
+            True,
+        ),
         ("not-valid", Path("not_in_dir/config.yaml"), Path("not_in_dir/config.yaml"), False),
     ],
 )
@@ -82,6 +88,15 @@ def test_config_from_any(yaml_config, id, id_or_path, path, valid):
 
     # and we should always be able to load an absolute path
     _ = MyModel.from_yaml(abs_path)
+
+
+def test_config_sources():
+    """
+    config_sources should return a list of paths
+    """
+    paths = ConfigYAMLMixin.config_sources()
+    assert len(paths) > 0
+    assert all([isinstance(p, Path) for p in paths])
 
 
 def test_roundtrip_to_from_yaml(tmp_config_source):
