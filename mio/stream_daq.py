@@ -847,7 +847,7 @@ def iter_buffers(
                     buf_start + len(preamble),
                     buf_stop + len(preamble),
                 )
-            yield buf[buf_start:buf_stop].tobytes()
+            yield cur_buffer[buf_start:buf_stop].tobytes()
 
         if pre_pos:
             cur_buffer = cur_buffer[pre_pos[-1] :]
