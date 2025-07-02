@@ -213,7 +213,7 @@ def test_iter_buffers(read_size: int, tmp_path: Path):
     buffer = preamble_bytes + b"000"
     buffer_rep = buffer * n_reps
 
-    def _iterator(read_size: int) -> Generator[bytes]:
+    def _iterator(read_size: int) -> Generator[bytes, None, None]:
         nonlocal buffer_rep
         for i in range(0, len(buffer_rep), read_size):
             yield buffer_rep[i : i + read_size]
