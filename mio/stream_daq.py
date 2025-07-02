@@ -826,9 +826,9 @@ def iter_buffers(
     while True:
         try:
             buf = next(source)
-        except (EndOfRecordingException, KeyboardInterrupt) as e:
+        except (EndOfRecordingException, KeyboardInterrupt, StopIteration):
             logger.debug("Got end of recording exception, breaking")
-            raise StopIteration() from e
+            return
         except StreamReadError:
             logger.exception("Read failed, continuing")
             # It might be better to choose continue or break with a continuous flag
