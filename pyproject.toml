@@ -92,8 +92,8 @@ lint.composite = [
     "black mio --diff"
 ]
 format.composite = [
+    "black mio",
     "ruff check --fix",
-    "black mio"
 ]
 
 [tool.pdm.build]
