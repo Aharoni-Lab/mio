@@ -13,8 +13,9 @@ from contextlib import contextmanager
 from mio import BASE_DIR
 from mio.devices.gs import testing
 from mio.devices.gs.daq import GSStreamDaq
-from mio.devices.gs.header import GSBufferHeaderFormat, GSBufferHeader
 from mio.devices.gs.config import GSDevConfig
+
+from mio.devices.gs.header import GSBufferHeaderFormat, GSBufferHeader
 import numpy as np
 from mio.utils import hash_video, hash_file
 from ..conftest import DATA_DIR, CONFIG_DIR

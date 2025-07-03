@@ -1,19 +1,13 @@
 import re
 from pathlib import Path
 
-import multiprocessing
-import os
-import pytest
 import pandas as pd
-import sys
-import signal
-import time
-from contextlib import contextmanager
+import pytest
 
 from mio import BASE_DIR
 from mio.stream_daq import StreamDevConfig, StreamDaq
 from mio.utils import hash_video, hash_file
-from .conftest import DATA_DIR, CONFIG_DIR
+from .conftest import DATA_DIR
 
 
 @pytest.fixture(params=[pytest.param(5, id="buffer-size-5"), pytest.param(10, id="buffer-size-10")])
