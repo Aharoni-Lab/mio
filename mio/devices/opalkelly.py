@@ -2,6 +2,14 @@
 Interfaces for OpalKelly (model number?) FPGAs
 """
 
+import sys
+from typing import Optional
+
+if sys.version_info < (3, 11):
+    from typing_extensions import Self
+else:
+    from typing import Self
+
 from mio.exceptions import (
     DeviceConfigurationError,
     DeviceOpenError,
@@ -22,9 +30,10 @@ class okDev(ok.okCFrontPanel):
 
     """
 
-    def __init__(self, serial_id: str = ""):
+    def __init__(self, read_length: int, serial_id: str = ""):
         super().__init__()
         self.logger = init_logger("okDev")
+        self.read_length = read_length
         ret = self.OpenBySerial("")
         if ret != self.NoError:
             raise DeviceOpenError(f"Cannot open device: {serial_id}")
@@ -51,7 +60,9 @@ class okDev(ok.okCFrontPanel):
         )
         ret = self.ResetFPGA()
 
-    def read_data(self, length: int, addr: int = 0xA0, blockSize: int = 16) -> bytearray:
+    def read_data(
+        self, length: Optional[int] = None, addr: int = 0xA0, blockSize: int = 16
+    ) -> bytearray:
         """
         Read a buffer's worth of data
 
@@ -63,6 +74,8 @@ class okDev(ok.okCFrontPanel):
         Returns:
             :class:`bytearray`
         """
+        if length is None:
+            length = self.read_length
         buf = bytearray(length)
         ret = self.ReadFromBlockPipeOut(addr, data=buf, blockSize=blockSize)
         if ret < 0:
@@ -87,3 +100,9 @@ class okDev(ok.okCFrontPanel):
         ret = self.UpdateWireIns()
         if ret != self.NoError:
             raise DeviceConfigurationError(f"Wire update failed: {ret}")
+
+    def __iter__(self) -> Self:
+        return self
+
+    def __next__(self) -> bytes:
+        return self.read_data()
