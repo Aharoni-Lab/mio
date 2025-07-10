@@ -13,7 +13,7 @@ from mio import BASE_DIR
 from mio.stream_daq import StreamDevConfig, StreamDaq, iter_buffers
 from mio.utils import hash_video, hash_file
 from .conftest import DATA_DIR
-
+import pytest
 
 @pytest.fixture(params=[pytest.param(5, id="buffer-size-5"), pytest.param(10, id="buffer-size-10")])
 def default_streamdaq(set_okdev_input, request) -> StreamDaq:
