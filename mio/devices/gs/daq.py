@@ -3,7 +3,7 @@
 import multiprocessing as mp
 import time
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, ClassVar
 
 import cv2
 import numpy as np
@@ -12,6 +12,7 @@ from mio import init_logger
 from mio.devices.gs.config import GSDevConfig
 from mio.devices.gs.header import GSBufferHeader, GSBufferHeaderFormat
 from mio.io import BufferedCSVWriter
+from mio.models.mixins import ConfigYAMLMixin
 from mio.plots.headers import StreamPlotter
 from mio.stream_daq import StreamDaq
 from mio.types import ConfigSource
@@ -29,16 +30,13 @@ def format_frame(frame_data: list[np.ndarray], config: GSDevConfig) -> np.ndarra
     return frame
 
 
-class GSStreamDaq(StreamDaq):
+class GSStreamDaq(StreamDaq, ConfigYAMLMixin):
     """Mystery scope daq"""
 
-    buffer_header_cls = GSBufferHeader
+    buffer_header_cls: ClassVar = GSBufferHeader
 
-    def __init__(
-        self,
-        device_config: Union[GSDevConfig, ConfigSource],
-        header_fmt: Union[GSBufferHeaderFormat, ConfigSource] = "gs-buffer-header",
-    ) -> None:
+    def __init__(self, device_config: Union[GSDevConfig, ConfigSource],
+                 header_fmt: Union[GSBufferHeaderFormat, ConfigSource] = "gs-buffer-header") -> None:
         """
         Constructer for the class.
         This parses configuration from the input yaml file.
@@ -55,17 +53,13 @@ class GSStreamDaq(StreamDaq):
             by default `MetadataHeaderFormat()`.
         """
 
+        super().__init__(device_config, header_fmt)
         self.logger = init_logger("GSStreamDaq")
         self.config = GSDevConfig.from_any(device_config)
         self.header_fmt = GSBufferHeaderFormat.from_any(header_fmt)
 
         self.preamble = self.config.preamble
-        self.terminate = mp.Event()
 
-        self._buffer_npix: Optional[list[int]] = None
-        self._nbuffer_per_fm: Optional[int] = None
-        self._buffered_writer: Optional[BufferedCSVWriter] = None
-        self._header_plotter: Optional[StreamPlotter] = None
 
     def _format_frame_inner(self, frame_data: list[np.ndarray]) -> np.ndarray:
         return format_frame(frame_data, self.config)

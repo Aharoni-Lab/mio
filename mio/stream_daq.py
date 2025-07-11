@@ -8,6 +8,7 @@ import os
 import queue
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Callable, Generator, List, Literal, Optional, Tuple, Union
 
@@ -239,12 +240,12 @@ class StreamDaq:
             self.logger.info("Close serial port")
             sys.exit(1)
 
-    def _init_okdev(self, BIT_FILE: Path) -> Union[okDev, okDevMock]:
+    def _init_okdev(self, BIT_FILE: Path, read_length: int) -> Union[okDev, okDevMock]:
         # FIXME: when multiprocessing bug resolved, remove this and just mock in tests
         if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("STREAMDAQ_MOCKRUN"):
-            dev = okDevMock()
+            dev = okDevMock(read_length=read_length)
         else:
-            dev = okDev()
+            dev = okDev(read_length=read_length)
 
         self.logger.info("after of device init")
         dev.upload_bit(str(BIT_FILE))
@@ -307,58 +308,26 @@ class StreamDaq:
             raise RuntimeError(f"Configured to use bitfile at {BIT_FILE} but no such file exists")
 
         # set up fpga devices
-        locallogs.info("before init okdev")
-        dev = self._init_okdev(BIT_FILE)
-        locallogs.info("after init okdev")
+        dev = self._init_okdev(BIT_FILE, read_length)
 
         # read loop
-        cur_buffer = BitArray()
         pre = Bits(self.preamble)
         if self.config.reverse_header_bits:
             pre = pre[::-1]
 
         locallogs.debug("Starting capture")
         try:
-            while 1:
+            for buf in iter_buffers(
+                dev, preamble=pre, pre_first=pre_first, capture_binary=capture_binary
+            ):
                 try:
-                    buf = dev.read_data(read_length)
-                except (EndOfRecordingException, KeyboardInterrupt):
-                    locallogs.debug("Got end of recording exception, breaking")
-                    break
-                except StreamReadError:
-                    locallogs.exception("Read failed, continuing")
-                    # It might be better to choose continue or break with a continuous flag
-                    continue
-
-                if capture_binary:
-                    with open(capture_binary, "ab") as file:
-                        file.write(buf)
-
-                dat = BitArray(buf)
-                cur_buffer = cur_buffer + dat
-                # locallogs.debug(dat.tobytes()) ## Jonny, helping to debug, output data in terminal
-                # locallogs.debug(pre.tobytes()) ## Jonny, helping to debug, output data in terminal
-                # locallogs.debug(f'dat: {dat.tobytes()}') # Takuya recommended
-                # locallogs.debug(f'pre: {pre.tobytes()}') # Takuya recommended
-
-                pre_pos = list(cur_buffer.findall(pre))
-                # locallogs.debug(pre_pos)
-                for buf_start, buf_stop in zip(pre_pos[:-1], pre_pos[1:]):
-                    if not pre_first:
-                        buf_start, buf_stop = (
-                            buf_start + len(self.preamble),
-                            buf_stop + len(self.preamble),
-                        )
-                    try:
-                        serial_buffer_queue.put(
-                            cur_buffer[buf_start:buf_stop].tobytes(),
-                            block=True,
-                            timeout=self.config.runtime.queue_put_timeout,
-                        )
-                    except queue.Full:
-                        locallogs.warning("Serial buffer queue full, skipping buffer.")
-                if pre_pos:
-                    cur_buffer = cur_buffer[pre_pos[-1] :]
+                    serial_buffer_queue.put(
+                        buf,
+                        block=True,
+                        timeout=self.config.runtime.queue_put_timeout,
+                    )
+                except queue.Full:
+                    locallogs.warning("Serial buffer queue full, skipping buffer.")
 
         finally:
             locallogs.debug("Quitting, putting sentinel in queue")
@@ -819,6 +788,57 @@ class StreamDaq:
                 writer.write(picture)
             except cv2.error as e:
                 self.logger.exception(f"Exception writing frame: {e}")
+
+
+def iter_buffers(
+    source: Iterator[bytes],
+    preamble: Bits,
+    pre_first: bool = True,
+    capture_binary: Optional[Path] = None,
+) -> Generator[bytes, None, None]:
+    """
+    Given some iterator that yields bytes (like a camera device),
+    yield buffers from that iterator as `bytes` objects
+    split by the `preamble` delimiter.
+
+    Args:
+        source (Iterator[bytes]): The iterator that yields bytes
+        preamble (Bits): The delimiter bit series to split buffers by
+        pre_first (bool | None): Whether preamble/header is returned
+            at the beginning of each buffer, by default True.
+        capture_binary (Path | None): save binary directly from the ``okDev`` to the supplied path,
+            if present.
+    """
+    logger = init_logger("streamDaq.iter_buffers")
+    cur_buffer = BitArray()
+    while True:
+        try:
+            buf = next(source)
+        except (EndOfRecordingException, KeyboardInterrupt, StopIteration):
+            logger.debug("Got end of recording exception, breaking")
+            return
+        except StreamReadError:
+            logger.exception("Read failed, continuing")
+            # It might be better to choose continue or break with a continuous flag
+            continue
+
+        if capture_binary:
+            with open(capture_binary, "ab") as file:
+                file.write(buf)
+
+        dat = BitArray(buf)
+        cur_buffer = cur_buffer + dat
+        pre_pos = list(cur_buffer.findall(preamble))
+        for buf_start, buf_stop in zip(pre_pos[:-1], pre_pos[1:]):
+            if not pre_first:
+                buf_start, buf_stop = (
+                    buf_start + len(preamble),
+                    buf_stop + len(preamble),
+                )
+            yield cur_buffer[buf_start:buf_stop].tobytes()
+
+        if pre_pos:
+            cur_buffer = cur_buffer[pre_pos[-1] :]
 
 
 # DEPRECATION: v0.3.0

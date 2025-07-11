@@ -16,3 +16,4 @@ def test_header_df(wirefree_frames):
         assert col in SDBufferHeader.model_fields
 
     assert len(header_df) == 1937
+
