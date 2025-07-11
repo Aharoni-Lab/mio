@@ -26,6 +26,3 @@ class GSDevConfig(StreamDevConfig):
         """12 bit raw processed to 10 bit pixel values"""
         return self.pix_depth + 2
 
-    def read_size(self) -> int:
-        """12 bit raw processed to 10 bit pixel values"""
-        return self.read_size()
