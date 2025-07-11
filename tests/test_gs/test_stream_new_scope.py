@@ -24,16 +24,3 @@ def test_binary_output(set_okdev_input, tmp_path):
 
     assert hash_file(data_file) == hash_file(output_file)
 
-def _file_iter(path, read_size):
-    with open(path, "rb") as f:
-        while True:
-            data  = f.read(read_size)
-            yield data
-            if len(data) != read_size:
-                break
-
-cfg = GSDevConfig.from_id("MSUS-test")
-TEST_DATA = r"C:\Users\hsemwal\Documents\Github\mio\tests\data\test_new_scope.bin"
-iterator = _file_iter(TEST_DATA, cfg.read_size)
-for buffer in _file_iter(iterator):
-    header, pixels = GSBufferHeader.from_buffer(buffer)
