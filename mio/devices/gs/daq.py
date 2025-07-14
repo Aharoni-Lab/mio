@@ -61,6 +61,10 @@ class GSStreamDaq(StreamDaq, ConfigYAMLMixin):
         self.preamble = self.config.preamble
 
 
+        self._nbuffer_per_fm: Optional[int] = None
+        self._buffered_writer: Optional[BufferedCSVWriter] = None
+        self._header_plotter: Optional[StreamPlotter] = None
+
     def _format_frame_inner(self, frame_data: list[np.ndarray]) -> np.ndarray:
         return format_frame(frame_data, self.config)
 
