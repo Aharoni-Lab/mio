@@ -1,6 +1,6 @@
 # https://miniscope-io.readthedocs.io/en/latest/api/models/buffer.html#mio.models.buffer.BufferHeader.frame_buffer_count
 
-id: MSUS-test
+id: MSUS
 mio_model: mio.devices.gs.config.GSDevConfig
 mio_version: "v5.0.0"
 
@@ -34,7 +34,7 @@ pix_depth: 12 # pixel depth, or, pixel period
 # Buffer data format. These have to match the firmware value
 header_len: 384 # 12 * 32 (in bits)
 buffer_block_length: 4  # 10 # originally 12 how many words per block length 
-block_size: 3750 # 4012 # just buffer (header+data-header)
+block_size: 3774 # 4012 # just buffer (header+data-header)
 num_buffers: 6 # 6 # (maybe change to 10 num of data buffers inside mcu
 dummy_words: 12 # num of dummy words before header file
 

@@ -8,8 +8,8 @@ frame_buffer_count: 3
 write_buffer_count: 4
 dropped_buffer_count: 5
 timestamp: 6
-write_timestamp: 8 # maybe this needs to change to something else for the data length
-pixel_count: 7 # not sure what to add here
+write_timestamp: 8
+pixel_count: 7
 battery_voltage_raw: 9
 input_voltage_raw: 10
 
