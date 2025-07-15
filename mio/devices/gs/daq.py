@@ -30,7 +30,7 @@ def format_frame(frame_data: list[np.ndarray], config: GSDevConfig) -> np.ndarra
     return frame
 
 
-class GSStreamDaq(StreamDaq, ConfigYAMLMixin):
+class GSStreamDaq(StreamDaq):
     """Mystery scope daq"""
 
     buffer_header_cls: ClassVar = GSBufferHeader
@@ -53,7 +53,7 @@ class GSStreamDaq(StreamDaq, ConfigYAMLMixin):
             by default `MetadataHeaderFormat()`.
         """
 
-        super().__init__(device_config, header_fmt)
+        super().__init__(device_config, header_fmt) # initiating parameters of the parent class
         self.logger = init_logger("GSStreamDaq")
         self.config = GSDevConfig.from_any(device_config)
         self.header_fmt = GSBufferHeaderFormat.from_any(header_fmt)

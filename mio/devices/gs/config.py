@@ -20,9 +20,11 @@ class GSDevConfig(StreamDevConfig):
     @property
     def frame_width_input(self) -> int:
         """8 (12 bit) alignment columns removed from 320 rows of imaging data"""
-        return self.frame_width + 8
+        # return self.frame_width + 8
+        return self.frame_width
 
     def pix_depth_input(self) -> int:
         """12 bit raw processed to 10 bit pixel values"""
-        return self.pix_depth + 2
+        # return self.pix_depth + 2
+        return self.pix_depth
 

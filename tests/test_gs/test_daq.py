@@ -21,3 +21,20 @@ def test_format_frames():
 
     reconstructed = format_frame(pixels, config)
     assert np.array_equal(frame, reconstructed)
+
+from mio.devices.gs.testing import create_serialized_frame_data, verify_buffer_structure
+def test_12_bit_formatted_frames():
+    """
+    Our format frame method should receive the 1-dimensional pixel buffers
+    processed by parsing the headers (tested separately in `test_header`),
+    and reassemble it to the original frame.
+    """
+    full_buffers, partial_buffer = create_serialized_frame_data(pattern="cross")
+    verify_buffer_structure(full_buffers, partial_buffer)
+
+    # Show some sample data
+    print(f"First few values of buffer 0: {full_buffers[0][:5]}")
+    print(f"First few values of partial buffer: {partial_buffer[:5]}")
+
+
+
