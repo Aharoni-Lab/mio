@@ -1,12 +1,17 @@
 # ruff: noqa: D100
-
-from typing import Optional, Tuple, List
+import time
+from pathlib import Path
+from typing import ClassVar, List, Optional, Tuple, Union
 
 import numpy as np
+from bitstring import Bits
 
+from mio import init_logger
 from mio.devices.gs.config import GSDevConfig
-from mio.devices.gs.header import GSBufferHeaderFormat
-from mio.devices.gs import testing
+from mio.devices.gs.header import GSBufferHeader, GSBufferHeaderFormat
+from mio.devices.opalkelly import okDev
+from mio.stream_daq import iter_buffers
+from mio.types import ConfigSource
 
 
 def patterned_frame(width: int = 320, height: int = 328, pattern: str = "sequence") -> np.ndarray:
@@ -77,11 +82,16 @@ def pack_12bit_to_32bit_buffers(frame: np.ndarray) -> Tuple[List[np.ndarray], np
 
         if pixels_to_process >= 8:
             # Pack 8 12-bit values into 3 32-bit values
-            p = pixels[pixel_idx:pixel_idx + 8]
+            p = pixels[pixel_idx : pixel_idx + 8]
 
             # Pack into 3 32-bit values
             val1 = (p[0] & 0xFFF) | ((p[1] & 0xFFF) << 12) | ((p[2] & 0xFF) << 24)
-            val2 = ((p[2] & 0xF00) >> 8) | ((p[3] & 0xFFF) << 4) | ((p[4] & 0xFFF) << 16) | ((p[5] & 0xF) << 28)
+            val2 = (
+                ((p[2] & 0xF00) >> 8)
+                | ((p[3] & 0xFFF) << 4)
+                | ((p[4] & 0xFFF) << 16)
+                | ((p[5] & 0xF) << 28)
+            )
             val3 = ((p[5] & 0xFF0) >> 4) | ((p[6] & 0xFFF) << 8) | ((p[7] & 0xFFF) << 20)
 
             packed_data.extend([val1, val2, val3])
@@ -89,10 +99,15 @@ def pack_12bit_to_32bit_buffers(frame: np.ndarray) -> Tuple[List[np.ndarray], np
         else:
             # Handle remaining pixels (pad with zeros if necessary)
             p = np.zeros(8, dtype=np.uint16)
-            p[:pixels_to_process] = pixels[pixel_idx:pixel_idx + pixels_to_process]
+            p[:pixels_to_process] = pixels[pixel_idx : pixel_idx + pixels_to_process]
 
             val1 = (p[0] & 0xFFF) | ((p[1] & 0xFFF) << 12) | ((p[2] & 0xFF) << 24)
-            val2 = ((p[2] & 0xF00) >> 8) | ((p[3] & 0xFFF) << 4) | ((p[4] & 0xFFF) << 16) | ((p[5] & 0xF) << 28)
+            val2 = (
+                ((p[2] & 0xF00) >> 8)
+                | ((p[3] & 0xFFF) << 4)
+                | ((p[4] & 0xFFF) << 16)
+                | ((p[5] & 0xF) << 28)
+            )
             val3 = ((p[5] & 0xFF0) >> 4) | ((p[6] & 0xFFF) << 8) | ((p[7] & 0xFFF) << 20)
 
             packed_data.extend([val1, val2, val3])
@@ -110,13 +125,14 @@ def pack_12bit_to_32bit_buffers(frame: np.ndarray) -> Tuple[List[np.ndarray], np
 
     # Partial buffer
     partial_start = 10 * 3750
-    partial_buffer = packed_array[partial_start:partial_start + 1860]
+    partial_buffer = packed_array[partial_start : partial_start + 1860]
 
     return full_buffers, partial_buffer
 
 
-def create_serialized_frame_data(width: int = 320, height: int = 328, pattern: str = "sequence") -> Tuple[
-    List[np.ndarray], np.ndarray]:
+def create_serialized_frame_data(
+    width: int = 320, height: int = 328, pattern: str = "sequence"
+) -> Tuple[List[np.ndarray], np.ndarray]:
     """
     Create serialized frame data with the specified buffer structure.
 
@@ -218,3 +234,43 @@ def frame_to_naneye_buffers(
     # combine header and pixel buffers
     buffers = [header + buffer for header, buffer in zip(header_bytes, buffer_bytes)]
     return buffers
+
+
+class _BinaryDaq:
+    buffer_header_cls: ClassVar = GSBufferHeader
+
+    def __init__(
+        self,
+        device_config: Union[GSDevConfig, ConfigSource],
+        header_fmt: Union[GSBufferHeaderFormat, ConfigSource] = "gs-buffer-header",
+    ):
+        self.config: GSDevConfig = GSDevConfig.from_any(device_config)
+        self.header_fmt = GSBufferHeaderFormat.from_any(header_fmt)
+        self.preamble = self.config.preamble
+        self.logger = init_logger("gs.BinaryDaq")
+
+    def capture(self, binary_output: Path, n_frames: int = 5, read_size: int = 2048) -> None:
+        dev = self._init_okdev(read_size)
+        pre = Bits(self.preamble)
+        if self.config.reverse_header_bits:
+            pre = pre[::-1]
+
+        frames_seen = set()
+
+        for buf in iter_buffers(dev, preamble=pre, pre_first=True, capture_binary=binary_output):
+            header, payload = GSBufferHeader.from_buffer(buf, self.header_fmt, self.config)
+            frames_seen.add(int(header.frame_num))
+            self.logger.info(header)
+            if len(frames_seen) > n_frames:
+                break
+
+    def _init_okdev(self, read_length: int) -> okDev:
+        dev = okDev(read_length=read_length)
+        dev.upload_bit(str(self.config.bitstream))
+        dev.set_wire(0x00, 0b0010)
+        time.sleep(0.01)
+        dev.set_wire(0x00, 0b0)
+        dev.set_wire(0x00, 0b1000)
+        time.sleep(0.01)
+        dev.set_wire(0x00, 0b0)
+        return dev

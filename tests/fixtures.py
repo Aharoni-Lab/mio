@@ -1,10 +1,11 @@
 from pathlib import Path
-from typing import Callable, Optional, Any, MutableMapping
+from typing import Callable, Optional, Any, MutableMapping, Generator
 
 import pytest
 import yaml
 import tomli_w
 from _pytest.monkeypatch import MonkeyPatch
+from bitstring import Bits
 
 from mio import Config
 from mio.io import SDCard
@@ -261,6 +262,27 @@ def set_global_yaml() -> Callable[[dict[str, Any]], Path]:
 def set_config(request) -> Callable[[dict[str, Any]], Path]:
     return request.getfixturevalue(request.param)
 
+@pytest.fixture()
+def gs_raw_buffers() -> Generator[bytes, None, None]:
+    from mio.stream_daq import iter_buffers
+    from mio.devices.gs.config import GSDevConfig
+    from .conftest import DATA_DIR
+    gs_data = DATA_DIR / "gs_test_raw.bin"
+    config: GSDevConfig = GSDevConfig.from_id("MSUS-test")
+
+
+    def _file_iter(path, read_size):
+        with open(path, "rb") as f:
+            while True:
+                data = f.read(read_size)
+                yield data
+                if len(data) != read_size:
+                    break
+
+    file_iterator = _file_iter(gs_data, 2048)
+
+    return iter_buffers(file_iterator, Bits(config.preamble))
+
 
 def _flatten(d, parent_key="", separator="__") -> dict:
     """https://stackoverflow.com/a/6027615/13113166"""
@@ -272,3 +294,4 @@ def _flatten(d, parent_key="", separator="__") -> dict:
         else:
             items.append((new_key, value))
     return dict(items)
+

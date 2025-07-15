@@ -27,4 +27,3 @@ class GSDevConfig(StreamDevConfig):
         """12 bit raw processed to 10 bit pixel values"""
         # return self.pix_depth + 2
         return self.pix_depth
-
