@@ -8,8 +8,8 @@ if sys.version_info >= (3, 11):
 else:
     from typing_extensions import Self
 
+
 import numpy as np
-import logging
 
 from mio.models.stream import StreamBufferHeader, StreamBufferHeaderFormat
 
@@ -65,9 +65,13 @@ class GSBufferHeader(StreamBufferHeader):
         cls, buffer: bytes, header_fmt: "GSBufferHeaderFormat", config: "GSDevConfig"
     ) -> tuple[Self, np.ndarray]:
         """Split buffer into a :class:`.GSBufferHeader` and a 1D, 16-bit pixel array."""
-        header_start = len(config.preamble) * config.dummy_words
+        header_start = len(config.preamble)
         header_end = header_start + (header_fmt.header_length * 4)
         header_array = np.frombuffer(buffer[header_start:header_end], dtype=np.uint32)
+        header_array = np.unpackbits(header_array.view(np.uint8)).reshape(-1, 32)[:, ::-1]
+        header_array = np.packbits(header_array).view(np.uint32)
+        header_array = header_array.byteswap()
+
         header = cls.from_format(header_array, header_fmt, construct=True)
         payload = buffer_to_array(buffer[header_end:])
 

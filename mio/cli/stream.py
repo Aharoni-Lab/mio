@@ -141,6 +141,23 @@ def test(ctx: click.Context, source: Path, profile: bool, **kwargs: dict) -> Non
     ctx.forward(capture)
 
 
+@stream.command("binary")
+@_common_options
+@click.option("-o", "--output", type=click.Path(), help="Path to output binary output")
+def stream_binary(device_config: str | Path, output: Path) -> None:
+    """
+    Stream *just* the binary data output from a special BinaryDaq class.
+
+    Used to generate test data,
+    should probably be removed from main CLI once streamdaq
+    is more reasonably divided into subcomponents.
+    """
+    from mio.devices.gs.testing import _BinaryDaq
+
+    daq = _BinaryDaq(device_config=device_config)
+    daq.capture(output)
+
+
 def get_unique_stempath(base_output: Path) -> Path:
     """
     Check the target directory if there are any files with the same basename (ignoring extensions)
