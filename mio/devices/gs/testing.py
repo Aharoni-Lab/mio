@@ -249,7 +249,7 @@ class _BinaryDaq:
         self.preamble = self.config.preamble
         self.logger = init_logger("gs.BinaryDaq")
 
-    def capture(self, binary_output: Path, n_frames: int = 100, read_size: int = 2048) -> None:
+    def capture(self, binary_output: Path, n_frames: int = 50, read_size: int = 2048) -> None:
         dev = self._init_okdev(read_size)
         pre = Bits(self.preamble)
         if self.config.reverse_header_bits:
