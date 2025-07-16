@@ -38,6 +38,9 @@ def test_format_headers_raw(gs_raw_buffers):
         # print(header)
         # breakpoint() # PDB
 
+def test_format_headers_raw(gs_raw_buffers):
+    format = GSBufferHeaderFormat.from_id("gs-buffer-header")
+    config = GSDevConfig.from_id("MSUS-test")
 
     # todo: confirm the structure of header and pixels (HINT: see test_format_frames)
     # compare to what you might know: pixel values are between [], or are they the same? Is the dropped buffer 0?
