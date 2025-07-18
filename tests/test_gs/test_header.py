@@ -1,6 +1,10 @@
+from pickle import FRAME
+
 from mio.devices.gs import testing
 from mio.devices.gs.header import GSBufferHeaderFormat, GSBufferHeader
 from mio.devices.gs.config import GSDevConfig
+from mio.devices.gs.daq import format_frame
+
 import numpy as np
 
 
@@ -28,15 +32,25 @@ def test_format_headers_synthetic():
         pix_diff = np.diff(pixels.astype(np.int32))
         assert all([diffed in (1, 2, -((2**10)-1)) for diffed in pix_diff])
 
+
+
 def test_format_headers_raw(gs_raw_buffers):
     format = GSBufferHeaderFormat.from_id("gs-buffer-header")
     config = GSDevConfig.from_id("MSUS-test")
     # breakpoint() # to ensure the data is correct
     # this is now the header and the RAW pixels
+    num_of_words_in_buffer = 3750
+    size_of_word = 32
+    device_px_bitdepth = 12
+
     for i, buffer in enumerate(gs_raw_buffers):
         header, pixels = GSBufferHeader.from_buffer(buffer, header_fmt=format, config=config)
-        # print(header)
-        # breakpoint() # PDB
+        # breakpoint()
+        #assert len(buffer) == num_of_words_in_buffer / size_of_word, f"Buffer {i} length is not correct"
+        # assert len(pixels) % device_px_bitdepth == 0, f"Buffer {i} length is not a multiple of {device_px_bitdepth}"
+
+
+
     # todo: confirm the structure of header and pixels (HINT: see test_format_frames)
     # compare to what you might know: pixel values are between [], or are they the same? Is the dropped buffer 0?
     # look at headers (from_header) and to_frame methods!
