@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7 - Processing Module & Video Encoding Fixes
+
+### 0.7.0 - 2024-07-21
+PRs: [`#83`](https://github.com/Aharoni-Lab/mio/pull/83), [`#94`](https://github.com/Aharoni-Lab/mio/pull/94), [`#97`](https://github.com/Aharoni-Lab/mio/pull/97), [`#99`](https://github.com/Aharoni-Lab/mio/pull/99), [`#112`](https://github.com/Aharoni-Lab/mio/pull/112)
+#### Changes
+- **Added video processing (denoising) module for neural recordings.** This module is currently for offline use with video files. Real-time integration with `streamDaq` is planned for a future update.
+    - Includes features like **broken frame detection** and **horizontal stripe removal**.
+    - Refer to `Preprocessing videos` in the documentation for more details.
+- **Resolved video encoding bug in export.** Exported videos are now **deterministic**, as intended for the current uncompressed setup.
+    - The `VideoWriter` class was also **isolated from the `streamDaq` module** for broader usability.
+
+
+
 ## 0.6 - Becoming `mio`
 
 ### 0.6.0 - 24-12-10
