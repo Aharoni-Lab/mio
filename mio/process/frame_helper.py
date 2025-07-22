@@ -81,10 +81,16 @@ class InvalidFrameDetector(BaseSingleFrameHelper):
         self.methods = noise_patch_config.method
 
         if "mean_error" in self.methods:
+            if noise_patch_config.mean_error_config is None:
+                raise ValueError("Mean error config must be provided for mean error detection")
             self.mse_detector = MSENoiseDetector(noise_patch_config.mean_error_config)
         if "gradient" in self.methods:
+            if noise_patch_config.gradient_config is None:
+                raise ValueError("Gradient config must be provided for gradient detection")
             self.gradient_detector = GradientNoiseDetector(noise_patch_config.gradient_config)
         if "black_area" in self.methods:
+            if noise_patch_config.black_area_config is None:
+                raise ValueError("Black area config must be provided for black area detection")
             self.black_detector = BlackAreaDetector(noise_patch_config.black_area_config)
 
     def find_invalid_area(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
