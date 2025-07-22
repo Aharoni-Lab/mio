@@ -35,3 +35,22 @@ def test_buffer_from_format(construct):
     else:
         with pytest.raises(ValidationError):
             _ = BufferHeader.from_format(bad_vals, format, construct)
+
+def test_header_length():
+    """
+    Header Length should be computed correctly,
+    excluding any fields from mixins
+    """
+    format = BufferHeaderFormat(
+        id="buffer-header-test",
+        linked_list=0,
+        frame_num=1,
+        buffer_count=2,
+        frame_buffer_count=3,
+        write_buffer_count=4,
+        dropped_buffer_count=5,
+        timestamp=6,
+        write_timestamp=7,
+    )
+    assert format.header_length == 8
+

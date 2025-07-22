@@ -62,7 +62,7 @@ class BufferHeaderFormat(MiniscopeConfig, ConfigYAMLMixin):
         Number of values in the header
         (the word length, not the number of bytes)
         """
-        values = self.model_dump(exclude_none=True)
+        values = self.model_dump(exclude_none=True, exclude=set(self.HEADER_FIELDS))
         return len(values)
 
 
