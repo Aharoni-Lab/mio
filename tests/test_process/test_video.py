@@ -1,62 +1,79 @@
-import unittest
-from unittest.mock import MagicMock, patch
-from pathlib import Path
-import numpy as np
+"""
+These tests don't really test much, because this module basically just wraps the actual
+processors which are defined in process.frame_helper (and the tests are in test_frame_helper)
 
-from mio.process.video import NoisePatchProcessor, FreqencyMaskProcessor, PassThroughProcessor, MinProjSubtractProcessor
+This module needs a decent dose of abstraction, so not spending time exhaustively testing
+each of the methods.
+"""
+
+import numpy as np
+import pytest
+
+from mio.process.video import (
+    NoisePatchProcessor,
+    FreqencyMaskProcessor,
+    PassThroughProcessor,
+    MinProjSubtractProcessor,
+    MinimumProjectionConfig,
+)
 from mio.models.process import DenoiseConfig
 
-class TestVideoProcessors(unittest.TestCase):
-    def setUp(self):
-        self.test_dir = Path("/tmp/test_output")
-        self.test_dir.mkdir(parents=True, exist_ok=True)
-        self.width, self.height = 100, 100
-        self.test_frame = np.ones((self.height, self.width), dtype=np.uint8) * 128
-        self.video_frames = [self.test_frame for _ in range(10)]
-        
 
-    def test_noise_patch_processor(self):
-        denoise_config = DenoiseConfig.from_id("denoise_example")
-        denoise_config.noise_patch.enable = True
-        denoise_config.noise_patch.output_result = True
+@pytest.fixture()
+def video_frame() -> np.ndarray:
+    """idk it's a frame of all 128s ig lol"""
+    return np.ones((100, 100), dtype=np.uint8) * 128
 
-        processor = NoisePatchProcessor("denoise_example", denoise_config.noise_patch, self.test_dir)
-        processed_frame = processor.process_frame(self.test_frame)
 
-        self.assertIsInstance(processed_frame, np.ndarray)
-        self.assertEqual(processor.name, "denoise_example")
-        self.assertTrue(processor.output_enable)
+def test_noise_patch_processor(video_frame, tmp_path):
+    denoise_config = DenoiseConfig.from_id("denoise_example")
+    denoise_config.noise_patch.enable = True
+    denoise_config.noise_patch.output_result = True
 
-    def test_freqency_mask_processor(self):
-        denoise_config = DenoiseConfig.from_id("denoise_example")
-        denoise_config.frequency_masking.enable = True
-        denoise_config.frequency_masking.output_result = True
+    processor = NoisePatchProcessor("denoise_example", denoise_config.noise_patch, tmp_path)
+    processed_frame = processor.process_frame(video_frame)
 
-        processor = FreqencyMaskProcessor("test_freq_mask", denoise_config.frequency_masking, self.width, self.height, self.test_dir)
-        processed_frame = processor.process_frame(self.test_frame)
+    assert isinstance(processed_frame, np.ndarray)
+    assert processor.name == "denoise_example"
+    assert processor.output_enable
 
-        self.assertIsInstance(processed_frame, np.ndarray)
-        self.assertEqual(processor.name, "test_freq_mask")
-        self.assertTrue(processor.output_enable)
 
-    def test_pass_through_processor(self):
-        processor = PassThroughProcessor("test_pass_through", self.test_dir)
-        processed_frame = processor.process_frame(self.test_frame)
-        
-        self.assertIsInstance(processed_frame, np.ndarray)
-        self.assertEqual(processed_frame.all(), self.test_frame.all())
-        self.assertEqual(processor.name, "test_pass_through")
+def test_freqency_mask_processor(video_frame, tmp_path):
+    denoise_config = DenoiseConfig.from_id("denoise_example")
+    denoise_config.frequency_masking.enable = True
+    denoise_config.frequency_masking.output_result = True
 
-    def test_min_proj_subtract_processor(self):
-        min_proj_config = MagicMock()
-        min_proj_config.output_result = True
-        
-        processor = MinProjSubtractProcessor("test_min_proj", min_proj_config, self.test_dir, self.video_frames)
-        processor.normalize_stack()
+    processor = FreqencyMaskProcessor(
+        "test_freq_mask",
+        denoise_config.frequency_masking,
+        100,
+        100,
+        tmp_path,
+    )
+    processed_frame = processor.process_frame(video_frame)
 
-        self.assertEqual(processor.name, "test_min_proj")
-        self.assertTrue(processor.output_enable)
-        self.assertIsInstance(processor.output_frames[0], np.ndarray)
+    assert isinstance(processed_frame, np.ndarray)
+    assert processor.name == "test_freq_mask"
+    assert processor.output_enable
 
-if __name__ == '__main__':
-    unittest.main()
+
+def test_pass_through_processor(video_frame, tmp_path):
+    processor = PassThroughProcessor("test_pass_through", tmp_path)
+    processed_frame = processor.process_frame(video_frame)
+
+    assert isinstance(processed_frame, np.ndarray)
+    assert np.array_equal(processed_frame, video_frame)
+    assert processor.name == "test_pass_through"
+
+
+def test_min_proj_subtract_processor(video_frame, tmp_path):
+    video_frames = [video_frame for _ in range(10)]
+    min_proj_config = MinimumProjectionConfig()
+    min_proj_config.output_result = True
+
+    processor = MinProjSubtractProcessor("test_min_proj", min_proj_config, tmp_path, video_frames)
+    processor.normalize_stack()
+
+    assert processor.name == "test_min_proj"
+    assert processor.output_enable
+    assert all(isinstance(frame, np.ndarray) for frame in processor.output_frames)
