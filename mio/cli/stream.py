@@ -68,9 +68,8 @@ def _capture_options(fn: Callable) -> Callable:
         "-f",
         "--freq_mask_config",
         help="Path to frequency masking config YAML file",
-        type=click.Path(exists=True),
+        type=ConfigIDOrPath(),
     )(fn)
-
     return fn
 
 

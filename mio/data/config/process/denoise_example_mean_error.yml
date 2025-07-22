@@ -20,6 +20,9 @@ noise_patch:
   output_diff: true
   output_noisy_frames: true
 frequency_masking:
+  id: frequency_masking_example_mean_error
+  mio_model: mio.models.process.FreqencyMaskingConfig
+  mio_version: 0.6.1
   enable: true
   spatial_LPF_cutoff_radius: 15
   vertical_BEF_cutoff: 2
