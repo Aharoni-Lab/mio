@@ -42,14 +42,13 @@ def mock_config_source(monkeypatch_session):
     """
     Add the `tests/data/config` directory to the config sources for the entire testing session
     """
-    current_sources = ConfigYAMLMixin.config_sources
+    current_sources = ConfigYAMLMixin.config_sources()
 
-    @classmethod
-    @property
     def _config_sources(cls: type[ConfigYAMLMixin]) -> list[Path]:
+        nonlocal current_sources
         return [CONFIG_DIR, *current_sources]
 
-    monkeypatch_session.setattr(ConfigYAMLMixin, "config_sources", _config_sources)
+    monkeypatch_session.setattr(ConfigYAMLMixin, "config_sources", classmethod(_config_sources))
 
 
 @pytest.fixture()

@@ -9,9 +9,11 @@ import sys
 import signal
 import time
 from contextlib import contextmanager
+from bitstring import BitArray, Bits
+from typing import Generator
 
 from mio import BASE_DIR
-from mio.stream_daq import StreamDevConfig, StreamDaq
+from mio.stream_daq import StreamDevConfig, StreamDaq, iter_buffers
 from mio.utils import hash_video, hash_file
 from .conftest import DATA_DIR, CONFIG_DIR
 
@@ -191,3 +193,29 @@ def test_bitfile_names():
     pattern = re.compile(r"\.(?!bit$)|\s")
     for path in Path(BASE_DIR).glob("**/*.bit"):
         assert not pattern.search(str(path.name))
+
+
+@pytest.mark.parametrize("read_size", [3, 5, 7])
+def test_iter_buffers(read_size: int, tmp_path: Path):
+    """
+    iter_buffers should accept an iterator that yield bytes,
+    and split it by the preamble in a way that's insensitive to
+    the length of the read size
+    """
+    preamble_bytes = b"ab"
+    n_reps = 3
+
+    preamble = Bits(preamble_bytes)
+    buffer = preamble_bytes + b"000"
+    buffer_rep = buffer * n_reps
+
+    def _iterator(read_size: int) -> Generator[bytes, None, None]:
+        nonlocal buffer_rep
+        for i in range(0, len(buffer_rep), read_size):
+            yield buffer_rep[i : i + read_size]
+
+    got_buffers = []
+    for buf in iter_buffers(_iterator(read_size), preamble=preamble):
+        got_buffers.append(buf)
+
+    assert all([buf == buffer for buf in got_buffers])

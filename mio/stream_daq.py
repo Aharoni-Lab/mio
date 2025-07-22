@@ -8,8 +8,9 @@ import os
 import queue
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Callable, Generator, List, Literal, Optional, Union
+from typing import Any, Callable, Generator, List, Literal, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -182,12 +183,12 @@ class StreamDaq:
 
         return data
 
-    def _init_okdev(self, BIT_FILE: Path) -> Union[okDev, okDevMock]:
+    def _init_okdev(self, BIT_FILE: Path, read_length: int) -> Union[okDev, okDevMock]:
         # FIXME: when multiprocessing bug resolved, remove this and just mock in tests
         if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("STREAMDAQ_MOCKRUN"):
-            dev = okDevMock()
+            dev = okDevMock(read_length=read_length)
         else:
-            dev = okDev()
+            dev = okDev(read_length=read_length)
 
         dev.upload_bit(str(BIT_FILE))
         dev.set_wire(0x00, 0b0010)
@@ -248,60 +249,26 @@ class StreamDaq:
             raise RuntimeError(f"Configured to use bitfile at {BIT_FILE} but no such file exists")
 
         # set up fpga devices
-        dev = self._init_okdev(BIT_FILE)
+        dev = self._init_okdev(BIT_FILE, read_length)
 
         # read loop
-        cur_buffer = BitArray()
         pre = Bits(self.preamble)
         if self.config.reverse_header_bits:
             pre = pre[::-1]
 
         locallogs.debug("Starting capture")
         try:
-            while 1:
+            for buf in iter_buffers(
+                dev, preamble=pre, pre_first=pre_first, capture_binary=capture_binary
+            ):
                 try:
-                    buf = dev.read_data(read_length)
-                except (EndOfRecordingException, KeyboardInterrupt):
-                    locallogs.debug("Got end of recording exception, breaking")
-                    break
-                except StreamReadError:
-                    locallogs.exception("Read failed, continuing")
-                    continue
-
-                if capture_binary:
-                    with open(capture_binary, "ab") as file:
-                        file.write(buf)
-
-                dat = BitArray(buf)
-                cur_buffer = cur_buffer + dat
-                pre_pos = list(cur_buffer.findall(pre))
-                for buf_start, buf_stop in zip(pre_pos[:-1], pre_pos[1:]):
-                    if not pre_first:
-                        buf_start, buf_stop = (
-                            buf_start + len(self.preamble),
-                            buf_stop + len(self.preamble),
-                        )
-                    try:
-                        header, serial_buffer = BufferFormatter.bytebuffer_to_ndarrays(
-                            buffer=cur_buffer[buf_start:buf_stop].tobytes(),
-                            header_length_words=int(self.config.header_len / BIT_PER_WORD),
-                            preamble_length_words=int(
-                                len(Bits(self.config.preamble)) / BIT_PER_WORD
-                            ),
-                            reverse_header_bits=self.config.reverse_header_bits,
-                            reverse_header_bytes=self.config.reverse_header_bytes,
-                            reverse_payload_bits=self.config.reverse_payload_bits,
-                            reverse_payload_bytes=self.config.reverse_payload_bytes,
-                        )
-                        serial_buffer_queue.put(
-                            [header, serial_buffer],
-                            block=True,
-                            timeout=self.config.runtime.queue_put_timeout,
-                        )
-                    except queue.Full:
-                        locallogs.warning("Serial buffer queue full, skipping buffer.")
-                if pre_pos:
-                    cur_buffer = cur_buffer[pre_pos[-1] :]
+                    serial_buffer_queue.put(
+                        buf,
+                        block=True,
+                        timeout=self.config.runtime.queue_put_timeout,
+                    )
+                except queue.Full:
+                    locallogs.warning("Serial buffer queue full, skipping buffer.")
 
         finally:
             locallogs.debug("Quitting, putting sentinel in queue")
@@ -312,27 +279,37 @@ class StreamDaq:
             except queue.Full:
                 locallogs.error("Serial buffer queue full, Could not put sentinel.")
 
-    def _parse_header(self, header: np.ndarray) -> StreamBufferHeader:
+    def _parse_header(self, buffer: bytes) -> Tuple[StreamBufferHeader, np.ndarray]:
         """
-        Parse the header from the buffer.
+        Function to parse header from each buffer.
 
         Parameters
         ----------
-        header : np.ndarray
-            Header data from the buffer.
+        buffer : bytes
+            Input buffer.
 
         Returns
         -------
-        StreamBufferHeader
-            Parsed header. The header is parsed according to the format defined in
-            `self.header_fmt`, and the `adc_scaling` is set to the value defined in
-            `self.config.adc_scale`.
+        Tuple[BufferHeader, ndarray]
+            The returned header data and payload (uint8).
         """
-        parsed_header = StreamBufferHeader.from_format(
+
+        header, payload = BufferFormatter.bytebuffer_to_ndarrays(
+            buffer=buffer,
+            header_length_words=int(self.config.header_len / 32),
+            preamble_length_words=int(len(Bits(self.config.preamble)) / 32),
+            reverse_header_bits=self.config.reverse_header_bits,
+            reverse_header_bytes=self.config.reverse_header_bytes,
+            reverse_payload_bits=self.config.reverse_payload_bits,
+            reverse_payload_bytes=self.config.reverse_payload_bytes,
+        )
+
+        header_data = StreamBufferHeader.from_format(
             header.astype(int), self.header_fmt, construct=True
         )
-        parsed_header.adc_scaling = self.config.adc_scale
-        return parsed_header
+        header_data.adc_scaling = self.config.adc_scale
+
+        return header_data, payload
 
     def _buffer_to_frame(
         self,
@@ -364,8 +341,8 @@ class StreamDaq:
         header_list = []
 
         try:
-            for [header, serial_buffer] in exact_iter(serial_buffer_queue.get, None):
-                header_data = self._parse_header(header)
+            for serial_buffer in exact_iter(serial_buffer_queue.get, None):
+                header_data, serial_buffer = self._parse_header(serial_buffer)
                 header_list.append(header_data)
 
                 try:
@@ -748,6 +725,57 @@ class StreamDaq:
                 writer.write_frame(image)
             except cv2.error as e:
                 self.logger.exception(f"Exception writing frame: {e}")
+
+
+def iter_buffers(
+    source: Iterator[bytes],
+    preamble: Bits,
+    pre_first: bool = True,
+    capture_binary: Optional[Path] = None,
+) -> Generator[bytes, None, None]:
+    """
+    Given some iterator that yields bytes (like a camera device),
+    yield buffers from that iterator as `bytes` objects
+    split by the `preamble` delimiter.
+
+    Args:
+        source (Iterator[bytes]): The iterator that yields bytes
+        preamble (Bits): The delimiter bit series to split buffers by
+        pre_first (bool | None): Whether preamble/header is returned
+            at the beginning of each buffer, by default True.
+        capture_binary (Path | None): save binary directly from the ``okDev`` to the supplied path,
+            if present.
+    """
+    logger = init_logger("streamDaq.iter_buffers")
+    cur_buffer = BitArray()
+    while True:
+        try:
+            buf = next(source)
+        except (EndOfRecordingException, KeyboardInterrupt, StopIteration):
+            logger.debug("Got end of recording exception, breaking")
+            return
+        except StreamReadError:
+            logger.exception("Read failed, continuing")
+            # It might be better to choose continue or break with a continuous flag
+            continue
+
+        if capture_binary:
+            with open(capture_binary, "ab") as file:
+                file.write(buf)
+
+        dat = BitArray(buf)
+        cur_buffer = cur_buffer + dat
+        pre_pos = list(cur_buffer.findall(preamble))
+        for buf_start, buf_stop in zip(pre_pos[:-1], pre_pos[1:]):
+            if not pre_first:
+                buf_start, buf_stop = (
+                    buf_start + len(preamble),
+                    buf_stop + len(preamble),
+                )
+            yield cur_buffer[buf_start:buf_stop].tobytes()
+
+        if pre_pos:
+            cur_buffer = cur_buffer[pre_pos[-1] :]
 
 
 # DEPRECATION: v0.3.0
