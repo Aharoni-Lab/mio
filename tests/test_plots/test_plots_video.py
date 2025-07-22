@@ -44,6 +44,3 @@ class TestVideoPlotter(unittest.TestCase):
 
         # Verify that plt.show() is called to display the plot
         mock_show.assert_called_once()
-
-if __name__ == '__main__':
-    unittest.main()
