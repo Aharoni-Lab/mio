@@ -54,6 +54,15 @@ def test_noise_patch_processor_no_config(random_8bit_video_frame, tmp_path):
     with pytest.raises(ValueError):
         NoisePatchProcessor("denoise_example", denoise_config.noise_patch, tmp_path)
 
+def test_noise_patch_processor_no_methods(random_8bit_video_frame, tmp_path):
+    denoise_config = DenoiseConfig.from_id("denoise_example")
+    denoise_config.noise_patch.enable = True
+    denoise_config.noise_patch.method = []
+
+    processor = NoisePatchProcessor("denoise_example", denoise_config.noise_patch, tmp_path)
+    processed_frame = processor.process_frame(random_8bit_video_frame)
+    assert processed_frame is random_8bit_video_frame
+
 def test_freqency_mask_processor(video_frame, tmp_path):
     denoise_config = DenoiseConfig.from_id("denoise_example")
     denoise_config.frequency_masking.enable = True
