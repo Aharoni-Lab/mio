@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional
 import click
 
 from mio.cli.common import ConfigIDOrPath
+from mio.models.process import FreqencyMaskingConfig
 from mio.stream_daq import StreamDaq
 
 
@@ -63,6 +64,12 @@ def _capture_options(fn: Callable) -> Callable:
         help="Display metadata in real time. \n"
         "**WARNING:** This is still an **EXPERIMENTAL** feature and is **UNSTABLE**.",
     )(fn)
+    fn = click.option(
+        "-f",
+        "--freq_mask_config",
+        help="Path to frequency masking config YAML file",
+        type=click.Path(exists=True),
+    )(fn)
 
     return fn
 
@@ -72,6 +79,7 @@ def _capture_options(fn: Callable) -> Callable:
 @_capture_options
 def capture(
     device_config: Path,
+    freq_mask_config: Optional[Path],
     output: Optional[Path],
     okwarg: Optional[dict],
     no_display: Optional[bool],
@@ -96,6 +104,11 @@ def capture(
         metadata_output = None
         binary_output = None
 
+    if freq_mask_config:
+        freq_mask_config = FreqencyMaskingConfig.from_any(freq_mask_config)
+    else:
+        freq_mask_config = None
+
     daq_inst.capture(
         source="fpga",
         video=video_output,
@@ -104,6 +117,7 @@ def capture(
         binary=binary_output,
         show_video=not no_display,
         show_metadata=metadata_display,
+        freq_mask_config=freq_mask_config,
     )
 
 
