@@ -154,7 +154,7 @@ class NoisePatchConfig(BaseModel):
     )
 
 
-class FreqencyMaskingConfig(BaseModel):
+class FreqencyMaskingConfig(MiniscopeConfig, ConfigYAMLMixin):
     """
     Configuration for frequency filtering.
     This includes a spatial low-pass filter and vertical and horizontal band elimination filters.
