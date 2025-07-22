@@ -24,7 +24,7 @@ class VideoWriter:
     """
     Write data to a video file using FFMpegWriter.
     """
-    
+
     DEFAULT_OUTPUT = {
         "-vcodec": "rawvideo",
         "-f": "avi",

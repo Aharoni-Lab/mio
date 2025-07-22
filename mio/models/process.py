@@ -122,7 +122,8 @@ class NoisePatchConfig(BaseModel):
     )
     mean_error_config: Optional[MSEDetectorConfig] = Field(
         default=None,
-        description="Configuration for detecting invalid frames based on mean squared error.",
+        description="Configuration for detecting invalid frames based on mean squared error."
+        " Any positive value or zero is valid.",
     )
     gradient_config: Optional[GradientDetectorConfig] = Field(
         default=None,

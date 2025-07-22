@@ -49,6 +49,7 @@ class NamedFrame(NamedBaseFrame):
     def export(self, output_path: Union[Path, str], suffix: bool = False) -> None:
         """
         Export the frame data to a file.
+        The file name will be a concatenation of the output path and the name of the frame.
         """
         output_path = Path(output_path)
         if self.frame is None:
@@ -63,7 +64,7 @@ class NamedFrame(NamedBaseFrame):
 
     def display(self, binary: bool = False) -> None:
         """
-        Display the frame data.
+        Display the frame data in a opencv window. Press ESC to close the window.
 
         Parameters
         ----------
