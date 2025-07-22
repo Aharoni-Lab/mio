@@ -66,8 +66,8 @@ class GSBufferHeader(StreamBufferHeader):
     ) -> tuple[Self, np.ndarray]:
         """Split buffer into a :class:`.GSBufferHeader` and a 1D, 16-bit pixel array."""
         header_start = len(config.preamble)
-        header_end =  (header_start + (header_fmt.header_length)*4) # not sure why -2 needs to be there
-        # header_end = header_start + 44
+        # header_end =  header_start + ((header_fmt.header_length)*4) # = 12, also shows incorrect header values
+        header_end = header_start + 44 # 44 ((384-32)/32)  = 11
         header_array = np.frombuffer(buffer[header_start:header_end], dtype=np.uint32)
         print(header_end, header_array)
         # header_array = np.unpackbits(header_array.view(np.uint8)).reshape(-1, 32)[:, ::-1]
@@ -75,8 +75,8 @@ class GSBufferHeader(StreamBufferHeader):
         # header_array = header_array.byteswap()
         header = cls.from_format(header_array, header_fmt, construct=True)
         payload = buffer_to_array(buffer[header_end:])
-        print(len(header_array), len(payload))
-
+        print(len(header_array), len(buffer[header_end:]))
+        # breakpoint()
         return header, payload
 
 
