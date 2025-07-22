@@ -53,11 +53,6 @@ class MSEDetectorConfig(BaseModel):
         "This is used in the mean_error method to compare frames"
         " in the units of data transfer buffers.",
     )
-    buffer_size: int = Field(
-        default=5032,
-        description="Size of the buffers composing the image."
-        "This premises that the noisy area will appear in units of buffer_size.",
-    )
     buffer_split: int = Field(
         default=1,
         description="Number of splits to make in the buffer when detecting noisy areas."
