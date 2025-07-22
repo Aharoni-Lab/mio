@@ -24,25 +24,26 @@ class VideoWriter:
     """
     Write data to a video file using FFMpegWriter.
     """
+    
+    DEFAULT_OUTPUT = {
+        "-vcodec": "rawvideo",
+        "-f": "avi",
+        "-filter:v": "format=gray",
+    }
 
     def __init__(
         self,
         path: Union[str, Path],
         fps: int,
-        output_dict: dict = None,
+        output_dict: Union[dict, None] = None,
     ):
         """
         Initialize the VideoWriter object.
         """
         if output_dict is None:
-            output_dict = {
-                "-vcodec": "rawvideo",
-                "-f": "avi",
-                "-filter:v": "format=gray",
-                "-r": str(fps),
-            }
-        else:
-            output_dict["-r"] = str(fps)
+            output_dict = {}
+        output_dict = {**self.DEFAULT_OUTPUT, **output_dict}
+        output_dict["-r"] = str(fps)
 
         self.writer = FFmpegWriter(filename=str(path), outputdict=output_dict)
 
