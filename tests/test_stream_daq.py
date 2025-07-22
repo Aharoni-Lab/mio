@@ -14,6 +14,7 @@ from typing import Generator
 
 from mio import BASE_DIR
 from mio.stream_daq import StreamDevConfig, StreamDaq, iter_buffers
+from mio.models.process import FreqencyMaskingConfig
 from mio.utils import hash_video, hash_file
 from .conftest import DATA_DIR, CONFIG_DIR
 
@@ -33,12 +34,23 @@ def default_streamdaq(set_okdev_input, request) -> StreamDaq:
     return daq_inst
 
 
+# Second parameter makes sure the filtering does not affect the video output
 @pytest.mark.parametrize("buffer_size", [5, 50])
 @pytest.mark.parametrize(
-    "config,data,video_hash_list,show_video",
+    "device_config,filter_config,data,video_hash_list,show_video",
     [
         (
             "test-wireless-200px",
+            None,
+            "stream_daq_test_fpga_raw_input_200px.bin",
+            [
+                "ee7bdb97c1e98ebeefc65ae651968e3a72d099e57d1fdec5ec05a3598733db93",
+            ],
+            False,
+        ),
+        (
+            "test-wireless-200px",
+            "test_remove_stripe_example",
             "stream_daq_test_fpga_raw_input_200px.bin",
             [
                 "ee7bdb97c1e98ebeefc65ae651968e3a72d099e57d1fdec5ec05a3598733db93",
@@ -48,20 +60,25 @@ def default_streamdaq(set_okdev_input, request) -> StreamDaq:
     ],
 )
 def test_video_output(
-    config, data, video_hash_list, tmp_path, show_video, set_okdev_input, buffer_size
+    device_config, filter_config, data, video_hash_list, tmp_path, show_video, set_okdev_input, buffer_size
 ):
     output_video = tmp_path / "output.avi"
 
-    daqConfig = StreamDevConfig.from_id(config)
+    daqConfig = StreamDevConfig.from_id(device_config)
     daqConfig.runtime.frame_buffer_queue_size = buffer_size
     daqConfig.runtime.image_buffer_queue_size = buffer_size
     daqConfig.runtime.serial_buffer_queue_size = buffer_size
+
+    if filter_config:
+        processor_for_visualization = FreqencyMaskingConfig.from_id(filter_config)
+    else:
+        processor_for_visualization = None
 
     data_file = DATA_DIR / data
     set_okdev_input(data_file)
 
     daq_inst = StreamDaq(device_config=daqConfig)
-    daq_inst.capture(source="fpga", video=output_video, show_video=show_video)
+    daq_inst.capture(source="fpga", video=output_video, show_video=show_video, freq_mask_config=processor_for_visualization)
 
     assert output_video.exists()
 
