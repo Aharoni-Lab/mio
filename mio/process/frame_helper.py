@@ -395,7 +395,10 @@ class FrequencyMaskHelper(BaseSingleFrameHelper):
         fshift *= self.freq_mask
         f_ishift = np.fft.ifftshift(fshift)
         img_back = np.fft.ifft2(f_ishift)
-        img_back = np.abs(img_back)
+
+        # Clip value to valid range and convert back to uint8.
+        # Some cases get rounded up higher than 255.
+        img_back = np.clip(np.abs(img_back), 0, np.iinfo(np.uint8).max)
 
         return np.uint8(img_back)
 

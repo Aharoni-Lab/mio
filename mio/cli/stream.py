@@ -4,11 +4,12 @@ CLI commands for running streamDaq
 
 import os
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 import click
 
 from mio.cli.common import ConfigIDOrPath
+from mio.models.process import FreqencyMaskingConfig
 from mio.stream_daq import StreamDaq
 
 
@@ -52,7 +53,6 @@ def _capture_options(fn: Callable) -> Callable:
         "passed as (potentially multiple) calls like\n\n"
         "mio stream capture -ok key1 val1 -ok key2 val2",
         multiple=True,
-        type=(str, Any),
     )(fn)
     fn = click.option("--no-display", is_flag=True, help="Don't show video in real time")(fn)
     fn = click.option("-b", "--binary_export", is_flag=True, help="Save binary to a .bin file")(fn)
@@ -63,7 +63,15 @@ def _capture_options(fn: Callable) -> Callable:
         help="Display metadata in real time. \n"
         "**WARNING:** This is still an **EXPERIMENTAL** feature and is **UNSTABLE**.",
     )(fn)
-
+    fn = click.option(
+        "-f",
+        "--freq_mask_config",
+        help="Path to, or ID of frequency masking config YAML file - "
+        "applies frequency masking to the displayed video, "
+        "but preserves raw video and does not modify the video output written to disk "
+        "(apply postprocessing separately).",
+        type=ConfigIDOrPath(),
+    )(fn)
     return fn
 
 
@@ -72,6 +80,7 @@ def _capture_options(fn: Callable) -> Callable:
 @_capture_options
 def capture(
     device_config: Path,
+    freq_mask_config: Optional[Path],
     output: Optional[Path],
     okwarg: Optional[dict],
     no_display: Optional[bool],
@@ -96,6 +105,11 @@ def capture(
         metadata_output = None
         binary_output = None
 
+    if freq_mask_config:
+        freq_mask_config = FreqencyMaskingConfig.from_any(freq_mask_config)
+    else:
+        freq_mask_config = None
+
     daq_inst.capture(
         source="fpga",
         video=video_output,
@@ -104,6 +118,7 @@ def capture(
         binary=binary_output,
         show_video=not no_display,
         show_metadata=metadata_display,
+        freq_mask_config=freq_mask_config,
     )
 
 
