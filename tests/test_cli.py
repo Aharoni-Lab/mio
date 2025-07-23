@@ -109,7 +109,7 @@ def test_cli_config_user_path(set_env, set_user_yaml):
     ],
 )
 def test_cli_capture(
-    freq_mask_config: str | None,
+    freq_mask_config,
     video_hash: str,
     tmp_path,
     set_okdev_input,

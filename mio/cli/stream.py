@@ -4,7 +4,7 @@ CLI commands for running streamDaq
 
 import os
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 import click
 
@@ -53,7 +53,6 @@ def _capture_options(fn: Callable) -> Callable:
         "passed as (potentially multiple) calls like\n\n"
         "mio stream capture -ok key1 val1 -ok key2 val2",
         multiple=True,
-        type=(str, Any),
     )(fn)
     fn = click.option("--no-display", is_flag=True, help="Don't show video in real time")(fn)
     fn = click.option("-b", "--binary_export", is_flag=True, help="Save binary to a .bin file")(fn)
