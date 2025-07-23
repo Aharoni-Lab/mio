@@ -81,10 +81,16 @@ class InvalidFrameDetector(BaseSingleFrameHelper):
         self.methods = noise_patch_config.method
 
         if "mean_error" in self.methods:
+            if noise_patch_config.mean_error_config is None:
+                raise ValueError("Mean error config must be provided for mean error detection")
             self.mse_detector = MSENoiseDetector(noise_patch_config.mean_error_config)
         if "gradient" in self.methods:
+            if noise_patch_config.gradient_config is None:
+                raise ValueError("Gradient config must be provided for gradient detection")
             self.gradient_detector = GradientNoiseDetector(noise_patch_config.gradient_config)
         if "black_area" in self.methods:
+            if noise_patch_config.black_area_config is None:
+                raise ValueError("Black area config must be provided for black area detection")
             self.black_detector = BlackAreaDetector(noise_patch_config.black_area_config)
 
     def find_invalid_area(self, frame: np.ndarray) -> Tuple[bool, np.ndarray]:
@@ -373,10 +379,15 @@ class FrequencyMaskHelper(BaseSingleFrameHelper):
 
         Parameters:
             img (np.ndarray): The image to process.
+            cast_f32 (bool): Cast the image to float32 before processing.
 
         Returns:
             np.ndarray: The filtered image
+
+        .. todo:: Confirm if the option for casting to float32 is necessary. See issue #104.
         """
+        if self._freq_mask_config.cast_float32:
+            img = img.astype(np.float32)
         f = np.fft.fft2(img)
         fshift = np.fft.fftshift(f)
 

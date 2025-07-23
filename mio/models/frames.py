@@ -49,12 +49,14 @@ class NamedFrame(NamedBaseFrame):
     def export(self, output_path: Union[Path, str], suffix: bool = False) -> None:
         """
         Export the frame data to a file.
+        The file name will be a concatenation of the output path and the name of the frame.
         """
         output_path = Path(output_path)
+        if self.frame is None:
+            logger.warning(f"No frame data provided for {self.name}. Skipping export.")
+            return
         if suffix:
             output_path = output_path.with_name(output_path.stem + f"_{self.name}")
-        if self.frame is None:
-            raise ValueError("No frame data provided.")
         cv2.imwrite(str(output_path.with_suffix(".png")), self.frame)
         logger.info(
             f"Writing frame to {output_path}.png: {self.frame.shape[1]}x{self.frame.shape[0]}"
@@ -62,7 +64,7 @@ class NamedFrame(NamedBaseFrame):
 
     def display(self, binary: bool = False) -> None:
         """
-        Display the frame data.
+        Display the frame data in a opencv window. Press ESC to close the window.
 
         Parameters
         ----------
@@ -70,7 +72,8 @@ class NamedFrame(NamedBaseFrame):
             If True, the frame will be scaled to the full range of uint8.
         """
         if self.frame is None:
-            raise ValueError("No frame data provided.")
+            logger.warning(f"No frame data provided for {self.name}. Skipping display.")
+            return
 
         frame_to_display = self.frame
         if binary:
@@ -99,17 +102,16 @@ class NamedVideo(NamedBaseFrame):
         """
         Export the frame data to a file.
         """
+        if self.video is None or self.video == []:
+            logger.warning(f"No frame data provided for {self.name}. Skipping export.")
+            return
         output_path = Path(output_path)
         if suffix:
             output_path = output_path.with_name(output_path.stem + f"_{self.name}")
-        if self.video is None:
-            raise ValueError("No frame data provided.")
         if not all(isinstance(frame, np.ndarray) for frame in self.video):
             raise ValueError("Not all frames are numpy arrays.")
-        writer = VideoWriter.init_video(
+        writer = VideoWriter(
             path=output_path.with_suffix(".avi"),
-            width=self.video[0].shape[1],
-            height=self.video[0].shape[0],
             fps=fps,
         )
         logger.info(
@@ -119,6 +121,6 @@ class NamedVideo(NamedBaseFrame):
         try:
             for frame in self.video:
                 picture = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-                writer.write(picture)
+                writer.write_frame(picture)
         finally:
-            writer.release()
+            writer.close()

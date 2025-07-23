@@ -53,11 +53,6 @@ class MSEDetectorConfig(BaseModel):
         "This is used in the mean_error method to compare frames"
         " in the units of data transfer buffers.",
     )
-    buffer_size: int = Field(
-        default=5032,
-        description="Size of the buffers composing the image."
-        "This premises that the noisy area will appear in units of buffer_size.",
-    )
     buffer_split: int = Field(
         default=1,
         description="Number of splits to make in the buffer when detecting noisy areas."
@@ -127,7 +122,8 @@ class NoisePatchConfig(BaseModel):
     )
     mean_error_config: Optional[MSEDetectorConfig] = Field(
         default=None,
-        description="Configuration for detecting invalid frames based on mean squared error.",
+        description="Configuration for detecting invalid frames based on mean squared error."
+        " Any positive value or zero is valid.",
     )
     gradient_config: Optional[GradientDetectorConfig] = Field(
         default=None,
@@ -167,6 +163,11 @@ class FreqencyMaskingConfig(BaseModel):
     enable: bool = Field(
         default=True,
         description="Enable frequency filtering.",
+    )
+    cast_float32: bool = Field(
+        default=False,
+        description="Cast the input video stream to float32 before processing."
+        "This is probably unnecessary and could be removed in the future.",
     )
     spatial_LPF_cutoff_radius: int = Field(
         default=...,

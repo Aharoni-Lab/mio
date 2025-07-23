@@ -80,10 +80,6 @@ class BaseVideoProcessor:
         """
         Export the video to a file.
         """
-        if not self.output_video:
-            logger.warning(f"No output video available for export in {self.name}. Skipping export.")
-            return
-
         if self.output_enable:
             logger.info(f"Exporting {self.name} video to {self.output_dir}")
             self.output_named_video.export(
@@ -187,9 +183,9 @@ class NoisePatchProcessor(BaseVideoProcessor):
         """
         Get the NamedFrame object for the difference frames.
         """
-        return NamedVideo(
-            name=f"diff_{self.noise_patch_config.diff_multiply}x", video=self.diff_frames
-        )
+        if not hasattr(self.noise_patch_config, "diff_multiply"):
+            diff_multiply = 1
+        return NamedVideo(name=f"diff_{diff_multiply}x", video=self.diff_frames)
 
     @property
     def noisy_frames_named_video(self) -> NamedVideo:
@@ -220,10 +216,6 @@ class NoisePatchProcessor(BaseVideoProcessor):
         """
         Export the difference frames to a file.
         """
-        if not self.diff_frames:
-            logger.info(f"No difference frames to export for {self.name}.")
-            return
-
         if self.noise_patch_config.output_diff:
             logger.info(f"Exporting {self.name} difference frames to {self.output_dir}")
             self.diff_frames_named_video.export(

@@ -5,17 +5,21 @@ to use composition for functionality and inheritance for semantics.
 
 import re
 import shutil
+import sys
 from importlib.metadata import version
 from itertools import chain
 from pathlib import Path
-from typing import Any, ClassVar, List, Literal, Optional, Type, TypeVar, Union, overload
+from typing import Any, ClassVar, List, Literal, Optional, Union, overload
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from mio.types import ConfigID, ConfigSource, PythonIdentifier, valid_config_id
 
-T = TypeVar("T")
+if sys.version_info < (3, 11):
+    from typing_extensions import Self
+else:
+    from typing import Self
 
 
 class YamlDumper(yaml.SafeDumper):
@@ -36,7 +40,7 @@ class YAMLMixin:
     """
 
     @classmethod
-    def from_yaml(cls: Type[T], file_path: Union[str, Path]) -> T:
+    def from_yaml(cls: Self, file_path: Union[str, Path]) -> Self:
         """Instantiate this class by passing the contents of a yaml file as kwargs"""
         with open(file_path) as file:
             config_data = yaml.safe_load(file)
@@ -87,7 +91,7 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
     HEADER_FIELDS: ClassVar[tuple[str]] = ("id", "mio_model", "mio_version")
 
     @classmethod
-    def from_yaml(cls: Type[T], file_path: Union[str, Path]) -> T:
+    def from_yaml(cls: Self, file_path: Union[str, Path]) -> Self:
         """Instantiate this class by passing the contents of a yaml file as kwargs"""
         with open(file_path) as file:
             config_data = yaml.safe_load(file)
@@ -109,7 +113,7 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
         return instance
 
     @classmethod
-    def from_id(cls: Type[T], id: ConfigID) -> T:
+    def from_id(cls: Self, id: ConfigID) -> Self:
         """
         Instantiate a model from a config `id` specified in one of the .yaml configs in
         either the user :attr:`.Config.config_dir` or the packaged ``config`` dir.
@@ -119,7 +123,7 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
             this method does not yet validate that the config matches the model loading it
 
         """
-        globs = [src.rglob("*.y*ml") for src in cls.config_sources]
+        globs = [src.rglob("*.y*ml") for src in cls.config_sources()]
         for config_file in chain(*globs):
             try:
                 file_id = yaml_peek("id", config_file)
@@ -138,7 +142,7 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
         raise KeyError(f"No config with id {id} found in {Config().config_dir}")
 
     @classmethod
-    def from_any(cls: Type[T], source: Union[ConfigSource, T]) -> T:
+    def from_any(cls: Self, source: Union[ConfigSource, Self]) -> Self:
         """
         Try and instantiate a config model from any supported constructor.
 
@@ -158,18 +162,20 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
         elif valid_config_id(source):
             return cls.from_id(source)
         else:
-            from mio import Config
-
             source = Path(source)
-            if source.suffix in (".yaml", ".yml"):
-                if source.exists():
-                    # either relative to cwd or absolute
-                    return cls.from_yaml(source)
-                elif (
-                    not source.is_absolute()
-                    and (user_source := Config().config_dir / source).exists()
-                ):
-                    return cls.from_yaml(user_source)
+            if source.suffix not in (".yaml", ".yml"):
+                raise ValueError(
+                    "If not instantiating from a config id, "
+                    "must pass a relative or absolute path to a yaml file. "
+                    f"Got {source}"
+                )
+            if source.exists():
+                # either relative to cwd or absolute
+                return cls.from_yaml(source)
+            elif not source.is_absolute():
+                for config_source in cls.config_sources():
+                    if (user_source := config_source / source).exists():
+                        return cls.from_yaml(user_source)
 
         raise ValueError(
             f"Instance of config model {cls.__name__} could not be instantiated from "
@@ -185,8 +191,7 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
         return v
 
     @classmethod
-    @property
-    def config_sources(cls: Type[T]) -> List[Path]:
+    def config_sources(cls) -> List[Path]:
         """
         Directories to search for config files, in order of priority
         such that earlier sources are preferred over later sources.
@@ -204,7 +209,7 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
         return f"{cls.__module__}.{cls.__name__}"
 
     @classmethod
-    def _yaml_header(cls, instance: Union[T, dict]) -> dict:
+    def _yaml_header(cls, instance: Union[Self, dict]) -> dict:
         if isinstance(instance, dict):
             model_id = instance.get("id", None)
             mio_model = instance.get("mio_model", cls._model_name())
@@ -228,7 +233,7 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
         }
 
     @classmethod
-    def _complete_header(cls: Type[T], data: dict, file_path: Union[str, Path]) -> dict:
+    def _complete_header(cls: Self, data: dict, file_path: Union[str, Path]) -> dict:
         """fill in any missing fields in the source file needed for a header"""
 
         missing_fields = set(cls.HEADER_FIELDS) - set(data.keys())
