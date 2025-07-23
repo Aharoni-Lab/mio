@@ -18,7 +18,7 @@ def test_binary_output(set_okdev_input, tmp_path):
     output_file = tmp_path / "output.bin"
 
     daq_inst = StreamDaq(device_config=daqConfig)
-    daq_inst.capture(source="fpga", binary=output_file, show_video=False)
+    daq_inst.capture(source="fpga", binary=output_file, show_video=True)
 
     assert output_file.exists()
 
@@ -48,3 +48,4 @@ def test_buffer_npix_calculation(buffer_block_length, block_size, pix_depth, exp
     calculated_npix = (daqConfig.buffer_block_length * daqConfig.block_size * 32) // daqConfig.pix_depth
 
     assert calculated_npix == expected_npix
+
