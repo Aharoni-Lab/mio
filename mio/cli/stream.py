@@ -67,7 +67,10 @@ def _capture_options(fn: Callable) -> Callable:
     fn = click.option(
         "-f",
         "--freq_mask_config",
-        help="Path to frequency masking config YAML file",
+        help="Path to, or ID of frequency masking config YAML file - "
+        "applies frequency masking to the displayed video, "
+        "but preserves raw video and does not modify the video output written to disk "
+        "(apply postprocessing separately).",
         type=ConfigIDOrPath(),
     )(fn)
     return fn
