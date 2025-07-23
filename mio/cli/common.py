@@ -5,7 +5,6 @@ Shared CLI utils
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from click import Context, Parameter, ParamType
 
@@ -19,7 +18,7 @@ class ConfigIDOrPath(ParamType):
 
     name = "config-id-or-path"
 
-    def convert(self, value: str, param: Optional[Parameter], ctx: Optional[Context]) -> str | Path:
+    def convert(self, value: str, param: Parameter | None, ctx: Context | None) -> str | Path:
         """
         If something looks like a yaml file, return as a path, otherwise return unchanged.
 
