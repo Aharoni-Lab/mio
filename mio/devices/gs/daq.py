@@ -22,7 +22,7 @@ def format_frame(frame_data: list[np.ndarray], config: GSDevConfig) -> np.ndarra
     """
     pixels = np.concatenate(frame_data)  # concatenates to 1xn
     print(len(pixels))
-    breakpoint()
+    # breakpoint()
     frame = pixels.reshape((config.frame_height+8, (config.frame_width))) #this is what is giving us the issue frame_width_input
     # strip training pixels
     frame = frame[:, 8:]

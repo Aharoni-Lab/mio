@@ -66,3 +66,9 @@ def test_buffer_to_array():
     byte_sequence = bytes([0xC0, 0x1C, 0x01, 0xC0, 0x1C, 0x01])
     sequence_16bit = buffer_to_array(byte_sequence)
     np.testing.assert_array_equal(sequence_16bit,np.array([512, 512, 512, 512]))
+
+def test_format_frames():
+    """Here I want to compare the size of the list of buffers that is going into the data and the format-frame method."""
+
+    empty_list = np.zeros(24, dtype=np.uint32)  # or np.int32
+

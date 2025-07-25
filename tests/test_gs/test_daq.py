@@ -88,7 +88,6 @@ def test_format_headers_raw(gs_raw_buffers):
         print(list_of_headers)
         print(list_of_pixels)
 
-        breakpoint()
     reconstructed = format_frame(list_of_pixels, config)
     assert reconstructed.shape == (config.frame_height, config.frame_width)
         # breakpoint()
