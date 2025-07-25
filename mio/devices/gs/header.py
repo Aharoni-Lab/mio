@@ -8,8 +8,8 @@ if sys.version_info >= (3, 11):
 else:
     from typing_extensions import Self
 
+
 import numpy as np
-import logging
 
 from mio.models.stream import StreamBufferHeader, StreamBufferHeaderFormat
 
@@ -38,7 +38,7 @@ def buffer_to_array(buffer: bytes) -> np.ndarray:
     padded = np.pad(stripped, ((0, 0), (6, 0)), mode="constant", constant_values=0)
     packed_16bit = np.packbits(padded, axis=1).view(np.uint16).byteswap()
 
-    return packed_16bit.flatten()
+    return packed_16bit.flatten() # original
 
 
 class GSBufferHeader(StreamBufferHeader):
@@ -65,12 +65,14 @@ class GSBufferHeader(StreamBufferHeader):
         cls, buffer: bytes, header_fmt: "GSBufferHeaderFormat", config: "GSDevConfig"
     ) -> tuple[Self, np.ndarray]:
         """Split buffer into a :class:`.GSBufferHeader` and a 1D, 16-bit pixel array."""
-        header_start = len(config.preamble) * config.dummy_words
-        header_end = header_start + (header_fmt.header_length * 4)
+        header_start = len(config.preamble)
+        header_end =  header_start + ((header_fmt.header_length)*4) # = 44 ((384-32)/32)  = 11
         header_array = np.frombuffer(buffer[header_start:header_end], dtype=np.uint32)
+        # print(header_end, header_array)
         header = cls.from_format(header_array, header_fmt, construct=True)
-        payload = buffer_to_array(buffer[header_end+1:]) # added +1 for header end+1
-
+        payload = buffer_to_array(buffer[header_end:])
+        # print(len(header_array), len(buffer[header_end:]))
+        # breakpoint()
         return header, payload
 
 

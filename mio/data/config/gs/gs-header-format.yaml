@@ -1,16 +1,15 @@
 id: gs-buffer-header
 mio_model: mio.devices.gs.header.GSBufferHeaderFormat
 mio_version: "v5.0.0"
-linked_list: 1 # good
-frame_num: 7 # good
-buffer_count: 3 # good 
-frame_buffer_count: 4 # good 
-write_buffer_count: 5 # good
-timestamp: 2 # good\
-pixel_count: 8 # not needed yet
+linked_list: 0
+frame_num: 1
+buffer_count: 2
+frame_buffer_count: 3
+write_buffer_count: 4
+dropped_buffer_count: 5
+timestamp: 6
+write_timestamp: 8
+pixel_count: 7
+battery_voltage_raw: 9
+input_voltage_raw: 10
 
-# these are wrong, are these actually output by the gs?
-dropped_buffer_count: 9 # parent class: optional, remove it in parent class and only have it in other classes
-write_timestamp: 10 #
-battery_voltage_raw: 11
-input_voltage_raw: 12

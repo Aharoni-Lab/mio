@@ -150,6 +150,7 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+gs_test_raw_50_brightDark.bin
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
@@ -162,6 +163,3 @@ wirefree_example.avi
 .pdm-python
 .python-version
 
-*.avi
-*.bin
-*.csv
