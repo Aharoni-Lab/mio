@@ -45,7 +45,7 @@ def test_format_headers_raw(gs_raw_buffers):
 
     for i, buffer in enumerate(gs_raw_buffers):
         header, pixels = GSBufferHeader.from_buffer(buffer, header_fmt=format, config=config)
-        breakpoint()
+        # breakpoint()
         #assert len(buffer) == num_of_words_in_buffer / size_of_word, f"Buffer {i} length is not correct"
         # assert len(pixels) % device_px_bitdepth == 0, f"Buffer {i} length is not a multiple of {device_px_bitdepth}"
 
@@ -59,3 +59,10 @@ def test_format_headers_raw(gs_raw_buffers):
     # can parse the header to find out why its not working.
     # dont need to display the images in the test pythons, but maybe generate the .avi file from the binary input
 
+from mio.devices.gs.header import buffer_to_array
+def test_buffer_to_array():
+    """Checking to see if a 12x4 (4 12 bit pixels) converts to a known value in our buffer_2_array fxn"""
+
+    byte_sequence = bytes([0xC0, 0x1C, 0x01, 0xC0, 0x1C, 0x01])
+    sequence_16bit = buffer_to_array(byte_sequence)
+    np.testing.assert_array_equal(sequence_16bit,np.array([512, 512, 512, 512]))

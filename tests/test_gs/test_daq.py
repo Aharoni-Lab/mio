@@ -78,12 +78,17 @@ def test_format_headers_raw(gs_raw_buffers):
     size_of_word = 32
     device_px_bitdepth = 12
     list_of_pixels = [];
+    list_of_headers = []
     for i, buffer in enumerate(gs_raw_buffers):
         # this extracts header and pixels
         header, pixels = GSBufferHeader.from_buffer(buffer, header_fmt=format, config=config)
         # add the pixels value to a list of buffers
+        list_of_headers.append(header)
         list_of_pixels.append(pixels)
-        # print(header, (pixels))
-    reconstructed = format_frame(list_of_pixels, config)
+        print(list_of_headers)
+        print(list_of_pixels)
 
+        breakpoint()
+    reconstructed = format_frame(list_of_pixels, config)
+    assert reconstructed.shape == (config.frame_height, config.frame_width)
         # breakpoint()
