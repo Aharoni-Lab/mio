@@ -15,7 +15,7 @@ from mio.plots.headers import StreamPlotter
 from mio.stream_daq import StreamDaq
 from mio.types import ConfigSource
 
-
+# testing here:
 def format_frame(frame_data: list[np.ndarray], config: GSDevConfig) -> np.ndarray:
     """
     Convert a list of 1D pixel arrays into a full frame, stripping the leading "training" pixels
