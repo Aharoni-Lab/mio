@@ -16,7 +16,7 @@ def test_format_frames():
     frame = patterned_frame(width=config.frame_width, height=config.frame_height, pattern="sequential")
     buffers = frame_to_naneye_buffers(frame)
 
-    processed = [GSBufferHeader.from_buffer(buf, header_fmt=format, config=config) for buf in buffers]
+    header, processed = [GSBufferHeader.from_buffer(buf, header_fmt=format, config=config) for buf in buffers]
     pixels = [p[1] for p in processed]
 
     reconstructed = format_frame(pixels, config)
@@ -57,7 +57,7 @@ def test_image_decoder():
     frame = patterned_frame(width=config.frame_width, height=config.frame_height, pattern="sequential")
     buffers = frame_to_naneye_buffers(frame)
 
-    processed = [GSBufferHeader.from_buffer(buf, header_fmt=format, config=config) for buf in buffers]
+    header, processed = [GSBufferHeader.from_buffer(buf, header_fmt=format, config=config) for buf in buffers]
     pixels = [p[1] for p in processed]
 
     reconstructed = format_frame(pixels, config)
@@ -87,7 +87,32 @@ def test_format_headers_raw(gs_raw_buffers):
         list_of_pixels.append(pixels)
         print(list_of_headers)
         print(list_of_pixels)
-
+    # breakpoint()
     reconstructed = format_frame(list_of_pixels, config)
     assert reconstructed.shape == (config.frame_height, config.frame_width)
         # breakpoint()
+
+def test_full_headers_raw(gs_raw_buffers):
+
+    """
+    Use the fixutres and previously recorded .bin files to find full frames and insert into the format_headers method.
+    """
+    format = GSBufferHeaderFormat.from_id("gs-buffer-header")
+    config = GSDevConfig.from_id("MSUS-test")
+
+    list_of_pixels = [];
+    list_of_headers = []
+    for i, buffer in enumerate(gs_raw_buffers):
+        # this extracts header and pixels
+        header, pixels = GSBufferHeader.from_buffer(buffer, header_fmt=format, config=config)
+        # add the pixels value to a list of buffers
+        list_of_headers.append(header)
+        list_of_pixels.append(pixels)
+        print(pixels.shape)
+        # print(header.shape)
+        # breakpoint()
+    frame_pixels = list_of_pixels[:10]  # 11 elements
+
+    print(list_of_headers.__sizeof__())
+    print(list_of_pixels.__sizeof__())
+    reconstructed = format_frame(frame_pixels, config)

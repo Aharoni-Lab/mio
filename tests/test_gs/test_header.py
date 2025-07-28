@@ -45,6 +45,7 @@ def test_format_headers_raw(gs_raw_buffers):
 
     for i, buffer in enumerate(gs_raw_buffers):
         header, pixels = GSBufferHeader.from_buffer(buffer, header_fmt=format, config=config)
+        print(header)
         # breakpoint()
         #assert len(buffer) == num_of_words_in_buffer / size_of_word, f"Buffer {i} length is not correct"
         # assert len(pixels) % device_px_bitdepth == 0, f"Buffer {i} length is not a multiple of {device_px_bitdepth}"

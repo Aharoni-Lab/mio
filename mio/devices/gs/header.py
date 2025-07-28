@@ -71,7 +71,7 @@ class GSBufferHeader(StreamBufferHeader):
         # print(header_end, header_array)
         header = cls.from_format(header_array, header_fmt, construct=True)
         payload = buffer_to_array(buffer[header_end:])
-        # print(len(header_array), len(buffer[header_end:]))
+        print(len(header_array), len(buffer[header_end:]))
         # breakpoint()
         return header, payload
 
