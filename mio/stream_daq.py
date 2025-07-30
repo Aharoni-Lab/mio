@@ -353,22 +353,19 @@ class StreamDaq:
                         locallogs,
                     )
                 except IndexError:
-                    locallogs.warning(
+                    locallogs.exception(
                         f"Frame {header_data.frame_num}; Buffer {header_data.buffer_count} "
                         f"(#{header_data.frame_buffer_count} in frame)\n"
                         f"Frame buffer count {header_data.frame_buffer_count} "
                         f"exceeds buffer number per frame {len(self.buffer_npix)}\n"
-                        f"Discarding buffer."
+                        f"Discarding buffer.\n"
+                        f"-- THERE IS AN ERROR IN YOUR CONFIGURATION CAUSING YOU TO LOSE DATA --\n"
+                        f"If you are seeing this emitted on every frame, "
+                        f"The device is sending more buffers per frame than expected based on "
+                        f"the configured frame width, height, and buffer size. "
+                        f"You must fix the configuration such that it matches the data being sent "
+                        f"by the device."
                     )
-                    if header_list:
-                        try:
-                            frame_buffer_queue.put(
-                                (None, header_list),
-                                block=True,
-                                timeout=self.config.runtime.queue_put_timeout,
-                            )
-                        except queue.Full:
-                            locallogs.warning("Frame buffer queue full, skipping frame.")
                     continue
 
                 # if first buffer of a frame
