@@ -618,11 +618,14 @@ class StreamDaq:
             )
 
         if metadata:
-            self._buffered_writer = BufferedCSVWriter(
-                metadata, buffer_size=self.config.runtime.csvwriter.buffer
+            header_items = self.header_fmt.model_dump(
+                exclude_none=True, exclude=set(self.header_fmt.HEADER_FIELDS)
             )
-            self._buffered_writer.append(
-                list(StreamBufferHeader.model_fields.keys()) + ["unix_time"]
+            header_items = sorted(header_items.items(), key=lambda x: x[1])
+            header_cols = [h[0] for h in header_items]
+            header_cols.append("unix_time")
+            self._buffered_writer = BufferedCSVWriter(
+                metadata, header=header_cols, buffer_size=self.config.runtime.csvwriter.buffer
             )
 
         try:
@@ -706,9 +709,9 @@ class StreamDaq:
                 if metadata:
                     self.logger.debug("Saving header metadata")
                     try:
-                        self._buffered_writer.append(
-                            list(header.model_dump(warnings=False).values()) + [time.time()]
-                        )
+                        meta_row = header.model_dump(warnings=False)
+                        meta_row["unix_time"] = time.time()
+                        self._buffered_writer.append(meta_row)
                     except Exception as e:
                         self.logger.exception(f"Exception saving headers: \n{e}")
         if image is None or image.size == 0:
