@@ -30,6 +30,7 @@ preamble: 0x78563412 # new preamble
 frame_width: 320  # 328 * 12 PP, with the extra 8 coming from the start_of_frame sequence
 frame_height: 320 # 320 lines total
 pix_depth: 10 # pixel depth, or, pixel period
+max_pixels_per_buffer: 10000
 
 # Buffer data format. These have to match the firmware value
 header_len: 384 # 12 * 32 (in bits)
@@ -51,11 +52,11 @@ adc_scale:
   vin_div_factor: 11.3
 
 runtime:
-  serial_buffer_queue_size: 10
-  frame_buffer_queue_size: 5
-  image_buffer_queue_size: 5
+  serial_buffer_queue_size: 50
+  frame_buffer_queue_size: 50
+  image_buffer_queue_size: 50
   csv:
-    buffer: 100
+    buffer: 5
   plot:
     keys:
       - timestamp

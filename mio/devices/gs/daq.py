@@ -23,7 +23,7 @@ def format_frame(frame_data: list[np.ndarray], config: GSDevConfig) -> np.ndarra
     pixels = np.concatenate(frame_data)  # concatenates to 1xn
     print(len(pixels))
     # breakpoint()
-    frame = pixels.reshape((config.frame_height+8, (config.frame_width))) #this is what is giving us the issue frame_width_input
+    frame = pixels.reshape((config.frame_height, (config.frame_width + 8))) #this is what is giving us the issue frame_width_input
     # strip training pixels
     frame = frame[:, 8:]
 
@@ -72,12 +72,8 @@ class GSStreamDaq(StreamDaq):
     def buffer_npix(self) -> list[int]:
         """List of pixels per buffer for a frame includes unprocessed data"""
         if self._buffer_npix is None:
-            total_pixels = self.config.frame_width_input * self.config.frame_height
-            buffer_npix = [self.config.max_pixels_per_buffer] * np.ceil(total_pixels / self.config.max_pixels_per_buffer)
-            remainder = total_pixels % self.config.max_pixels_per_buffer
-            if remainder != 0:
-                buffer_npix[-1] = remainder
-            self._buffer_npix = buffer_npix
+            self._buffer_npix = self.config.buffer_npix
+
         return self._buffer_npix
 
     def _format_frame_inner(self, frame_data: list[np.ndarray]) -> np.ndarray:

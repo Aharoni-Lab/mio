@@ -300,7 +300,11 @@ class StreamDaq:
         # determine length
         if read_length is None:
             read_length = int(max(self.buffer_npix) * self.config.pix_depth / 8 / 16) * 16
-
+            locallogs.warning(
+                f"Read Length {read_length}; "
+            f"buffer_npix  {self.buffer_npix}; "
+            f"pix depth  {self.config.pix_depth}; ")
+        locallogs.debug(read_length)
         # set up fpga devices
         BIT_FILE = self.config.bitstream
         if not BIT_FILE.exists():
@@ -364,6 +368,9 @@ class StreamDaq:
         cur_fm_num = -1  # Frame number
 
         frame_buffer_prealloc = [np.zeros(bufsize, dtype=np.uint8) for bufsize in self.buffer_npix]
+        locallogs.warning(
+            f"buffer size {self.buffer_npix}; ")
+
         frame_buffer = frame_buffer_prealloc.copy()
         header_list = []
 
@@ -371,7 +378,7 @@ class StreamDaq:
             for serial_buffer in exact_iter(serial_buffer_queue.get, None):
                 header_data, serial_buffer = self._parse_header(serial_buffer)
                 header_list.append(header_data)
-
+                locallogs.info(f"header data {header_data}")
                 try:
                     serial_buffer = self._trim(
                         serial_buffer,
@@ -380,6 +387,7 @@ class StreamDaq:
                         locallogs,
                     )
                 except IndexError:
+                    # breakpoint()
                     locallogs.warning(
                         f"Frame {header_data.frame_num}; Buffer {header_data.buffer_count} "
                         f"(#{header_data.frame_buffer_count} in frame)\n"

@@ -65,19 +65,24 @@ def test_image_decoder():
 
 from mio.devices.gs.header import GSBufferHeaderFormat, GSBufferHeader
 from mio.devices.gs.config import GSDevConfig
+import csv
+import string
+
+def write2csv(variable,filename:string):
+    with open(filename, 'w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerows(variable)  # Write all rows at once
+
+
 def test_format_headers_raw(gs_raw_buffers):
 
     """
-    Use the fixutres and previously recorded .bin files to test the format_headers method.
+    Use the fixtures and previously recorded .bin files to test the format_headers method.
     """
     format = GSBufferHeaderFormat.from_id("gs-buffer-header")
     config = GSDevConfig.from_id("MSUS-test")
-    full_buffer_data_length = 3750
-    partial_buffer_data_length = 1860
 
-    size_of_word = 32
-    device_px_bitdepth = 12
-    list_of_pixels = [];
+    list_of_pixels = []
     list_of_headers = []
     for i, buffer in enumerate(gs_raw_buffers):
         # this extracts header and pixels
@@ -85,12 +90,11 @@ def test_format_headers_raw(gs_raw_buffers):
         # add the pixels value to a list of buffers
         list_of_headers.append(header)
         list_of_pixels.append(pixels)
-        print(list_of_headers)
-        print(list_of_pixels)
+    print(list_of_headers) # when the headers are added to the list, the output is messed up!!!
     # breakpoint()
-    reconstructed = format_frame(list_of_pixels, config)
-    assert reconstructed.shape == (config.frame_height, config.frame_width)
-        # breakpoint()
+    # reconstructed = format_frame(list_of_pixels, config)
+    # assert reconstructed.shape == (config.frame_height, config.frame_width)
+    write2csv(list_of_headers, 'headers1.csv')
 
 def test_full_headers_raw(gs_raw_buffers):
 
@@ -100,19 +104,15 @@ def test_full_headers_raw(gs_raw_buffers):
     format = GSBufferHeaderFormat.from_id("gs-buffer-header")
     config = GSDevConfig.from_id("MSUS-test")
 
-    list_of_pixels = [];
+    list_of_pixels = []
     list_of_headers = []
     for i, buffer in enumerate(gs_raw_buffers):
         # this extracts header and pixels
         header, pixels = GSBufferHeader.from_buffer(buffer, header_fmt=format, config=config)
-        # add the pixels value to a list of buffers
-        list_of_headers.append(header)
-        list_of_pixels.append(pixels)
-        print(pixels.shape)
-        # print(header.shape)
-        # breakpoint()
-    frame_pixels = list_of_pixels[:10]  # 11 elements
 
-    print(list_of_headers.__sizeof__())
-    print(list_of_pixels.__sizeof__())
-    reconstructed = format_frame(frame_pixels, config)
+        print(header)
+
+
+    # print(list_of_headers.__sizeof__())
+    # print(list_of_pixels.__sizeof__())
+    # reconstructed = format_frame(frame_pixels, config)

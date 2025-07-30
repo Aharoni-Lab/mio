@@ -40,7 +40,7 @@ class BufferedCSVWriter:
         The buffer for storing rows before writing.
     """
 
-    def __init__(self, file_path: Union[str, Path], buffer_size: int = 100):
+    def __init__(self, file_path: Union[str, Path], buffer_size: int = 5):
         self.file_path: Path = Path(file_path)
         self.buffer_size = buffer_size
         self.buffer = []

@@ -26,12 +26,14 @@ def test_binary_output(set_okdev_input, tmp_path):
 
 from mio.stream_daq import StreamDaq
 
-def test_buffer_npix_calculation(buffer_block_length, block_size, pix_depth, expected_npix):
+def test_buffer_npix_calculation(buffer_block_length: object, block_size: object, pix_depth: object, expected_npix: object) -> None:
     """
     Test that the number of pixels per buffer is correctly calculated
     based on buffer structure parameters.
     """
     # Create a minimal config for testing
+    daqConfig = GSDevConfig.from_id("MSUS-test")
+
     config_data = {
         "device": "OK",
         "frame_width": 320,
@@ -43,7 +45,6 @@ def test_buffer_npix_calculation(buffer_block_length, block_size, pix_depth, exp
         "pix_depth": pix_depth,
         "num_buffers": 11,
     }
-    daqConfig = GSDevConfig.from_id("MSUS-test")
     # Calculate pixels per buffer
     calculated_npix = (daqConfig.buffer_block_length * daqConfig.block_size * 32) // daqConfig.pix_depth
 
