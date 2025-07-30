@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 
 import multiprocessing
+import numpy as np
 import os
 import pytest
 import pandas as pd
@@ -111,12 +112,46 @@ def test_csv_output(tmp_path, default_streamdaq, write_metadata, caplog):
         # but it's a pretty weak test.
         assert df.shape == (910, 12)
 
+        # the underlying csv should have the same number of column headers as data columsn
+        # if there is a mismatch, the index will turn into a multi-index
+        assert isinstance(df.index, pd.RangeIndex)
+
+        # we should have the same columns in the same order as our header format
+        col_names = df.columns.to_list()
+        expected = default_streamdaq.header_fmt.model_dump(exclude_none=True, exclude=set(default_streamdaq.header_fmt.HEADER_FIELDS))
+        expected = [h[0] for h in sorted(expected.items(), key=lambda x: x[1])] + ['unix_time']
+        assert col_names == expected
+
         # ensure there were no errors during capture
         for record in caplog.records:
             assert "Exception saving headers" not in record.msg
     else:
         default_streamdaq.capture(source="fpga", metadata=None, show_video=False)
         assert not output_csv.exists()
+
+def test_csv_no_duplicates(tmp_path, set_okdev_input):
+    """
+    Regression test for a bug where header rows would be written multiple times when
+    buffer_npix was miscalculated and the buffer_list wasn't cleared after being put in the
+    queue multiple times.
+    """
+    bad_buffer_npix = [5072, 5072, 5072, 5072]
+    output_csv = tmp_path / "output.csv"
+
+    daqConfig = StreamDevConfig.from_id("test-wireless-200px")
+
+    data_file = DATA_DIR / "stream_daq_test_fpga_raw_input_200px.bin"
+    set_okdev_input(data_file)
+
+    daq_inst = StreamDaq(device_config=daqConfig)
+    daq_inst._buffer_npix = bad_buffer_npix
+
+    assert daq_inst.buffer_npix == bad_buffer_npix
+    daq_inst.capture(source="fpga", metadata=output_csv, show_video=False)
+    assert daq_inst.buffer_npix == bad_buffer_npix
+    df = pd.read_csv(output_csv)
+    vals, counts = np.unique(df.buffer_count, return_counts=True)
+    assert all([c == 1 for c in counts]), "Duplicated buffer indexes found, rows being written twice"
 
 
 # This is a helper function for test_continuous_and_termination() that is currently skipped
