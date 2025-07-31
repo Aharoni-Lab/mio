@@ -42,7 +42,7 @@ def test_format_headers_raw(gs_raw_buffers):
     for i, buffer in enumerate(gs_raw_buffers):
         header, pixels = GSBufferHeader.from_buffer(buffer, header_fmt=format, config=config)
         print(header)
-        # breakpoint()
+        breakpoint()
         # assert len(buffer) == num_of_words_in_buffer / size_of_word, f"Buffer {i} length is not correct"
         # assert len(pixels) % device_px_bitdepth == 0, f"Buffer {i} length is not a multiple of {device_px_bitdepth}"
 
@@ -89,6 +89,7 @@ def test_buffer_to_array_8bit():
     byte_sequence = bytes([0xC0, 0x1C, 0x01, 0xC0, 0x1C, 0x01])
     sequence_8bit = buffer_to_array(byte_sequence)
     print(sequence_8bit)
+    np.testing.assert_array_equal(sequence_8bit,np.array([512, 512, 512, 512]))
     breakpoint()
 
 def test_format_frames():

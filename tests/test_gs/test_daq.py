@@ -102,16 +102,19 @@ def test_full_headers_raw(gs_raw_buffers):
     Use the fixutres and previously recorded .bin files to find full frames and insert into the format_headers method.
     """
     format = GSBufferHeaderFormat.from_id("gs-buffer-header")
-    config = GSDevConfig.from_id("MSUS-test")
+    config = GSDevConfig.from_id("MSUS")
 
     list_of_pixels = []
     list_of_headers = []
+    frame = []
     for i, buffer in enumerate(gs_raw_buffers):
         # this extracts header and pixels
         header, pixels = GSBufferHeader.from_buffer(buffer, header_fmt=format, config=config)
-
+        frame = pixels.append()
         print(header)
-
+    reconstructed = format_frame(frame, config)
+    assert reconstructed.shape == (config.frame_height, config.frame_width)
+    breakpoint()
 
     # print(list_of_headers.__sizeof__())
     # print(list_of_pixels.__sizeof__())

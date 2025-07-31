@@ -26,10 +26,9 @@ def buffer_to_array(buffer: bytes) -> np.ndarray:
     Strip the pads, and return a 16-bit ndarray
     """
     # convert to a binary array
-    binary = np.unpackbits(np.frombuffer(buffer, dtype=np.uint8))
-
+    binary_data = np.unpackbits(np.frombuffer(buffer, dtype=np.uint8))
     # reshape to be n x 12
-    pixel_cols = binary.reshape((-1, 12))
+    pixel_cols = binary_data.reshape((-1, 12))
 
     # remove padding pixels (12 bit x n --> 10 bit x n)
     stripped = pixel_cols[:, 1:-1]
@@ -76,9 +75,10 @@ class GSBufferHeader(StreamBufferHeader):
         header_array = np.frombuffer(buffer[header_start:header_end], dtype=np.uint32)
         # print(header_end, header_array)
         header = cls.from_format(header_array, header_fmt, construct=True)
-        payload = buffer_to_array(buffer[header_end:-384]) # ignoring the last 384 bytes
-        print(len(header_array), len(buffer[header_end:]))
-        breakpoint()
+        # payload = buffer_to_array(buffer[header_end:])  # original
+        payload = buffer_to_array(buffer[header_end:-48]) # ignoring the last 384 bits
+        # print(len(header_array), len(buffer[header_end:]))
+        # breakpoint()
         return header, payload
 
 
