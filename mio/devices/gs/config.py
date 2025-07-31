@@ -15,7 +15,7 @@ class GSDevConfig(StreamDevConfig):
     # preamble: Annotated[bytes, Len(min_length=12, max_length=12)]
     # """Example docstring"""
     # pix_depth: Literal[10] = 10
-    max_pixels_per_buffer: int =  10000 # 100320 # calculated from length of each full buffer
+    max_pixels_per_buffer: int =  9996 # 100320 # calculated from length of each full buffer
 
     model_config = ConfigDict(validate_default=True)
 

@@ -30,7 +30,7 @@ preamble: 0x78563412 # new preamble
 frame_width: 320  # 328 * 12 PP, with the extra 8 coming from the start_of_frame sequence
 frame_height: 320 # 320 lines total
 pix_depth: 10 # pixel depth, or, pixel period
-max_pixels_per_buffer: 10000
+max_pixels_per_buffer: 9996
 
 # Buffer data format. These have to match the firmware value
 header_len: 384 # 12 * 32 (in bits)
