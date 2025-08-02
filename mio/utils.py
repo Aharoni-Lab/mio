@@ -64,6 +64,7 @@ def hash_video(
 
     return h.hexdigest()
 
+
 def file_iter(path: Path, read_size: int) -> Iterator[bytes]:
     """Iterator to read chunks of `read_size` bytes from a file"""
     with open(path, "rb") as f:
@@ -72,4 +73,3 @@ def file_iter(path: Path, read_size: int) -> Iterator[bytes]:
             yield data
             if len(data) != read_size:
                 break
-

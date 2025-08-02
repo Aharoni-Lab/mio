@@ -48,3 +48,17 @@ def test_format_headers_raw(gs_raw_buffers):
     for pixel_arrays in frame_buffers.values():
         reconstructed = format_frame(pixel_arrays, config)
         assert reconstructed.shape == (config.frame_height, config.frame_width)
+
+
+@pytest.mark.parametrize(
+    "binary_input,thresh_low,thresh_high", [("gs_test_raw_15_brightDark.bin", 50, 256)]
+)
+def test_format_frame(binary_input, thresh_low, thresh_high):
+    """
+    Assuming the preceding steps work (tested elsewhere),
+    `format_frame` correctly reconstructs a 16-bit frame from a set of 1D pixel arrays.
+
+    We use a raw sample from the device where the sensor is covered for the first few frames,
+    and then exposed to bright light in the last few to generate "known input,"
+    since the device is not capable of generating a test pattern.
+    """
