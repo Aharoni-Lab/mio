@@ -15,6 +15,7 @@ from mio.plots.headers import StreamPlotter
 from mio.stream_daq import StreamDaq
 from mio.types import ConfigSource
 
+
 # testing here:
 def format_frame(frame_data: list[np.ndarray], config: GSDevConfig) -> np.ndarray:
     """
@@ -23,12 +24,13 @@ def format_frame(frame_data: list[np.ndarray], config: GSDevConfig) -> np.ndarra
     pixels = np.concatenate(frame_data)  # concatenates to 1xn
     print(len(pixels))
     # breakpoint()
-    frame = pixels.reshape((config.frame_height, (config.frame_width + 8))) #this is what is giving us the issue frame_width_input
+    frame = pixels.reshape(
+        (config.frame_height, (config.frame_width + 8))
+    )  # this is what is giving us the issue frame_width_input
     # strip training pixels
     frame = frame[:, 8:]
 
     return frame
-
 
 
 class GSStreamDaq(StreamDaq):
@@ -78,9 +80,6 @@ class GSStreamDaq(StreamDaq):
 
     def _format_frame_inner(self, frame_data: list[np.ndarray]) -> np.ndarray:
         return format_frame(frame_data, self.config)
-
-
-
 
     def _handle_frame(
         self,

@@ -37,8 +37,7 @@ def buffer_to_array(buffer: bytes) -> np.ndarray:
     padded = np.pad(stripped, ((0, 0), (6, 0)), mode="constant", constant_values=0)
     packed_16bit = np.packbits(padded, axis=1).view(np.uint16).byteswap()
 
-    return packed_16bit.flatten() # original
-
+    return packed_16bit.flatten()  # original
 
     # Cast to 8 bit ndarray
     # stripped_8bit = stripped[:, :-2]     # remove final two pixels (10 bit x n --> 8 bit x n)
@@ -71,10 +70,12 @@ class GSBufferHeader(StreamBufferHeader):
     ) -> tuple[Self, np.ndarray]:
         """Split buffer into a :class:`.GSBufferHeader` and a 1D, 16-bit pixel array."""
         header_start = len(config.preamble)
-        header_end =  header_start + ((header_fmt.header_length)*4) # = 44 ((384-32)/32)  = 11
+        header_end = header_start + ((header_fmt.header_length) * 4)  # = 44 ((384-32)/32)  = 11
         header_array = np.frombuffer(buffer[header_start:header_end], dtype=np.uint32)
         header = cls.from_format(header_array, header_fmt, construct=True)
-        payload = buffer_to_array(buffer[header_end:-48]) # ignoring the last 384 bits, can change after dummy is detected
+        payload = buffer_to_array(
+            buffer[header_end:-48]
+        )  # ignoring the last 384 bits, can change after dummy is detected
         return header, payload
 
 

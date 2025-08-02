@@ -299,11 +299,14 @@ class StreamDaq:
             )
         # determine length soon
         if read_length is None:
-            read_length = int(max(self.buffer_npix) * self.config.pix_depth / 8 / 16) * 16 # original
+            read_length = (
+                int(max(self.buffer_npix) * self.config.pix_depth / 8 / 16) * 16
+            )  # original
             locallogs.warning(
                 f"Read Length {read_length}; "
-            f"buffer_npix  {self.buffer_npix}; "
-            f"pix depth  {self.config.pix_depth}; ")
+                f"buffer_npix  {self.buffer_npix}; "
+                f"pix depth  {self.config.pix_depth}; "
+            )
         locallogs.debug(read_length)
         # set up fpga devices
         BIT_FILE = self.config.bitstream
@@ -368,8 +371,7 @@ class StreamDaq:
         cur_fm_num = -1  # Frame number
 
         frame_buffer_prealloc = [np.zeros(bufsize, dtype=np.uint8) for bufsize in self.buffer_npix]
-        locallogs.warning(
-            f"buffer size {self.buffer_npix}; ")
+        locallogs.warning(f"buffer size {self.buffer_npix}; ")
 
         frame_buffer = frame_buffer_prealloc.copy()
         header_list = []
@@ -859,7 +861,3 @@ if __name__ == "__main__":
         stacklevel=1,
     )
     sys.exit(1)
-
-
-class GSStreamDaq:
-    pass
