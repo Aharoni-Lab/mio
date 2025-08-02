@@ -17,7 +17,7 @@ def test_binary_output(set_okdev_input, tmp_path):
     output_file = tmp_path / "output.bin"
 
     daq_inst = StreamDaq(device_config=daqConfig)
-    daq_inst.capture(source="fpga", binary=output_file, show_video=True)
+    daq_inst.capture(source="fpga", binary=output_file, show_video=False)
 
     assert output_file.exists()
 
