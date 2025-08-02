@@ -364,8 +364,6 @@ class StreamDaq:
         cur_fm_num = -1  # Frame number
 
         frame_buffer_prealloc = [np.zeros(bufsize, dtype=np.uint8) for bufsize in self.buffer_npix]
-        locallogs.warning(f"buffer size {self.buffer_npix}; ")
-
         frame_buffer = frame_buffer_prealloc.copy()
         header_list = []
 
