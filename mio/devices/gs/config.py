@@ -28,6 +28,7 @@ class GSDevConfig(StreamDevConfig):
         """12 bit raw processed to 10 bit pixel values"""
         return self.pix_depth + 2
 
+# streamdaq not being overridden
     @property
     def buffer_npix(self) -> list[int]:
         """
