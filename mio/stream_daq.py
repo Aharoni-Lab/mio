@@ -371,7 +371,6 @@ class StreamDaq:
             for serial_buffer in exact_iter(serial_buffer_queue.get, None):
                 header_data, serial_buffer = self._parse_header(serial_buffer)
                 header_list.append(header_data)
-
                 try:
                     serial_buffer = self._trim(
                         serial_buffer,
@@ -851,7 +850,3 @@ if __name__ == "__main__":
         stacklevel=1,
     )
     sys.exit(1)
-
-
-class GSStreamDaq:
-    pass

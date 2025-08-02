@@ -1,7 +1,10 @@
 from pickle import FRAME
+from collections import defaultdict
+
+import pytest
 
 from mio.devices.gs import testing
-from mio.devices.gs.header import GSBufferHeaderFormat, GSBufferHeader
+from mio.devices.gs.header import GSBufferHeaderFormat, GSBufferHeader, buffer_to_array
 from mio.devices.gs.config import GSDevConfig
 from mio.devices.gs.daq import format_frame
 
@@ -33,23 +36,13 @@ def test_format_headers_synthetic():
         assert all([diffed in (1, 2, -((2**10)-1)) for diffed in pix_diff])
 
 
-
+@pytest.mark.skip("Test doesn't do anything - make it actually test something!")
 def test_format_headers_raw(gs_raw_buffers):
     format = GSBufferHeaderFormat.from_id("gs-buffer-header")
-    config = GSDevConfig.from_id("MSUS-test")
-    # breakpoint() # to ensure the data is correct
-    # this is now the header and the RAW pixels
-    num_of_words_in_buffer = 3750
-    size_of_word = 32
-    device_px_bitdepth = 12
+    config = GSDevConfig.from_id("MSUS")
 
     for i, buffer in enumerate(gs_raw_buffers):
         header, pixels = GSBufferHeader.from_buffer(buffer, header_fmt=format, config=config)
-        print(header)
-        # breakpoint()
-        #assert len(buffer) == num_of_words_in_buffer / size_of_word, f"Buffer {i} length is not correct"
-        # assert len(pixels) % device_px_bitdepth == 0, f"Buffer {i} length is not a multiple of {device_px_bitdepth}"
-
 
 
     # todo: confirm the structure of header and pixels (HINT: see test_format_frames)
@@ -60,16 +53,30 @@ def test_format_headers_raw(gs_raw_buffers):
     # can parse the header to find out why its not working.
     # dont need to display the images in the test pythons, but maybe generate the .avi file from the binary input
 
-from mio.devices.gs.header import buffer_to_array
+
+def test_buffer_npix(gs_raw_buffers):
+    format = GSBufferHeaderFormat.from_id("gs-buffer-header")
+    config = GSDevConfig.from_id("MSUS")
+    frame_buffers = defaultdict(list)
+
+    for i, buffer in enumerate(gs_raw_buffers):
+        header, pixels = GSBufferHeader.from_buffer(buffer, header_fmt=format, config=config)
+        frame_buffers[header.frame_num].append(pixels)
+
+    # discard first and last which may be incomplete in the sample
+    frames = list(frame_buffers.keys())
+    del frame_buffers[frames[0]]
+    del frame_buffers[frames[-1]]
+
+    for frame_num, pixels in frame_buffers.items():
+        pixel_lengths = [len(p) for p in pixels]
+        assert pixel_lengths == config.buffer_npix
+
+
+
 def test_buffer_to_array():
     """Checking to see if a 12x4 (4 12 bit pixels) converts to a known value in our buffer_2_array fxn"""
 
     byte_sequence = bytes([0xC0, 0x1C, 0x01, 0xC0, 0x1C, 0x01])
     sequence_16bit = buffer_to_array(byte_sequence)
-    np.testing.assert_array_equal(sequence_16bit,np.array([512, 512, 512, 512]))
-
-def test_format_frames():
-    """Here I want to compare the size of the list of buffers that is going into the data and the format-frame method."""
-
-    empty_list = np.zeros(24, dtype=np.uint32)  # or np.int32
-
+    assert np.array_equal(sequence_16bit, np.array([512, 512, 512, 512]))

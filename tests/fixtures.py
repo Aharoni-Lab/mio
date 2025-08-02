@@ -267,10 +267,8 @@ def gs_raw_buffers() -> Generator[bytes, None, None]:
     from mio.stream_daq import iter_buffers
     from mio.devices.gs.config import GSDevConfig
     from .conftest import DATA_DIR
-    # gs_data = DATA_DIR / "gs_test_raw.bin"
-    # gs_data = DATA_DIR / "gs_test_raw_15_brightDark.bin" # gs_data = DATA_DIR / "gs_test_raw_50_brightDark.bin"
-    gs_data = DATA_DIR / "gs_test_raw_15_brightDark_config_10000pixLim.bin" # gs_data = DATA_DIR / "gs_test_raw_50_brightDark.bin"
 
+    gs_data = DATA_DIR / "gs_test_raw_15_brightDark.bin"
     config: GSDevConfig = GSDevConfig.from_id("MSUS-test")
 
 

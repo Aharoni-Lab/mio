@@ -10,7 +10,7 @@ from bitstring import BitArray, Bits
 from typing import Generator
 
 from mio import BASE_DIR
-from mio.stream_daq import StreamDevConfig, StreamDaq, iter_buffers, GSStreamDaq
+from mio.stream_daq import StreamDevConfig, StreamDaq, iter_buffers
 from mio.utils import hash_video, hash_file
 from .conftest import DATA_DIR
 import pytest
@@ -61,7 +61,7 @@ def test_video_output(
     data_file = DATA_DIR / data
     set_okdev_input(data_file)
 
-    daq_inst = GSStreamDaq(device_config=daqConfig)
+    daq_inst = StreamDaq(device_config=daqConfig)
     daq_inst.capture(source="fpga", video=output_video, show_video=show_video)
 
     assert output_video.exists()
