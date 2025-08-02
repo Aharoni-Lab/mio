@@ -292,7 +292,6 @@ class StreamDaq:
             except queue.Full:
                 locallogs.error("Serial buffer queue full, Could not put sentinel.")
 
-
     def _buffer_to_frame(
         self,
         serial_buffer_queue: multiprocessing.Queue,
