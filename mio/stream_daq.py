@@ -297,7 +297,7 @@ class StreamDaq:
             raise RuntimeError(
                 "Couldnt import OpalKelly device. Check the docs for install instructions!"
             )
-        # determine length
+        # determine length soon
         if read_length is None:
             read_length = int(max(self.buffer_npix) * self.config.pix_depth / 8 / 16) * 16 # original
             # read_length = int(max(self.config.buffer_npix) * (self.config.pix_depth+2 )/ 8 / 16) * 16 # corrected
