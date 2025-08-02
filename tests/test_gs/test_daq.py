@@ -122,7 +122,7 @@ def test_full_headers_raw(gs_raw_buffers):
     # print(list_of_pixels.__sizeof__())
     # reconstructed = format_frame(frame_pixels, config)
 
-
+# here defining a new test for dark images:
 def bin_image_generator(gs_raw_buffers):
     """
     Use the fixutres and previously recorded .bin files to find full frames and insert into the format_headers method.
