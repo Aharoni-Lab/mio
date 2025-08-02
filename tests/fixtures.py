@@ -266,21 +266,14 @@ def set_config(request) -> Callable[[dict[str, Any]], Path]:
 def gs_raw_buffers() -> Generator[bytes, None, None]:
     from mio.stream_daq import iter_buffers
     from mio.devices.gs.config import GSDevConfig
+    from mio.utils import file_iter
     from .conftest import DATA_DIR
 
     gs_data = DATA_DIR / "gs_test_raw_15_brightDark.bin"
+
     config: GSDevConfig = GSDevConfig.from_id("MSUS-test")
 
-
-    def _file_iter(path, read_size):
-        with open(path, "rb") as f:
-            while True:
-                data = f.read(read_size)
-                yield data
-                if len(data) != read_size:
-                    break
-
-    file_iterator = _file_iter(gs_data, 2048)
+    file_iterator = file_iter(gs_data, 2048)
 
     return iter_buffers(file_iterator, Bits(config.preamble))
 
