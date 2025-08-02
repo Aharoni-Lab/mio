@@ -13,6 +13,9 @@ from mio.devices.opalkelly import okDev
 from mio.stream_daq import iter_buffers
 from mio.types import ConfigSource
 
+DUMMY_WORD = b"\xcc\xcc\x00\xff"
+"""Values added between each buffer to calibrate the manchester encoding"""
+
 
 def patterned_frame(width: int = 320, height: int = 328, pattern: str = "sequence") -> np.ndarray:
     """
@@ -155,22 +158,6 @@ def create_serialized_frame_data(
     return full_buffers, partial_buffer
 
 
-def verify_buffer_structure(full_buffers: List[np.ndarray], partial_buffer: np.ndarray) -> None:
-    """
-    Verify that the buffer structure matches the requirements.
-    """
-    print(f"Number of full buffers: {len(full_buffers)}")
-    print(f"Size of each full buffer: {[len(buf) for buf in full_buffers]}")
-    print(f"Size of partial buffer: {len(partial_buffer)}")
-    print(f"Total 32-bit values: {sum(len(buf) for buf in full_buffers) + len(partial_buffer)}")
-
-    # Calculate expected total based on 12-bit packing
-    total_pixels = 328 * 320  # 104960 pixels
-    # 8 pixels pack into 3 32-bit values
-    expected_32bit_values = (total_pixels * 3) // 8
-    print(f"Expected 32-bit values for 12-bit packing: {expected_32bit_values}")
-
-
 def frame_to_naneye_buffers(
     frame: Optional[np.ndarray] = None, buffer_size: int = 3750
 ) -> list[bytes]:
@@ -220,7 +207,7 @@ def frame_to_naneye_buffers(
     split = [binarized[i : i + buffer_size, :] for i in range(0, binarized.shape[0], buffer_size)]
 
     # convert to bytes
-    buffer_bytes = [np.packbits(arr.flatten()).tobytes() for arr in split]
+    buffer_bytes: list[bytes] = [np.packbits(arr.flatten()).tobytes() for arr in split]
 
     # create headers
     fmt = GSBufferHeaderFormat.from_id("gs-buffer-header")
@@ -230,11 +217,11 @@ def frame_to_naneye_buffers(
 
     # concat preamble and dummy words and cast to bytes
     config = GSDevConfig.from_id("MSUS-test")
-    preamble = config.preamble * config.dummy_words
-    header_bytes = [preamble + h.view(np.uint8).tobytes() for h in headers]
+    header_bytes = [config.preamble + h.view(np.uint8).tobytes() for h in headers]
 
-    # combine header and pixel buffers
-    buffers = [header + buffer for header, buffer in zip(header_bytes, buffer_bytes)]
+    # combine header and pixel buffers, add dummy suffix
+    dummy_suffix = DUMMY_WORD * config.dummy_words
+    buffers = [header + buffer + dummy_suffix for header, buffer in zip(header_bytes, buffer_bytes)]
     return buffers
 
 

@@ -1,5 +1,6 @@
+from collections import defaultdict
 from mio.devices.gs.daq import format_frame
-from mio.devices.gs.testing import patterned_frame, frame_to_naneye_buffers, create_serialized_frame_data, verify_buffer_structure
+from mio.devices.gs.testing import patterned_frame, frame_to_naneye_buffers, create_serialized_frame_data
 from mio.devices.gs.header import GSBufferHeaderFormat, GSBufferHeader
 from mio.devices.gs.config import GSDevConfig
 import numpy as np
@@ -17,43 +18,7 @@ def test_format_frames():
     frame = patterned_frame(width=config.frame_width, height=config.frame_height, pattern="sequential")
     buffers = frame_to_naneye_buffers(frame)
 
-    header, processed = [GSBufferHeader.from_buffer(buf, header_fmt=format, config=config) for buf in buffers]
-    pixels = [p[1] for p in processed]
-
-    reconstructed = format_frame(pixels, config)
-    assert np.array_equal(frame, reconstructed)
-
-
-def test_12_bit_formatted_frames():
-    """
-    Our format frame method should receive the 1-dimensional pixel buffers
-    processed by parsing the headers (tested separately in `test_header`),
-    and reassemble it to the original frame.
-    """
-    full_buffers, partial_buffer = create_serialized_frame_data(pattern="cross")
-    verify_buffer_structure(full_buffers, partial_buffer)
-
-    # Show some sample data
-    print(len(full_buffers), len(partial_buffer))
-    print(f"First few values of buffer 0: {full_buffers[0][:5]}")
-    print(f"First few values of partial buffer: {partial_buffer[:5]}")
-
-
-def test_image_decoder():
-    """
-    Test the decoding process of an image using various decoders and verify
-    the output compared to expected results.
-
-    Raises:
-        AssertionError: If decoded output or process validation fails.
-    """
-    format = GSBufferHeaderFormat.from_id("gs-buffer-header")
-    config = GSDevConfig.from_id("MSUS-test")
-
-    frame = patterned_frame(width=config.frame_width, height=config.frame_height, pattern="sequential")
-    buffers = frame_to_naneye_buffers(frame)
-
-    header, processed = [GSBufferHeader.from_buffer(buf, header_fmt=format, config=config) for buf in buffers]
+    processed = [GSBufferHeader.from_buffer(buf, header_fmt=format, config=config) for buf in buffers]
     pixels = [p[1] for p in processed]
 
     reconstructed = format_frame(pixels, config)
@@ -67,14 +32,19 @@ def test_format_headers_raw(gs_raw_buffers):
     format = GSBufferHeaderFormat.from_id("gs-buffer-header")
     config = GSDevConfig.from_id("MSUS-test")
 
-    list_of_pixels = []
-    list_of_headers = []
+
+    frame_buffers = defaultdict(list)
     for i, buffer in enumerate(gs_raw_buffers):
         # this extracts header and pixels
         header, pixels = GSBufferHeader.from_buffer(buffer, header_fmt=format, config=config)
         # add the pixels value to a list of buffers
-        list_of_headers.append(header)
-        list_of_pixels.append(pixels)
+        frame_buffers[header.frame_num].append(pixels)
 
-    reconstructed = format_frame(list_of_pixels, config)
-    assert reconstructed.shape == (config.frame_height, config.frame_width)
+    # discard first and last which may be incomplete in the sample
+    frames = list(frame_buffers.keys())
+    del frame_buffers[frames[0]]
+    del frame_buffers[frames[-1]]
+
+    for pixel_arrays in frame_buffers.values():
+        reconstructed = format_frame(pixel_arrays, config)
+        assert reconstructed.shape == (config.frame_height, config.frame_width)
