@@ -299,7 +299,8 @@ class StreamDaq:
             )
         # determine length
         if read_length is None:
-            read_length = int(max(self.buffer_npix) * self.config.pix_depth / 8 / 16) * 16
+            read_length = int(max(self.buffer_npix) * self.config.pix_depth / 8 / 16) * 16 # original
+            # read_length = int(max(self.config.buffer_npix) * (self.config.pix_depth+2 )/ 8 / 16) * 16 # corrected
             locallogs.warning(
                 f"Read Length {read_length}; "
             f"buffer_npix  {self.buffer_npix}; "

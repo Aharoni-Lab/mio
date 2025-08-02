@@ -68,6 +68,7 @@ def test_buffer_npix(gs_raw_buffers):
     frames = list(frame_buffers.keys())
     del frame_buffers[frames[0]]
     del frame_buffers[frames[-1]]
+    breakpoint()
     for frame_num, pixels in frame_buffers.items():
         pixel_lengths = [len(p) for p in pixels]
         assert pixel_lengths == config.buffer_npix

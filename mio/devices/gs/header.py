@@ -73,12 +73,8 @@ class GSBufferHeader(StreamBufferHeader):
         header_start = len(config.preamble)
         header_end =  header_start + ((header_fmt.header_length)*4) # = 44 ((384-32)/32)  = 11
         header_array = np.frombuffer(buffer[header_start:header_end], dtype=np.uint32)
-        # print(header_end, header_array)
         header = cls.from_format(header_array, header_fmt, construct=True)
-        # payload = buffer_to_array(buffer[header_end:])  # original
-        payload = buffer_to_array(buffer[header_end:-48]) # ignoring the last 384 bits
-        # print(len(header_array), len(buffer[header_end:]))
-        # breakpoint()
+        payload = buffer_to_array(buffer[header_end:-48]) # ignoring the last 384 bits, can change after dummy is detected
         return header, payload
 
 
