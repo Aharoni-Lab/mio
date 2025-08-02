@@ -8,14 +8,10 @@ from mio.models.stream import StreamDevConfig
 
 
 class GSDevConfig(StreamDevConfig):
-    # preamble: Annotated[bytes, Len(min_length=12, max_length=12)]
-    """Sets the hard-limits of the Miniscope"""
-    pix_depth: int = 12
+    """Device config for an unknown, mystery microscope"""
 
-    # preamble: Annotated[bytes, Len(min_length=12, max_length=12)]
-    # """Example docstring"""
-    # pix_depth: Literal[10] = 10
-    max_pixels_per_buffer: int = 10000  # 100320 # calculated from length of each full buffer
+    pix_depth: int = 12
+    max_pixels_per_buffer: int = 10000
 
     model_config = ConfigDict(validate_default=True)
 
@@ -29,7 +25,6 @@ class GSDevConfig(StreamDevConfig):
         """12 bit raw processed to 10 bit pixel values"""
         return self.pix_depth + 2
 
-    # streamdaq not being overridden
     @property
     def buffer_npix(self) -> list[int]:
         """

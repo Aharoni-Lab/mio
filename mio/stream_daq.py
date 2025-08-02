@@ -297,17 +297,10 @@ class StreamDaq:
             raise RuntimeError(
                 "Couldnt import OpalKelly device. Check the docs for install instructions!"
             )
-        # determine length soon
+        # determine length
         if read_length is None:
-            read_length = (
-                int(max(self.buffer_npix) * self.config.pix_depth / 8 / 16) * 16
-            )  # original
-            locallogs.warning(
-                f"Read Length {read_length}; "
-                f"buffer_npix  {self.buffer_npix}; "
-                f"pix depth  {self.config.pix_depth}; "
-            )
-        locallogs.debug(read_length)
+            read_length = int(max(self.buffer_npix) * self.config.pix_depth / 8 / 16) * 16
+
         # set up fpga devices
         BIT_FILE = self.config.bitstream
         if not BIT_FILE.exists():
@@ -380,7 +373,6 @@ class StreamDaq:
             for serial_buffer in exact_iter(serial_buffer_queue.get, None):
                 header_data, serial_buffer = self._parse_header(serial_buffer)
                 header_list.append(header_data)
-                locallogs.info(f"header data {header_data}")
                 try:
                     serial_buffer = self._trim(
                         serial_buffer,
@@ -389,7 +381,6 @@ class StreamDaq:
                         locallogs,
                     )
                 except IndexError:
-                    # breakpoint()
                     locallogs.warning(
                         f"Frame {header_data.frame_num}; Buffer {header_data.buffer_count} "
                         f"(#{header_data.frame_buffer_count} in frame)\n"

@@ -21,12 +21,9 @@ def format_frame(frame_data: list[np.ndarray], config: GSDevConfig) -> np.ndarra
     """
     Convert a list of 1D pixel arrays into a full frame, stripping the leading "training" pixels
     """
-    pixels = np.concatenate(frame_data)  # concatenates to 1xn
-    print(len(pixels))
-    # breakpoint()
-    frame = pixels.reshape(
-        (config.frame_height, (config.frame_width + 8))
-    )  # this is what is giving us the issue frame_width_input
+    pixels = np.concatenate(frame_data)
+    frame = pixels.reshape((config.frame_height, config.frame_width_input))
+
     # strip training pixels
     frame = frame[:, 8:]
 
