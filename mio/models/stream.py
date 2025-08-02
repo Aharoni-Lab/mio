@@ -299,6 +299,8 @@ class StreamDevConfig(MiniscopeConfig, ConfigYAMLMixin):
     adc_scale: Optional[ADCScaling] = ADCScaling()
     runtime: StreamDevRuntime = StreamDevRuntime()
 
+    _px_per_buffer: int = None
+
     @field_validator("preamble", mode="before")
     def preamble_to_bytes(cls, value: Union[str, bytes, int]) -> bytes:
         """
@@ -336,3 +338,18 @@ class StreamDevConfig(MiniscopeConfig, ConfigYAMLMixin):
                 value.exists()
             ), f"Configured to use bitstream file {value}, but it does not exist"
         return value
+
+    @property
+    def px_per_buffer(self) -> int:
+        """
+        Number of pixels per buffer
+        """
+
+        px_per_word = 32 / self.pix_depth
+        if self._px_per_buffer is None:
+            self._px_per_buffer = (
+                self.buffer_block_length * self.block_size
+                - self.header_len / self.pix_depth
+                - px_per_word * self.dummy_words
+            )
+        return self._px_per_buffer

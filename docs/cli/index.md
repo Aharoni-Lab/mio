@@ -7,6 +7,7 @@ config
 device
 stream
 update
+process
 ```
 
 Refer to the following page for details regarding ``stream_daq`` device config files.

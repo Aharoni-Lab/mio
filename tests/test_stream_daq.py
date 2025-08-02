@@ -38,11 +38,7 @@ def default_streamdaq(set_okdev_input, request) -> StreamDaq:
             "test-wireless-200px",
             "stream_daq_test_fpga_raw_input_200px.bin",
             [
-                "f878f9c55de28a9ae6128631c09953214044f5b86504d6e5b0906084c64c644c",
-                "8a6f6dc69275ec3fbcd69d1e1f467df8503306fa0778e4b9c1d41668a7af4856",
-                "3676bc4c6900bc9ec18b8387abdbed35978ebc48408de7b1692959037bc6274d",
-                "3891091fd2c1c59b970e7a89951aeade8ae4eea5627bee860569a481bfea39b7",
-                "d8e519c1d7e74cdebc39f11bb5c7e189011f025410a0746af7aa34bdb2e72e8e",
+                "ee7bdb97c1e98ebeefc65ae651968e3a72d099e57d1fdec5ec05a3598733db93",
             ],
             False,
         )

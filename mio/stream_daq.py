@@ -14,13 +14,12 @@ from typing import Any, Callable, Generator, List, Literal, Optional, Tuple, Uni
 
 import cv2
 import numpy as np
-import serial
 from bitstring import BitArray, Bits
 
 from mio import init_logger
 from mio.devices.mocks import okDevMock
 from mio.exceptions import EndOfRecordingException, StreamReadError
-from mio.io import BufferedCSVWriter
+from mio.io import BufferedCSVWriter, VideoWriter
 from mio.models.stream import (
     StreamBufferHeader,
     StreamBufferHeaderFormat,
@@ -31,6 +30,8 @@ from mio.types import ConfigSource
 
 HAVE_OK = False
 ok_error = None
+BIT_PER_WORD = 32
+
 try:
     from mio.devices.opalkelly import okDev
 
@@ -195,51 +196,6 @@ class StreamDaq:
 
         return data
 
-    def _uart_recv(
-        self, serial_buffer_queue: multiprocessing.Queue, comport: str, baudrate: int
-    ) -> None:
-        """
-        Receive buffers and push into serial_buffer_queue.
-        Currently not supported.
-
-        Parameters
-        ----------
-        serial_buffer_queue : multiprocessing.Queue
-            _description_
-        comport : str
-            _description_
-        baudrate : int
-            _description_
-        """
-        pre_bytes = self.preamble.tobytes()
-        if self.config.reverse_header_bits:
-            pre_bytes = bytes(bytearray(pre_bytes)[::-1])
-
-        # set up serial port
-        serial_port = serial.Serial(port=comport, baudrate=baudrate, timeout=5, stopbits=1)
-        self.logger.info("Serial port open: " + str(serial_port.name))
-
-        # Throw away the first buffer because it won't fully come in
-        uart_bites = serial_port.read_until(pre_bytes)
-        log_uart_buffer = BitArray([x for x in uart_bites])
-
-        try:
-            while not self.terminate.is_set():
-                # read UART data until preamble and put into queue
-                uart_bites = serial_port.read_until(pre_bytes)
-                log_uart_buffer = [x for x in uart_bites]
-                try:
-                    serial_buffer_queue.put(
-                        log_uart_buffer, block=True, timeout=self.config.runtime.queue_put_timeout
-                    )
-                except queue.Full:
-                    self.logger.warning("Serial buffer queue full, skipping buffer.")
-        finally:
-            time.sleep(1)  # time for ending other process
-            serial_port.close()
-            self.logger.info("Close serial port")
-            sys.exit(1)
-
     def _init_okdev(self, BIT_FILE: Path, read_length: int) -> Union[okDev, okDevMock]:
         # FIXME: when multiprocessing bug resolved, remove this and just mock in tests
         if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("STREAMDAQ_MOCKRUN"):
@@ -247,7 +203,6 @@ class StreamDaq:
         else:
             dev = okDev(read_length=read_length)
 
-        self.logger.info("after of device init")
         dev.upload_bit(str(BIT_FILE))
         dev.set_wire(0x00, 0b0010)
         time.sleep(0.01)
@@ -255,7 +210,6 @@ class StreamDaq:
         dev.set_wire(0x00, 0b1000)
         time.sleep(0.01)
         dev.set_wire(0x00, 0b0)
-        self.logger.info("end of device init")
         return dev
 
     def _fpga_recv(
@@ -338,6 +292,7 @@ class StreamDaq:
             except queue.Full:
                 locallogs.error("Serial buffer queue full, Could not put sentinel.")
 
+
     def _buffer_to_frame(
         self,
         serial_buffer_queue: multiprocessing.Queue,
@@ -371,6 +326,7 @@ class StreamDaq:
             for serial_buffer in exact_iter(serial_buffer_queue.get, None):
                 header_data, serial_buffer = self._parse_header(serial_buffer)
                 header_list.append(header_data)
+
                 try:
                     serial_buffer = self._trim(
                         serial_buffer,
@@ -529,36 +485,6 @@ class StreamDaq:
         frame = np.reshape(frame_data, (self.config.frame_width, self.config.frame_height))
         return frame
 
-    def init_video(
-        self, path: Union[Path, str], fourcc: str = "Y800", **kwargs: dict
-    ) -> cv2.VideoWriter:
-        """
-        Create a parameterized video writer
-
-        Parameters
-        ----------
-        frame_buffer_queue : multiprocessing.Queue[list[bytes]]
-            Input buffer queue.
-        path : Union[Path, str]
-            Video file to write to
-        fourcc : str
-            Fourcc code to use
-        kwargs : dict
-            passed to :class:`cv2.VideoWriter`
-
-        Returns:
-        ---------
-            :class:`cv2.VideoWriter`
-        """
-        if isinstance(path, str):
-            path = Path(path)
-
-        fourcc = cv2.VideoWriter_fourcc(*fourcc)
-        frame_rate = self.config.fs
-        frame_size = (self.config.frame_width, self.config.frame_height)
-        out = cv2.VideoWriter(str(path), fourcc, frame_rate, frame_size, **kwargs)
-        return out
-
     def alive_processes(self) -> List[multiprocessing.Process]:
         """
         Return a list of alive processes.
@@ -643,12 +569,12 @@ class StreamDaq:
         else:
             raise ValueError(f"source can be one of uart or fpga. Got {source}")
 
-        # Video output
         writer = None
         if video:
-            if video_kwargs is None:
-                video_kwargs = {}
-            writer = self.init_video(video, **video_kwargs)
+            writer = VideoWriter(
+                path=video,
+                fps=self.config.fs,
+            )
 
         p_buffer_to_frame = multiprocessing.Process(
             target=self._buffer_to_frame,
@@ -718,7 +644,7 @@ class StreamDaq:
             self.terminate.set()
         finally:
             if writer:
-                writer.release()
+                writer.close()
                 self.logger.debug("VideoWriter released")
             if show_video:
                 cv2.destroyAllWindows()
@@ -732,7 +658,7 @@ class StreamDaq:
             # Should never happen except during a force quit, as we wait for all
             # queues to drain, and if they don't do so on their own, it's a bug.
             for p in [p_recv, p_buffer_to_frame, p_format_frame]:
-                p.join(timeout=1)
+                p.join(timeout=5)
                 if p.is_alive():
                     self.logger.warning(f"Termination timeout: force terminating process {p.name}.")
                     p.terminate()
@@ -744,7 +670,7 @@ class StreamDaq:
         image: np.ndarray,
         header_list: list[StreamBufferHeader],
         show_video: bool,
-        writer: Optional[cv2.VideoWriter],
+        writer: Optional[VideoWriter],
         show_metadata: bool,
         metadata: Optional[Path] = None,
     ) -> None:
@@ -783,8 +709,7 @@ class StreamDaq:
                 self.logger.exception(f"Error displaying frame: {e}")
         if writer:
             try:
-                picture = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)  # If your image is grayscale
-                writer.write(picture)
+                writer.write_frame(image)
             except cv2.error as e:
                 self.logger.exception(f"Exception writing frame: {e}")
 
