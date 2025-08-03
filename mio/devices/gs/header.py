@@ -36,8 +36,13 @@ def buffer_to_array(buffer: bytes) -> np.ndarray:
     # Cast to 16 bit ndarray
     padded = np.pad(stripped, ((0, 0), (6, 0)), mode="constant", constant_values=0)
     packed_16bit = np.packbits(padded, axis=1).view(np.uint16).byteswap()
+    # breakpoint()
+    # return packed_16bit.flatten()
 
-    return packed_16bit.flatten()
+    stripped_8bit = stripped[:, :-2]
+    packed_8bit =  np.packbits(stripped_8bit, axis=1).flatten()
+    return packed_8bit
+
 
 
 class GSBufferHeader(StreamBufferHeader):
