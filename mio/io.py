@@ -188,7 +188,6 @@ class BufferedCSVWriter:
             keys that are not in `header` are ignored, and missing keys are `None`
         """
         row = [data.get(key) for key in self.header]
-        row = [int(value) if isinstance(value, np.generic) else value for value in row]
         self.buffer.append(row)
         if len(self.buffer) >= self.buffer_size:
             self.flush_buffer()
