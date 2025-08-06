@@ -12,6 +12,7 @@ import time
 from contextlib import contextmanager
 from bitstring import BitArray, Bits
 from typing import Generator
+import warnings
 
 from mio import BASE_DIR
 from mio.stream_daq import StreamDevConfig, StreamDaq, iter_buffers
@@ -128,6 +129,35 @@ def test_csv_output(tmp_path, default_streamdaq, write_metadata, caplog):
     else:
         default_streamdaq.capture(source="fpga", metadata=None, show_video=False)
         assert not output_csv.exists()
+
+def test_processing_speed(tmp_path, default_streamdaq):
+    """
+    Processing speed test of the stream daq.
+    For being generous for runs in CI, the test will pass if the processing speed is faster than the test_fail_fps.
+    This will output a warning if it is slower than the warning_fps.
+    """
+    test_fail_fps = 10
+    warning_fps = 40
+    output_csv = tmp_path / "output.csv"
+
+    default_streamdaq.capture(source="fpga", metadata=output_csv, show_video=False)
+
+    df = pd.read_csv(output_csv)
+
+    unix_time_first = df.iloc[0]['unix_time']
+    unix_time_last = df.iloc[-1]['unix_time']
+    time_taken = unix_time_last - unix_time_first
+
+    frame_index_first = df.iloc[0]['frame_num']
+    frame_index_last = df.iloc[-1]['frame_num']
+    num_frames = frame_index_last - frame_index_first
+
+    processing_fps = num_frames / time_taken
+
+    if processing_fps < warning_fps:
+        warnings.warn(f"Processing speed is {processing_fps} FPS, which is slower than the required {warning_fps} FPS")
+
+    assert processing_fps > test_fail_fps
 
 def test_csv_no_duplicates(tmp_path, set_okdev_input):
     """
