@@ -179,9 +179,15 @@ class StreamDaq:
             # trim if too long
             if data.shape[0] > expected_data_size:
                 data = data[0:expected_data_size]
+                header.runtime_metadata.black_padding_px = 0  # No padding, data was trimmed
             # pad if too short
             else:
-                data = np.pad(data, (0, expected_data_size - data.shape[0]))
+                padding_amount = expected_data_size - data.shape[0]
+                data = np.pad(data, (0, padding_amount))
+                header.runtime_metadata.black_padding_px = padding_amount
+        else:
+            # No trimming or padding needed
+            header.runtime_metadata.black_padding_px = 0
 
         return data
 
@@ -625,7 +631,7 @@ class StreamDaq:
             )
             header_items = sorted(header_items.items(), key=lambda x: x[1])
             header_cols = [h[0] for h in header_items]
-            
+
             runtime_fields = list(RuntimeMetadata.model_fields.keys())
             header_cols.extend(runtime_fields)
             self._buffered_writer = BufferedCSVWriter(
@@ -714,8 +720,8 @@ class StreamDaq:
                     self.logger.debug("Saving header metadata")
                     try:
                         meta_row = header.model_dump(warnings=False)
-                        if 'runtime_metadata' in meta_row and meta_row['runtime_metadata']:
-                            runtime_data = meta_row.pop('runtime_metadata')
+                        if "runtime_metadata" in meta_row and meta_row["runtime_metadata"]:
+                            runtime_data = meta_row.pop("runtime_metadata")
                             meta_row.update(runtime_data)
                         self._buffered_writer.append(meta_row)
                     except Exception as e:
