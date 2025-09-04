@@ -22,6 +22,7 @@ from mio.devices.mocks import okDevMock
 from mio.exceptions import EndOfRecordingException, StreamReadError
 from mio.io import BufferedCSVWriter, VideoWriter
 from mio.models.stream import (
+    ReconstructionMetadata,
     StreamBufferHeader,
     StreamBufferHeaderFormat,
     StreamDevConfig,
@@ -119,6 +120,7 @@ class StreamDaq:
         self._nbuffer_per_fm: Optional[int] = None
         self._buffered_writer: Optional[BufferedCSVWriter] = None
         self._header_plotter: Optional[StreamPlotter] = None
+        self._buffer_recv_index: int = 0
 
     @property
     def buffer_npix(self) -> List[int]:
@@ -306,7 +308,11 @@ class StreamDaq:
 
         header_data = StreamBufferHeader.from_format(header.astype(int), self.header_fmt)
         header_data.adc_scaling = self.config.adc_scale
-
+        header_data.reconstruction_metadata = ReconstructionMetadata(
+            buffer_recv_index=self._buffer_recv_index,
+            buffer_recv_timestamp=time.time(),
+        )
+        self._buffer_recv_index += 1
         return header_data, payload
 
     def _buffer_to_frame(
