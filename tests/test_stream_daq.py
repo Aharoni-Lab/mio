@@ -149,8 +149,8 @@ def test_processing_speed(tmp_path, default_streamdaq):
 
     df = pd.read_csv(output_csv)
 
-    unix_time_first = df.iloc[0]['unix_time']
-    unix_time_last = df.iloc[-1]['unix_time']
+    unix_time_first = df.iloc[0]['buffer_recv_unix_time']
+    unix_time_last = df.iloc[-1]['buffer_recv_unix_time']
     time_taken = unix_time_last - unix_time_first
 
     frame_index_first = df.iloc[0]['frame_num']
