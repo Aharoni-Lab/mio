@@ -497,11 +497,11 @@ class StreamDaq:
                     frame = np.zeros(
                         (self.config.frame_width, self.config.frame_height), dtype=np.uint8
                     )
-                
+
                 # Populate frame_index for all headers in this frame
                 for header in header_list:
                     header.runtime_metadata.frame_index = frame_index_counter
-                
+
                 try:
                     imagearray.put(
                         (frame, header_list),
@@ -510,7 +510,7 @@ class StreamDaq:
                     )
                 except queue.Full:
                     locallogs.warning("Image array queue full, skipping frame.")
-                
+
                 frame_index_counter += 1
         finally:
             locallogs.debug("Quitting, putting sentinel in queue")
