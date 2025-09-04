@@ -318,6 +318,7 @@ class StreamDaq:
             buffer_recv_index=self._buffer_recv_index,
             buffer_recv_unix_time=time.time(),
             black_padding_px=-1,
+            frame_index=-1,
         )
         self._buffer_recv_index += 1
         return header_data, payload
@@ -458,10 +459,14 @@ class StreamDaq:
             Output image array queue.
         """
         locallogs = init_logger("streamDaq.frame")
+        frame_index_counter = 0
         try:
             for frame_data, header_list in exact_iter(frame_buffer_queue.get, None):
 
                 if not frame_data or len(frame_data) == 0:
+                    # Keep frame_index as -1 for empty/invalid frames
+                    for header in header_list:
+                        header.runtime_metadata.frame_index = -1
                     try:
                         imagearray.put(
                             (None, header_list),
@@ -470,6 +475,7 @@ class StreamDaq:
                         )
                     except queue.Full:
                         locallogs.warning("Image array queue full, skipping frame.")
+                    # Don't increment frame_index_counter for empty frames
                     continue
                 frame_data = np.concatenate(frame_data, axis=0)
 
@@ -491,6 +497,11 @@ class StreamDaq:
                     frame = np.zeros(
                         (self.config.frame_width, self.config.frame_height), dtype=np.uint8
                     )
+                
+                # Populate frame_index for all headers in this frame
+                for header in header_list:
+                    header.runtime_metadata.frame_index = frame_index_counter
+                
                 try:
                     imagearray.put(
                         (frame, header_list),
@@ -499,6 +510,8 @@ class StreamDaq:
                     )
                 except queue.Full:
                     locallogs.warning("Image array queue full, skipping frame.")
+                
+                frame_index_counter += 1
         finally:
             locallogs.debug("Quitting, putting sentinel in queue")
             try:
