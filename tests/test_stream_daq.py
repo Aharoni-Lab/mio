@@ -111,16 +111,21 @@ def test_csv_output(tmp_path, default_streamdaq, write_metadata, caplog):
         # actually not sure what we should be looking for here, for now we just check for shape
         # this should be the same as long as the test data stays the same,
         # but it's a pretty weak test.
-        assert df.shape == (910, 12)
+        assert df.shape == (910, 14)
 
         # the underlying csv should have the same number of column headers as data columsn
         # if there is a mismatch, the index will turn into a multi-index
         assert isinstance(df.index, pd.RangeIndex)
 
-        # we should have the same columns in the same order as our header format
+        # we should have the same columns in the same order as our header format plus reconstruction metadata
         col_names = df.columns.to_list()
         expected = default_streamdaq.header_fmt.model_dump(exclude_none=True, exclude=set(default_streamdaq.header_fmt.HEADER_FIELDS))
-        expected = [h[0] for h in sorted(expected.items(), key=lambda x: x[1])] + ['unix_time']
+        expected = [h[0] for h in sorted(expected.items(), key=lambda x: x[1])]
+        
+        # Add runtime_metadata fields
+        from mio.models.stream import RuntimeMetadata
+        runtime_fields = list(RuntimeMetadata.model_fields.keys())
+        expected.extend(runtime_fields)
         assert col_names == expected
 
         # ensure there were no errors during capture

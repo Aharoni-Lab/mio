@@ -22,7 +22,7 @@ from mio.devices.mocks import okDevMock
 from mio.exceptions import EndOfRecordingException, StreamReadError
 from mio.io import BufferedCSVWriter, VideoWriter
 from mio.models.stream import (
-    ReconstructionMetadata,
+    RuntimeMetadata,
     StreamBufferHeader,
     StreamBufferHeaderFormat,
     StreamDevConfig,
@@ -308,9 +308,10 @@ class StreamDaq:
 
         header_data = StreamBufferHeader.from_format(header.astype(int), self.header_fmt)
         header_data.adc_scaling = self.config.adc_scale
-        header_data.reconstruction_metadata = ReconstructionMetadata(
+        header_data.runtime_metadata = RuntimeMetadata(
             buffer_recv_index=self._buffer_recv_index,
-            buffer_recv_timestamp=time.time(),
+            buffer_recv_unix_time=time.time(),
+            black_padding_px=-1,
         )
         self._buffer_recv_index += 1
         return header_data, payload
@@ -624,7 +625,9 @@ class StreamDaq:
             )
             header_items = sorted(header_items.items(), key=lambda x: x[1])
             header_cols = [h[0] for h in header_items]
-            header_cols.append("unix_time")
+            
+            runtime_fields = list(RuntimeMetadata.model_fields.keys())
+            header_cols.extend(runtime_fields)
             self._buffered_writer = BufferedCSVWriter(
                 metadata, header=header_cols, buffer_size=self.config.runtime.csvwriter.buffer
             )
@@ -711,7 +714,9 @@ class StreamDaq:
                     self.logger.debug("Saving header metadata")
                     try:
                         meta_row = header.model_dump(warnings=False)
-                        meta_row["unix_time"] = time.time()
+                        if 'runtime_metadata' in meta_row and meta_row['runtime_metadata']:
+                            runtime_data = meta_row.pop('runtime_metadata')
+                            meta_row.update(runtime_data)
                         self._buffered_writer.append(meta_row)
                     except Exception as e:
                         self.logger.exception(f"Exception saving headers: \n{e}")
