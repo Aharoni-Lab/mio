@@ -42,9 +42,7 @@ jobs:
 
       - name: Install FFmpeg on macOS
         if: runner.os == 'macOS'
-        run: |
-          brew install ffmpeg
-          brew install coveralls
+        run: brew install ffmpeg
 
       - name: Install FFmpeg on Ubuntu
         if: runner.os == 'Linux'
