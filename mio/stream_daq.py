@@ -21,12 +21,15 @@ from mio.bit_operation import BufferFormatter
 from mio.devices.mocks import okDevMock
 from mio.exceptions import EndOfRecordingException, StreamReadError
 from mio.io.file import BufferedCSVWriter, VideoWriter
+from mio.io import BufferedCSVWriter, VideoWriter
+from mio.models.process import FreqencyMaskingConfig
 from mio.models.stream import (
     StreamBufferHeader,
     StreamBufferHeaderFormat,
     StreamDevConfig,
 )
 from mio.plots.headers import StreamPlotter
+from mio.process.frame_helper import FrequencyMaskHelper
 from mio.types import ConfigSource
 
 HAVE_OK = False
@@ -304,9 +307,7 @@ class StreamDaq:
             reverse_payload_bytes=self.config.reverse_payload_bytes,
         )
 
-        header_data = StreamBufferHeader.from_format(
-            header.astype(int), self.header_fmt, construct=True
-        )
+        header_data = StreamBufferHeader.from_format(header.astype(int), self.header_fmt)
         header_data.adc_scaling = self.config.adc_scale
 
         return header_data, payload
@@ -353,22 +354,19 @@ class StreamDaq:
                         locallogs,
                     )
                 except IndexError:
-                    locallogs.warning(
+                    locallogs.exception(
                         f"Frame {header_data.frame_num}; Buffer {header_data.buffer_count} "
                         f"(#{header_data.frame_buffer_count} in frame)\n"
                         f"Frame buffer count {header_data.frame_buffer_count} "
                         f"exceeds buffer number per frame {len(self.buffer_npix)}\n"
-                        f"Discarding buffer."
+                        f"Discarding buffer.\n"
+                        f"-- THERE IS AN ERROR IN YOUR CONFIGURATION CAUSING YOU TO LOSE DATA --\n"
+                        f"If you are seeing this emitted on every frame, "
+                        f"The device is sending more buffers per frame than expected based on "
+                        f"the configured frame width, height, and buffer size. "
+                        f"You must fix the configuration such that it matches the data being sent "
+                        f"by the device."
                     )
-                    if header_list:
-                        try:
-                            frame_buffer_queue.put(
-                                (None, header_list),
-                                block=True,
-                                timeout=self.config.runtime.queue_put_timeout,
-                            )
-                        except queue.Full:
-                            locallogs.warning("Frame buffer queue full, skipping frame.")
                     continue
 
                 # if first buffer of a frame
@@ -521,6 +519,7 @@ class StreamDaq:
         binary: Optional[Path] = None,
         show_video: Optional[bool] = True,
         show_metadata: Optional[bool] = False,
+        freq_mask_config: Optional[FreqencyMaskingConfig] = None,
     ) -> None:
         """
         Entry point to start frame capture.
@@ -582,6 +581,15 @@ class StreamDaq:
         else:
             raise ValueError(f"source can be one of uart or fpga. Got {source}")
 
+        if freq_mask_config:
+            freq_mask_helper = FrequencyMaskHelper(
+                height=self.config.frame_height,
+                width=self.config.frame_width,
+                freq_mask_config=freq_mask_config,
+            )
+        else:
+            freq_mask_helper = None
+
         writer = None
         if video:
             writer = VideoWriter(
@@ -618,11 +626,14 @@ class StreamDaq:
             )
 
         if metadata:
-            self._buffered_writer = BufferedCSVWriter(
-                metadata, buffer_size=self.config.runtime.csvwriter.buffer
+            header_items = self.header_fmt.model_dump(
+                exclude_none=True, exclude=set(self.header_fmt.HEADER_FIELDS)
             )
-            self._buffered_writer.append(
-                list(StreamBufferHeader.model_fields.keys()) + ["unix_time"]
+            header_items = sorted(header_items.items(), key=lambda x: x[1])
+            header_cols = [h[0] for h in header_items]
+            header_cols.append("unix_time")
+            self._buffered_writer = BufferedCSVWriter(
+                metadata, header=header_cols, buffer_size=self.config.runtime.csvwriter.buffer
             )
 
         try:
@@ -634,6 +645,7 @@ class StreamDaq:
                     writer=writer,
                     show_metadata=show_metadata,
                     metadata=metadata,
+                    freq_mask_helper=freq_mask_helper,
                 )
         except KeyboardInterrupt:
             self.logger.exception(
@@ -686,6 +698,7 @@ class StreamDaq:
         writer: Optional[VideoWriter],
         show_metadata: bool,
         metadata: Optional[Path] = None,
+        freq_mask_helper: Optional[FrequencyMaskHelper] = None,
     ) -> None:
         """
         Inner handler for :meth:`.capture` to process the frames from the frame queue.
@@ -706,9 +719,9 @@ class StreamDaq:
                 if metadata:
                     self.logger.debug("Saving header metadata")
                     try:
-                        self._buffered_writer.append(
-                            list(header.model_dump(warnings=False).values()) + [time.time()]
-                        )
+                        meta_row = header.model_dump(warnings=False)
+                        meta_row["unix_time"] = time.time()
+                        self._buffered_writer.append(meta_row)
                     except Exception as e:
                         self.logger.exception(f"Exception saving headers: \n{e}")
         if image is None or image.size == 0:
@@ -716,7 +729,9 @@ class StreamDaq:
             return
         if show_video:
             try:
-                cv2.imshow("image", image)
+                display_image = freq_mask_helper.process_frame(image) if freq_mask_helper else image
+
+                cv2.imshow("image", display_image)
                 cv2.waitKey(1)
             except cv2.error as e:
                 self.logger.exception(f"Error displaying frame: {e}")
