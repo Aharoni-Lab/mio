@@ -306,9 +306,7 @@ class StreamDaq:
             reverse_payload_bytes=self.config.reverse_payload_bytes,
         )
 
-        header_data = StreamBufferHeader.from_format(
-            header.astype(int), self.header_fmt, construct=True
-        )
+        header_data = StreamBufferHeader.from_format(header.astype(int), self.header_fmt)
         header_data.adc_scaling = self.config.adc_scale
 
         return header_data, payload
@@ -355,22 +353,19 @@ class StreamDaq:
                         locallogs,
                     )
                 except IndexError:
-                    locallogs.warning(
+                    locallogs.exception(
                         f"Frame {header_data.frame_num}; Buffer {header_data.buffer_count} "
                         f"(#{header_data.frame_buffer_count} in frame)\n"
                         f"Frame buffer count {header_data.frame_buffer_count} "
                         f"exceeds buffer number per frame {len(self.buffer_npix)}\n"
-                        f"Discarding buffer."
+                        f"Discarding buffer.\n"
+                        f"-- THERE IS AN ERROR IN YOUR CONFIGURATION CAUSING YOU TO LOSE DATA --\n"
+                        f"If you are seeing this emitted on every frame, "
+                        f"The device is sending more buffers per frame than expected based on "
+                        f"the configured frame width, height, and buffer size. "
+                        f"You must fix the configuration such that it matches the data being sent "
+                        f"by the device."
                     )
-                    if header_list:
-                        try:
-                            frame_buffer_queue.put(
-                                (None, header_list),
-                                block=True,
-                                timeout=self.config.runtime.queue_put_timeout,
-                            )
-                        except queue.Full:
-                            locallogs.warning("Frame buffer queue full, skipping frame.")
                     continue
 
                 # if first buffer of a frame
@@ -630,11 +625,14 @@ class StreamDaq:
             )
 
         if metadata:
-            self._buffered_writer = BufferedCSVWriter(
-                metadata, buffer_size=self.config.runtime.csvwriter.buffer
+            header_items = self.header_fmt.model_dump(
+                exclude_none=True, exclude=set(self.header_fmt.HEADER_FIELDS)
             )
-            self._buffered_writer.append(
-                list(StreamBufferHeader.model_fields.keys()) + ["unix_time"]
+            header_items = sorted(header_items.items(), key=lambda x: x[1])
+            header_cols = [h[0] for h in header_items]
+            header_cols.append("unix_time")
+            self._buffered_writer = BufferedCSVWriter(
+                metadata, header=header_cols, buffer_size=self.config.runtime.csvwriter.buffer
             )
 
         try:
@@ -720,9 +718,9 @@ class StreamDaq:
                 if metadata:
                     self.logger.debug("Saving header metadata")
                     try:
-                        self._buffered_writer.append(
-                            list(header.model_dump(warnings=False).values()) + [time.time()]
-                        )
+                        meta_row = header.model_dump(warnings=False)
+                        meta_row["unix_time"] = time.time()
+                        self._buffered_writer.append(meta_row)
                     except Exception as e:
                         self.logger.exception(f"Exception saving headers: \n{e}")
         if image is None or image.size == 0:

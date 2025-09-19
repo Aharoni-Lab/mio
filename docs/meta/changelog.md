@@ -1,8 +1,43 @@
 # Changelog
 
-## 0.7 - Processing Module & Video Encoding Fixes
+## 0.7.*
 
-### 0.7.0 - 2024-07-21
+### 0.7.1 - 2025-08-07
+
+#### Bugfix
+
+- [`#125`](https://github.com/Aharoni-Lab/mio/pull/125) - If a device configuration caused the
+  `buffer_npix` method to not match the number of buffers per frame returned by the device,
+  frame headers would be duplicated when sent through the rest of the pipeline,
+  resulting in duplicate rows in the resulting csv file.
+  Behavior was fixed, and the warning was upgrade to a more explicit exception message
+  that is more informative about the nature of the problem
+
+#### Added
+
+- [`#125`](https://github.com/Aharoni-Lab/mio/pull/125) - the `BufferedCSVWriter` class now
+  takes an explicit list of values to use as the headers, and accepts dicts for rows that
+  match those headers. this makes for explicit alignment in produced tables,
+  ignoring extra values and filling missing values.
+- [`#117`](https://github.com/Aharoni-Lab/mio/pull/117) - A {class}`mio.plots.VideoPlotter`
+  class was added to display a list of videos together
+
+#### Refactor
+
+- [`#116`](https://github.com/Aharoni-Lab/mio/pull/116) - Continuing the process of
+  splitting up the {class}`mio.stream_daq.StreamDaq` class, the method for
+  iterating over an arbitrary-sized input buffer from a device, concatenating it,
+  and splitting it into buffers according to some `preamble` bytestring
+  was split into a {func}`mio.stream_daq.iter_buffers` generator function,
+  where the binary source of devices is now any iterator that yields bytestrings.
+  Corresponding `__iter__` methods were added to {class}`mio.devices.opalkelly.okDev`.
+
+#### Testing
+
+- [`#125`](https://github.com/Aharoni-Lab/mio/pull/125) - Added a performance test with a generous
+  baseline to ensure that the streamdaq 
+
+### 0.7.0 - 2025-07-21 - Processing Module & Video Encoding Fixes
 PRs: [`#83`](https://github.com/Aharoni-Lab/mio/pull/83), [`#94`](https://github.com/Aharoni-Lab/mio/pull/94), [`#97`](https://github.com/Aharoni-Lab/mio/pull/97), [`#99`](https://github.com/Aharoni-Lab/mio/pull/99), [`#112`](https://github.com/Aharoni-Lab/mio/pull/112)
 #### Changes
 - **Added video processing (denoising) module for neural recordings.** This module is currently for offline use with video files. Real-time integration with `streamDaq` is planned for a future update.
