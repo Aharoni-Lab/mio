@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.8.*
+
+### 0.8.0 - 2025-09-19 - Realtime frequency filters for `stream` and test adjustments
+
+#### New Features
+- [`#121`](https://github.com/Aharoni-Lab/mio/pull/121) - Adds optional realtime frequency filtering to `mio stream`. Example usage:  
+  ```bash
+  mio stream capture -c wireless-200px -f remove_stripe_example
+  ```  
+  See the CLI docs for more details.
+
+#### Bugfixes
+- [`#121`](https://github.com/Aharoni-Lab/mio/pull/121) - The FFT/IFFT operation on videos sometimes produced values larger than the maximum of the type (e.g., 255 for `np.uint8`), resulting in bright artifacts. The frequency mask helper method now clips values before returning them to prevent this.
+
+#### Refactors
+- [`#121`](https://github.com/Aharoni-Lab/mio/pull/121) - `FrequencyMaskingConfig` is now a subclass of `MiniscopeConfig, ConfigYAMLMixin`, allowing it to be treated like other configs.
+
+#### Testing
+- [`#132`](https://github.com/Aharoni-Lab/mio/pull/132), [`#134`](https://github.com/Aharoni-Lab/mio/pull/134) - Pin macOS version to `macos-14` due to upstream issues in the Coveralls action.
+- [`#121`](https://github.com/Aharoni-Lab/mio/pull/121) - Add basic tests to ensure the method is invoked via CLI.
+
+
 ## 0.7.*
 
 ### 0.7.1 - 2025-08-07
@@ -35,7 +57,7 @@
 #### Testing
 
 - [`#125`](https://github.com/Aharoni-Lab/mio/pull/125) - Added a performance test with a generous
-  baseline to ensure that the streamdaq 
+  baseline to ensure that the streamdaq runs without significant delays.
 
 ### 0.7.0 - 2025-07-21 - Processing Module & Video Encoding Fixes
 PRs: [`#83`](https://github.com/Aharoni-Lab/mio/pull/83), [`#94`](https://github.com/Aharoni-Lab/mio/pull/94), [`#97`](https://github.com/Aharoni-Lab/mio/pull/97), [`#99`](https://github.com/Aharoni-Lab/mio/pull/99), [`#112`](https://github.com/Aharoni-Lab/mio/pull/112)
