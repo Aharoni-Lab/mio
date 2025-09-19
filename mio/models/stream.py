@@ -61,6 +61,17 @@ class ADCScaling(MiniscopeConfig):
         return voltage_raw / 2**self.bitdepth * self.ref_voltage * self.vin_div_factor
 
 
+class RuntimeMetadata(MiniscopeConfig):
+    """
+    Runtime metadata for data streams.
+    """
+
+    buffer_recv_index: int
+    buffer_recv_unix_time: float
+    black_padding_px: int
+    frame_index: int
+
+
 class StreamBufferHeaderFormat(BufferHeaderFormat):
     """
     Refinements of :class:`.BufferHeaderFormat` for
@@ -93,6 +104,10 @@ class StreamBufferHeader(BufferHeader):
     battery_voltage_raw: int
     input_voltage_raw: int
     _adc_scaling: ADCScaling = None
+
+    runtime_metadata: RuntimeMetadata = RuntimeMetadata(
+        buffer_recv_index=-1, buffer_recv_unix_time=-1.0, black_padding_px=-1, frame_index=-1
+    )
 
     @property
     def adc_scaling(self) -> Optional[ADCScaling]:
