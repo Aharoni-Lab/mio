@@ -45,7 +45,8 @@ class RecordingData:
         self.video_cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
         ret, frame = self.video_cap.read()
         return frame
-    
+
+
 @dataclass
 class RecordingDataBundle:
     """Container for a bundle of recording data."""
