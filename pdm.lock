@@ -1216,6 +1216,22 @@ files = [
 ]
 
 [[package]]
+name = "numpydantic"
+version = "1.6.9"
+requires_python = "<4.0,>=3.9"
+summary = "Type and shape validation and serialization for arbitrary array types in pydantic models"
+groups = ["default"]
+dependencies = [
+    "numpy>=1.24.0",
+    "pydantic>=2.7.0",
+    "typing-extensions>=4.11.0; python_version < \"3.11\"",
+]
+files = [
+    {file = "numpydantic-1.6.9-py3-none-any.whl", hash = "sha256:149ed4b7dfec907fb1e7c0874fd7d41bc95734c22764124d22c7c27aa8f059fd"},
+    {file = "numpydantic-1.6.9.tar.gz", hash = "sha256:bb2c563e76894abffb06cf0e991d6cb0aa42e2b39d40426ebb0699011d18ec0d"},
+]
+
+[[package]]
 name = "opencv-python"
 version = "4.10.0.84"
 requires_python = ">=3.6"
