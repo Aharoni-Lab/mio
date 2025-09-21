@@ -16,6 +16,7 @@ from typing import (
     List,
     Literal,
     Optional,
+    Self,
     Type,
     TypedDict,
     TypeVar,
