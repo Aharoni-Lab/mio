@@ -8,29 +8,33 @@ import os
 import queue
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Callable, Generator, List, Literal, Optional, Tuple, Union
 
 import cv2
 import numpy as np
-import serial
 from bitstring import BitArray, Bits
 
 from mio import init_logger
 from mio.bit_operation import BufferFormatter
 from mio.devices.mocks import okDevMock
 from mio.exceptions import EndOfRecordingException, StreamReadError
-from mio.io import BufferedCSVWriter
+from mio.io import BufferedCSVWriter, VideoWriter
+from mio.models.process import FreqencyMaskingConfig
 from mio.models.stream import (
     StreamBufferHeader,
     StreamBufferHeaderFormat,
     StreamDevConfig,
 )
 from mio.plots.headers import StreamPlotter
+from mio.process.frame_helper import FrequencyMaskHelper
 from mio.types import ConfigSource
 
 HAVE_OK = False
 ok_error = None
+BIT_PER_WORD = 32
+
 try:
     from mio.devices.opalkelly import okDev
 
@@ -143,38 +147,6 @@ class StreamDaq:
             self._nbuffer_per_fm = len(self.buffer_npix)
         return self._nbuffer_per_fm
 
-    def _parse_header(self, buffer: bytes) -> Tuple[StreamBufferHeader, np.ndarray]:
-        """
-        Function to parse header from each buffer.
-
-        Parameters
-        ----------
-        buffer : bytes
-            Input buffer.
-
-        Returns
-        -------
-        Tuple[BufferHeader, ndarray]
-            The returned header data and payload (uint8).
-        """
-
-        header, payload = BufferFormatter.bytebuffer_to_ndarrays(
-            buffer=buffer,
-            header_length_words=int(self.config.header_len / 32),
-            preamble_length_words=int(len(Bits(self.config.preamble)) / 32),
-            reverse_header_bits=self.config.reverse_header_bits,
-            reverse_header_bytes=self.config.reverse_header_bytes,
-            reverse_payload_bits=self.config.reverse_payload_bits,
-            reverse_payload_bytes=self.config.reverse_payload_bytes,
-        )
-
-        header_data = StreamBufferHeader.from_format(
-            header.astype(int), self.header_fmt, construct=True
-        )
-        header_data.adc_scaling = self.config.adc_scale
-
-        return header_data, payload
-
     def _trim(
         self,
         data: np.ndarray,
@@ -213,57 +185,12 @@ class StreamDaq:
 
         return data
 
-    def _uart_recv(
-        self, serial_buffer_queue: multiprocessing.Queue, comport: str, baudrate: int
-    ) -> None:
-        """
-        Receive buffers and push into serial_buffer_queue.
-        Currently not supported.
-
-        Parameters
-        ----------
-        serial_buffer_queue : multiprocessing.Queue
-            _description_
-        comport : str
-            _description_
-        baudrate : int
-            _description_
-        """
-        pre_bytes = self.preamble.tobytes()
-        if self.config.reverse_header_bits:
-            pre_bytes = bytes(bytearray(pre_bytes)[::-1])
-
-        # set up serial port
-        serial_port = serial.Serial(port=comport, baudrate=baudrate, timeout=5, stopbits=1)
-        self.logger.info("Serial port open: " + str(serial_port.name))
-
-        # Throw away the first buffer because it won't fully come in
-        uart_bites = serial_port.read_until(pre_bytes)
-        log_uart_buffer = BitArray([x for x in uart_bites])
-
-        try:
-            while not self.terminate.is_set():
-                # read UART data until preamble and put into queue
-                uart_bites = serial_port.read_until(pre_bytes)
-                log_uart_buffer = [x for x in uart_bites]
-                try:
-                    serial_buffer_queue.put(
-                        log_uart_buffer, block=True, timeout=self.config.runtime.queue_put_timeout
-                    )
-                except queue.Full:
-                    self.logger.warning("Serial buffer queue full, skipping buffer.")
-        finally:
-            time.sleep(1)  # time for ending other process
-            serial_port.close()
-            self.logger.info("Close serial port")
-            sys.exit(1)
-
-    def _init_okdev(self, BIT_FILE: Path) -> Union[okDev, okDevMock]:
+    def _init_okdev(self, BIT_FILE: Path, read_length: int) -> Union[okDev, okDevMock]:
         # FIXME: when multiprocessing bug resolved, remove this and just mock in tests
         if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("STREAMDAQ_MOCKRUN"):
-            dev = okDevMock()
+            dev = okDevMock(read_length=read_length)
         else:
-            dev = okDev()
+            dev = okDev(read_length=read_length)
 
         dev.upload_bit(str(BIT_FILE))
         dev.set_wire(0x00, 0b0010)
@@ -324,50 +251,26 @@ class StreamDaq:
             raise RuntimeError(f"Configured to use bitfile at {BIT_FILE} but no such file exists")
 
         # set up fpga devices
-        dev = self._init_okdev(BIT_FILE)
+        dev = self._init_okdev(BIT_FILE, read_length)
 
         # read loop
-        cur_buffer = BitArray()
         pre = Bits(self.preamble)
         if self.config.reverse_header_bits:
             pre = pre[::-1]
 
         locallogs.debug("Starting capture")
         try:
-            while 1:
+            for buf in iter_buffers(
+                dev, preamble=pre, pre_first=pre_first, capture_binary=capture_binary
+            ):
                 try:
-                    buf = dev.read_data(read_length)
-                except (EndOfRecordingException, KeyboardInterrupt):
-                    locallogs.debug("Got end of recording exception, breaking")
-                    break
-                except StreamReadError:
-                    locallogs.exception("Read failed, continuing")
-                    # It might be better to choose continue or break with a continuous flag
-                    continue
-
-                if capture_binary:
-                    with open(capture_binary, "ab") as file:
-                        file.write(buf)
-
-                dat = BitArray(buf)
-                cur_buffer = cur_buffer + dat
-                pre_pos = list(cur_buffer.findall(pre))
-                for buf_start, buf_stop in zip(pre_pos[:-1], pre_pos[1:]):
-                    if not pre_first:
-                        buf_start, buf_stop = (
-                            buf_start + len(self.preamble),
-                            buf_stop + len(self.preamble),
-                        )
-                    try:
-                        serial_buffer_queue.put(
-                            cur_buffer[buf_start:buf_stop].tobytes(),
-                            block=True,
-                            timeout=self.config.runtime.queue_put_timeout,
-                        )
-                    except queue.Full:
-                        locallogs.warning("Serial buffer queue full, skipping buffer.")
-                if pre_pos:
-                    cur_buffer = cur_buffer[pre_pos[-1] :]
+                    serial_buffer_queue.put(
+                        buf,
+                        block=True,
+                        timeout=self.config.runtime.queue_put_timeout,
+                    )
+                except queue.Full:
+                    locallogs.warning("Serial buffer queue full, skipping buffer.")
 
         finally:
             locallogs.debug("Quitting, putting sentinel in queue")
@@ -377,6 +280,36 @@ class StreamDaq:
                 )
             except queue.Full:
                 locallogs.error("Serial buffer queue full, Could not put sentinel.")
+
+    def _parse_header(self, buffer: bytes) -> Tuple[StreamBufferHeader, np.ndarray]:
+        """
+        Function to parse header from each buffer.
+
+        Parameters
+        ----------
+        buffer : bytes
+            Input buffer.
+
+        Returns
+        -------
+        Tuple[BufferHeader, ndarray]
+            The returned header data and payload (uint8).
+        """
+
+        header, payload = BufferFormatter.bytebuffer_to_ndarrays(
+            buffer=buffer,
+            header_length_words=int(self.config.header_len / 32),
+            preamble_length_words=int(len(Bits(self.config.preamble)) / 32),
+            reverse_header_bits=self.config.reverse_header_bits,
+            reverse_header_bytes=self.config.reverse_header_bytes,
+            reverse_payload_bits=self.config.reverse_payload_bits,
+            reverse_payload_bytes=self.config.reverse_payload_bytes,
+        )
+
+        header_data = StreamBufferHeader.from_format(header.astype(int), self.header_fmt)
+        header_data.adc_scaling = self.config.adc_scale
+
+        return header_data, payload
 
     def _buffer_to_frame(
         self,
@@ -420,22 +353,19 @@ class StreamDaq:
                         locallogs,
                     )
                 except IndexError:
-                    locallogs.warning(
+                    locallogs.exception(
                         f"Frame {header_data.frame_num}; Buffer {header_data.buffer_count} "
                         f"(#{header_data.frame_buffer_count} in frame)\n"
                         f"Frame buffer count {header_data.frame_buffer_count} "
                         f"exceeds buffer number per frame {len(self.buffer_npix)}\n"
-                        f"Discarding buffer."
+                        f"Discarding buffer.\n"
+                        f"-- THERE IS AN ERROR IN YOUR CONFIGURATION CAUSING YOU TO LOSE DATA --\n"
+                        f"If you are seeing this emitted on every frame, "
+                        f"The device is sending more buffers per frame than expected based on "
+                        f"the configured frame width, height, and buffer size. "
+                        f"You must fix the configuration such that it matches the data being sent "
+                        f"by the device."
                     )
-                    if header_list:
-                        try:
-                            frame_buffer_queue.put(
-                                (None, header_list),
-                                block=True,
-                                timeout=self.config.runtime.queue_put_timeout,
-                            )
-                        except queue.Full:
-                            locallogs.warning("Frame buffer queue full, skipping frame.")
                     continue
 
                 # if first buffer of a frame
@@ -565,36 +495,6 @@ class StreamDaq:
             except queue.Full:
                 locallogs.error("Image array queue full, Could not put sentinel.")
 
-    def init_video(
-        self, path: Union[Path, str], fourcc: str = "Y800", **kwargs: dict
-    ) -> cv2.VideoWriter:
-        """
-        Create a parameterized video writer
-
-        Parameters
-        ----------
-        frame_buffer_queue : multiprocessing.Queue[list[bytes]]
-            Input buffer queue.
-        path : Union[Path, str]
-            Video file to write to
-        fourcc : str
-            Fourcc code to use
-        kwargs : dict
-            passed to :class:`cv2.VideoWriter`
-
-        Returns:
-        ---------
-            :class:`cv2.VideoWriter`
-        """
-        if isinstance(path, str):
-            path = Path(path)
-
-        fourcc = cv2.VideoWriter_fourcc(*fourcc)
-        frame_rate = self.config.fs
-        frame_size = (self.config.frame_width, self.config.frame_height)
-        out = cv2.VideoWriter(str(path), fourcc, frame_rate, frame_size, **kwargs)
-        return out
-
     def alive_processes(self) -> List[multiprocessing.Process]:
         """
         Return a list of alive processes.
@@ -618,6 +518,7 @@ class StreamDaq:
         binary: Optional[Path] = None,
         show_video: Optional[bool] = True,
         show_metadata: Optional[bool] = False,
+        freq_mask_config: Optional[FreqencyMaskingConfig] = None,
     ) -> None:
         """
         Entry point to start frame capture.
@@ -679,12 +580,21 @@ class StreamDaq:
         else:
             raise ValueError(f"source can be one of uart or fpga. Got {source}")
 
-        # Video output
+        if freq_mask_config:
+            freq_mask_helper = FrequencyMaskHelper(
+                height=self.config.frame_height,
+                width=self.config.frame_width,
+                freq_mask_config=freq_mask_config,
+            )
+        else:
+            freq_mask_helper = None
+
         writer = None
         if video:
-            if video_kwargs is None:
-                video_kwargs = {}
-            writer = self.init_video(video, **video_kwargs)
+            writer = VideoWriter(
+                path=video,
+                fps=self.config.fs,
+            )
 
         p_buffer_to_frame = multiprocessing.Process(
             target=self._buffer_to_frame,
@@ -715,11 +625,14 @@ class StreamDaq:
             )
 
         if metadata:
-            self._buffered_writer = BufferedCSVWriter(
-                metadata, buffer_size=self.config.runtime.csvwriter.buffer
+            header_items = self.header_fmt.model_dump(
+                exclude_none=True, exclude=set(self.header_fmt.HEADER_FIELDS)
             )
-            self._buffered_writer.append(
-                list(StreamBufferHeader.model_fields.keys()) + ["unix_time"]
+            header_items = sorted(header_items.items(), key=lambda x: x[1])
+            header_cols = [h[0] for h in header_items]
+            header_cols.append("unix_time")
+            self._buffered_writer = BufferedCSVWriter(
+                metadata, header=header_cols, buffer_size=self.config.runtime.csvwriter.buffer
             )
 
         try:
@@ -731,6 +644,7 @@ class StreamDaq:
                     writer=writer,
                     show_metadata=show_metadata,
                     metadata=metadata,
+                    freq_mask_helper=freq_mask_helper,
                 )
         except KeyboardInterrupt:
             self.logger.exception(
@@ -754,7 +668,7 @@ class StreamDaq:
             self.terminate.set()
         finally:
             if writer:
-                writer.release()
+                writer.close()
                 self.logger.debug("VideoWriter released")
             if show_video:
                 cv2.destroyAllWindows()
@@ -780,9 +694,10 @@ class StreamDaq:
         image: np.ndarray,
         header_list: list[StreamBufferHeader],
         show_video: bool,
-        writer: Optional[cv2.VideoWriter],
+        writer: Optional[VideoWriter],
         show_metadata: bool,
         metadata: Optional[Path] = None,
+        freq_mask_helper: Optional[FrequencyMaskHelper] = None,
     ) -> None:
         """
         Inner handler for :meth:`.capture` to process the frames from the frame queue.
@@ -803,9 +718,9 @@ class StreamDaq:
                 if metadata:
                     self.logger.debug("Saving header metadata")
                     try:
-                        self._buffered_writer.append(
-                            list(header.model_dump(warnings=False).values()) + [time.time()]
-                        )
+                        meta_row = header.model_dump(warnings=False)
+                        meta_row["unix_time"] = time.time()
+                        self._buffered_writer.append(meta_row)
                     except Exception as e:
                         self.logger.exception(f"Exception saving headers: \n{e}")
         if image is None or image.size == 0:
@@ -813,16 +728,68 @@ class StreamDaq:
             return
         if show_video:
             try:
-                cv2.imshow("image", image)
+                display_image = freq_mask_helper.process_frame(image) if freq_mask_helper else image
+
+                cv2.imshow("image", display_image)
                 cv2.waitKey(1)
             except cv2.error as e:
                 self.logger.exception(f"Error displaying frame: {e}")
         if writer:
             try:
-                picture = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)  # If your image is grayscale
-                writer.write(picture)
+                writer.write_frame(image)
             except cv2.error as e:
                 self.logger.exception(f"Exception writing frame: {e}")
+
+
+def iter_buffers(
+    source: Iterator[bytes],
+    preamble: Bits,
+    pre_first: bool = True,
+    capture_binary: Optional[Path] = None,
+) -> Generator[bytes, None, None]:
+    """
+    Given some iterator that yields bytes (like a camera device),
+    yield buffers from that iterator as `bytes` objects
+    split by the `preamble` delimiter.
+
+    Args:
+        source (Iterator[bytes]): The iterator that yields bytes
+        preamble (Bits): The delimiter bit series to split buffers by
+        pre_first (bool | None): Whether preamble/header is returned
+            at the beginning of each buffer, by default True.
+        capture_binary (Path | None): save binary directly from the ``okDev`` to the supplied path,
+            if present.
+    """
+    logger = init_logger("streamDaq.iter_buffers")
+    cur_buffer = BitArray()
+    while True:
+        try:
+            buf = next(source)
+        except (EndOfRecordingException, KeyboardInterrupt, StopIteration):
+            logger.debug("Got end of recording exception, breaking")
+            return
+        except StreamReadError:
+            logger.exception("Read failed, continuing")
+            # It might be better to choose continue or break with a continuous flag
+            continue
+
+        if capture_binary:
+            with open(capture_binary, "ab") as file:
+                file.write(buf)
+
+        dat = BitArray(buf)
+        cur_buffer = cur_buffer + dat
+        pre_pos = list(cur_buffer.findall(preamble))
+        for buf_start, buf_stop in zip(pre_pos[:-1], pre_pos[1:]):
+            if not pre_first:
+                buf_start, buf_stop = (
+                    buf_start + len(preamble),
+                    buf_stop + len(preamble),
+                )
+            yield cur_buffer[buf_start:buf_stop].tobytes()
+
+        if pre_pos:
+            cur_buffer = cur_buffer[pre_pos[-1] :]
 
 
 # DEPRECATION: v0.3.0

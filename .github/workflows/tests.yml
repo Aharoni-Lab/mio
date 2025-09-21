@@ -6,8 +6,6 @@ on:
       - main
   workflow_dispatch:
   pull_request:
-    branches:
-      - main
 
 # Don't run duplicates - eg. if pushing to an open PR
 #concurrency:
@@ -21,24 +19,44 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ['ubuntu-latest', 'windows-latest', 'macos-latest']
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        os: ['ubuntu-latest', 'windows-latest', 'macos-14']
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
+
       - name: Install dependencies
         run: pip install -e .[tests] pytest-md
+      
+      - name: show runner.os
+        run: echo ${{ runner.os }}
+
+      - name: Install FFmpeg on Windows
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg
+
+      - name: Install FFmpeg on macOS
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+
+      - name: Install FFmpeg on Ubuntu
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
       - name: Run tests
         uses: pavelzw/pytest-action@v2
         with:
           verbose: true
           emoji: false
           job-summary: true
+
       - name: Report to coveralls
         uses: coverallsapp/github-action@v2
         with:
