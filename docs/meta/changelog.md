@@ -3,6 +3,7 @@
 ## Upcoming
 
 - [`#93`](https://github.com/Aharoni-Lab/mio/pull/93) - Add `mio config list` to display available configs
+- [`#103`](https://github.com/Aharoni-Lab/mio/pull/103) - Add `mio hash` to cli to hash video files
 
 ## 0.8.*
 
