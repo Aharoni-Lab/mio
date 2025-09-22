@@ -1,5 +1,9 @@
 # Changelog
 
+## Upcoming
+
+- [`#93`](https://github.com/Aharoni-Lab/mio/pull/93) - Add `mio config list` to display available configs
+
 ## 0.8.*
 
 ### 0.8.0 - 2025-09-19 - Realtime frequency filters for `stream` and test adjustments

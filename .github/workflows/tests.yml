@@ -58,12 +58,18 @@ jobs:
           job-summary: true
 
       - name: Report to coveralls
+        id: coverage-report
+        continue-on-error: true
         uses: coverallsapp/github-action@v2
         with:
           flag-name: run-${{ join(matrix.*, '-') }}
           parallel: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # don't fail job if coverage reporting fails
+      - run: echo "OK"
+        if: job.steps.coverage-report.status == failure()
 
   coverage:
     name: Report coverage
@@ -72,7 +78,13 @@ jobs:
     needs: test
     steps:
       - name: Complete Coveralls report
+        id: coverage-finish
+        continue-on-error: true
         uses: coverallsapp/github-action@v2
         with:
           parallel-finished: true
+
+      # don't fail job if coverage reporting fails
+      - run: echo "OK"
+        if: job.steps.coverage-finish.status == failure()
 

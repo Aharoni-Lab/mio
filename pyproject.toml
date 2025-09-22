@@ -24,6 +24,7 @@ dependencies = [
     "platformdirs>=4.3.6",
     'typing-extensions>=4.10.0; python_version<"3.13"',
     "scikit-video>=1.1.11",
+    "scipy>=1.13.0",
 ]
 
 readme = "README.md"
@@ -117,6 +118,8 @@ addopts = [
 filterwarnings = [
     'ignore:builtin type SwigPyPacked',
     'ignore:builtin type SwigPyObject',
+    'ignore:FigureCanvasAgg is non-interactive',
+    'ignore:Animation was deleted without rendering anything', # from non-interactive agg backend
 ]
 testpaths = [
     "tests"
