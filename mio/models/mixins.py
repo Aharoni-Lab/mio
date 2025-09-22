@@ -5,6 +5,7 @@ to use composition for functionality and inheritance for semantics.
 
 import re
 import shutil
+import sys
 from importlib.metadata import version
 from itertools import chain
 from pathlib import Path
@@ -15,9 +16,7 @@ from typing import (
     List,
     Literal,
     Optional,
-    Type,
     TypedDict,
-    TypeVar,
     Union,
     overload,
 )
@@ -25,12 +24,12 @@ from typing import (
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-# Using typing_extensions for compatibility with supported Python versions
-from typing_extensions import NotRequired, Self
+if sys.version_info < (3, 11):
+    from typing_extensions import NotRequired, Self
+else:
+    from typing import NotRequired, Self
 
 from mio.types import ConfigID, ConfigSource, PythonIdentifier, valid_config_id
-
-T = TypeVar("T")
 
 
 class YamlDumper(yaml.SafeDumper):
@@ -229,7 +228,7 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
         return v
 
     @classmethod
-    def config_sources(cls: Type[T]) -> List[Path]:
+    def config_sources(cls) -> List[Path]:
         """
         Directories to search for config files, in order of priority
         such that earlier sources are preferred over later sources.
@@ -247,7 +246,7 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
         return f"{cls.__module__}.{cls.__name__}"
 
     @classmethod
-    def _yaml_header(cls, instance: Union[T, dict]) -> ConfigYamlHeader:
+    def _yaml_header(cls, instance: Union[Self, dict]) -> ConfigYamlHeader:
         if isinstance(instance, dict):
             model_id = instance.get("id", None)
             mio_model = instance.get("mio_model", cls._model_name())
