@@ -39,6 +39,14 @@ def mock_config_source(monkeypatch_session):
     monkeypatch_session.setattr(ConfigYAMLMixin, "config_sources", classmethod(_config_sources))
 
 
+@pytest.fixture(scope="session", autouse=True)
+def set_matplotlib_backend():
+    """Use headless agg backend during tests"""
+    import matplotlib
+
+    matplotlib.use("agg")
+
+
 @pytest.fixture()
 def set_okdev_input(monkeypatch):
     """

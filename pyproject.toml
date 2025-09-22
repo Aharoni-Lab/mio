@@ -118,6 +118,8 @@ addopts = [
 filterwarnings = [
     'ignore:builtin type SwigPyPacked',
     'ignore:builtin type SwigPyObject',
+    'ignore:FigureCanvasAgg is non-interactive',
+    'ignore:Animation was deleted without rendering anything', # from non-interactive agg backend
 ]
 testpaths = [
     "tests"
