@@ -32,7 +32,6 @@ def mock_config_source(monkeypatch_session):
     """
     current_sources = ConfigYAMLMixin.config_sources()
 
-    @classmethod
     def _config_sources(cls: type[ConfigYAMLMixin]) -> list[Path]:
         nonlocal current_sources
         return [CONFIG_DIR, *current_sources]

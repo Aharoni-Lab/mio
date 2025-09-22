@@ -54,7 +54,6 @@ def tmp_config_source(tmp_path, monkeypatch) -> Path:
     path.mkdir(exist_ok=True)
     current_sources = ConfigYAMLMixin.config_sources()
 
-    @classmethod
     def _config_sources(cls: type[ConfigYAMLMixin]) -> list[Path]:
         nonlocal current_sources
         return [path, *current_sources]
