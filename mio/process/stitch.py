@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 import pandas as pd
 
+from mio.process.metadata_helper import linearity_mse, make_combined_list
 from mio.stream_daq import StreamDaq
 
 
@@ -25,33 +26,6 @@ class ReconstructedBufferList:
     buffer_list: List[np.ndarray]
     timestamp_list: List[int]
     buffer_frame_index_list: List[int]
-
-
-def frame_timestamp_match_ratio(timestamp_lists: List[List[int]]) -> float:
-    """
-    Compute the fraction of timestamps that are same within each ReconstructedBufferList.
-    The denominator is the maximum number of timestamps across the provided lists.
-
-    Parameters:
-        timestamp_lists: List[List[int]]
-            A list of lists of timestamps to compare.
-
-    Returns:
-        float: The fraction of timestamps that are same within each ReconstructedBufferList.
-
-    """
-    # Edge cases
-    if timestamp_lists is None or len(timestamp_lists) == 0:
-        return 0.0
-
-    base_timestamp_list = timestamp_lists[0]
-    match_count = 0
-    for timestamp in base_timestamp_list:
-        if all(timestamp in timestamp_list for timestamp_list in timestamp_lists):
-            match_count += 1
-
-    maximum_timestamp_length = max(len(timestamp_list) for timestamp_list in timestamp_lists)
-    return match_count / maximum_timestamp_length
 
 
 @dataclass
@@ -110,7 +84,7 @@ class RecordingData:
         """
         frame_index = self.get_frame_index_from_timestamp(timestamp)
         self.video_cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
-        ret, frame = self.video_cap.read()
+        _, frame = self.video_cap.read()
         return frame
 
     def get_buffer_metadata_from_frame_index(self, frame_index: int) -> List[int]:
@@ -162,27 +136,60 @@ class RecordingDataBundle:
     """Container for a bundle of recording data."""
 
     recordings: List[RecordingData]
-    timestamp_list: List[int] = None
+    _combined_buffer_index: List[int] = None
     combined_metadata: pd.DataFrame = None
-    combined_video: cv2.VideoCapture = None
-    daq: StreamDaq = None
+    combined_video: List[np.ndarray] = None
 
     def __init__(self, recordings: List[RecordingData]):
         self.recordings = recordings
-        self.timestamp_list = self._make_combined_buffer_timestamp_list()
 
-    def _make_combined_buffer_timestamp_list(self) -> List[int]:
+    @property
+    def combined_buffer_index(self) -> List[int]:
         """
-        Make a list of unique timestamps from all the recordings
+        Get the combined buffer index.
+        This is a list of unique buffer indices across all recordings.
         """
-        timestamp_list = list(
-            set([recording.metadata["timestamp"].iloc[0] for recording in self.recordings])
-        )
-        timestamp_list.sort()
-        return timestamp_list
+        if self._combined_buffer_index is None:
+            self._combined_buffer_index = make_combined_list(
+                [recording.metadata["buffer_index"].tolist() for recording in self.recordings]
+            )
+        return self._combined_buffer_index
 
     def stitch_recordings(self) -> None:
         """
         Stitch the videos together and store the result in the combined_metadata and combined_video
         """
-        pass
+        current_frame_index = -1
+
+        for buffer_index in self.combined_buffer_index:
+            if (
+                self.recordings[0]
+                .metadata[self.recordings[0].metadata["buffer_index"] == buffer_index][
+                    "frame_index"
+                ]
+                .values
+                == current_frame_index
+            ):
+                # skip if the frame index is the same as the previous one
+                continue
+            timestamp_lists = []
+            for recording in self.recordings:
+                if buffer_index in recording.metadata["buffer_index"].values:
+                    timestamp_lists.append(
+                        recording.metadata[recording.metadata["buffer_index"] == buffer_index][
+                            "timestamp"
+                        ].values
+                    )
+            # if timestamps don't match, find the best candidate
+            if all(np.array_equal(timestamp_lists[0], ts) for ts in timestamp_lists):
+                selected_timestamp = timestamp_lists[0][0]
+            else:
+                mse_list = []
+                for recording in self.recordings:
+                    if buffer_index in recording.metadata["buffer_index"].values:
+                        ts = recording.metadata[recording.metadata["buffer_index"] == buffer_index][
+                            "timestamp"
+                        ].values
+                        frame_indices = [recording.get_frame_index_from_timestamp(t) for t in ts]
+                        mse = linearity_mse(frame_indices, 0)
+                        mse_list.append((mse, ts[0]))
