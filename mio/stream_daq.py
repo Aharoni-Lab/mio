@@ -21,6 +21,7 @@ from mio.bit_operation import BufferFormatter
 from mio.devices.mocks import okDevMock
 from mio.exceptions import EndOfRecordingException, StreamReadError
 from mio.io import BufferedCSVWriter, VideoWriter
+from mio.models.process import FreqencyMaskingConfig
 from mio.models.stream import (
     RuntimeMetadata,
     StreamBufferHeader,
@@ -28,6 +29,7 @@ from mio.models.stream import (
     StreamDevConfig,
 )
 from mio.plots.headers import StreamPlotter
+from mio.process.frame_helper import FrequencyMaskHelper
 from mio.types import ConfigSource
 
 HAVE_OK = False
@@ -355,7 +357,6 @@ class StreamDaq:
         try:
             for serial_buffer in exact_iter(serial_buffer_queue.get, None):
                 header_data, serial_buffer = self._parse_header(serial_buffer)
-                header_list.append(header_data)
 
                 try:
                     serial_buffer = self._trim(
@@ -382,19 +383,20 @@ class StreamDaq:
 
                 # if first buffer of a frame
                 if header_data.frame_num != cur_fm_num:
-                    # discard first incomplete frame
+                    # discard until we see a buffer 0 to align to the start of a frame
                     if cur_fm_num == -1 and header_data.frame_buffer_count != 0:
                         continue
 
-                    # push previous frame_buffer into frame_buffer queue
-                    try:
-                        frame_buffer_queue.put(
-                            (frame_buffer, header_list),
-                            block=True,
-                            timeout=self.config.runtime.queue_put_timeout,
-                        )
-                    except queue.Full:
-                        locallogs.warning("Frame buffer queue full, skipping frame.")
+                    # push previous frame_buffer into frame_buffer queue if we had one
+                    if cur_fm_num != -1:
+                        try:
+                            frame_buffer_queue.put(
+                                (frame_buffer, header_list),
+                                block=True,
+                                timeout=self.config.runtime.queue_put_timeout,
+                            )
+                        except queue.Full:
+                            locallogs.warning("Frame buffer queue full, skipping frame.")
 
                     # init new frame_buffer
                     frame_buffer = frame_buffer_prealloc.copy()
@@ -409,14 +411,12 @@ class StreamDaq:
                             f"{header_data.frame_buffer_count}"
                         )
 
-                    # update data
-                    frame_buffer[header_data.frame_buffer_count] = serial_buffer
-
-                else:
-                    frame_buffer[header_data.frame_buffer_count] = serial_buffer
-                    locallogs.debug(
-                        "----buffer #" + str(header_data.frame_buffer_count) + " stored"
-                    )
+                # update data and record header for the current (possibly new) frame
+                frame_buffer[header_data.frame_buffer_count] = serial_buffer
+                header_list.append(header_data)
+                locallogs.debug(
+                    "----buffer #" + str(header_data.frame_buffer_count) + " stored"
+                )
         finally:
             try:
                 # get remaining buffers.
@@ -542,6 +542,7 @@ class StreamDaq:
         binary: Optional[Path] = None,
         show_video: Optional[bool] = True,
         show_metadata: Optional[bool] = False,
+        freq_mask_config: Optional[FreqencyMaskingConfig] = None,
     ) -> None:
         """
         Entry point to start frame capture.
@@ -603,6 +604,15 @@ class StreamDaq:
         else:
             raise ValueError(f"source can be one of uart or fpga. Got {source}")
 
+        if freq_mask_config:
+            freq_mask_helper = FrequencyMaskHelper(
+                height=self.config.frame_height,
+                width=self.config.frame_width,
+                freq_mask_config=freq_mask_config,
+            )
+        else:
+            freq_mask_helper = None
+
         writer = None
         if video:
             writer = VideoWriter(
@@ -660,6 +670,7 @@ class StreamDaq:
                     writer=writer,
                     show_metadata=show_metadata,
                     metadata=metadata,
+                    freq_mask_helper=freq_mask_helper,
                 )
         except KeyboardInterrupt:
             self.logger.exception(
@@ -712,6 +723,7 @@ class StreamDaq:
         writer: Optional[VideoWriter],
         show_metadata: bool,
         metadata: Optional[Path] = None,
+        freq_mask_helper: Optional[FrequencyMaskHelper] = None,
     ) -> None:
         """
         Inner handler for :meth:`.capture` to process the frames from the frame queue.
@@ -744,7 +756,9 @@ class StreamDaq:
             return
         if show_video:
             try:
-                cv2.imshow("image", image)
+                display_image = freq_mask_helper.process_frame(image) if freq_mask_helper else image
+
+                cv2.imshow("image", display_image)
                 cv2.waitKey(1)
             except cv2.error as e:
                 self.logger.exception(f"Error displaying frame: {e}")
