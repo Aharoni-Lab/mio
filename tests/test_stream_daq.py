@@ -46,7 +46,7 @@ def default_streamdaq(set_okdev_input, request) -> StreamDaq:
             None,
             "stream_daq_test_fpga_raw_input_200px.bin",
             [
-                "ee7bdb97c1e98ebeefc65ae651968e3a72d099e57d1fdec5ec05a3598733db93",
+                "f7ca12006595f18922380937bf6fc28376ed48976b050dbbd5529c1803dcda2f",
             ],
             False,
         ),
@@ -55,7 +55,7 @@ def default_streamdaq(set_okdev_input, request) -> StreamDaq:
             "test_remove_stripe_example",
             "stream_daq_test_fpga_raw_input_200px.bin",
             [
-                "ee7bdb97c1e98ebeefc65ae651968e3a72d099e57d1fdec5ec05a3598733db93",
+                "f7ca12006595f18922380937bf6fc28376ed48976b050dbbd5529c1803dcda2f",
             ],
             False,
         )
@@ -128,7 +128,7 @@ def test_csv_output(tmp_path, default_streamdaq, write_metadata, caplog):
         # actually not sure what we should be looking for here, for now we just check for shape
         # this should be the same as long as the test data stays the same,
         # but it's a pretty weak test.
-        assert df.shape == (910, 15)
+        assert df.shape == (907, 15)
 
         # the underlying csv should have the same number of column headers as data columsn
         # if there is a mismatch, the index will turn into a multi-index

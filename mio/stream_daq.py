@@ -414,9 +414,7 @@ class StreamDaq:
                 # update data and record header for the current (possibly new) frame
                 frame_buffer[header_data.frame_buffer_count] = serial_buffer
                 header_list.append(header_data)
-                locallogs.debug(
-                    "----buffer #" + str(header_data.frame_buffer_count) + " stored"
-                )
+                locallogs.debug("----buffer #" + str(header_data.frame_buffer_count) + " stored")
         finally:
             try:
                 # get remaining buffers.
