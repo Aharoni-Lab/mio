@@ -27,6 +27,33 @@ class ReconstructedBufferList:
     buffer_frame_index_list: List[int]
 
 
+def frame_timestamp_match_ratio(timestamp_lists: List[List[int]]) -> float:
+    """
+    Compute the fraction of timestamps that are same within each ReconstructedBufferList.
+    The denominator is the maximum number of timestamps across the provided lists.
+
+    Parameters:
+        timestamp_lists: List[List[int]]
+            A list of lists of timestamps to compare.
+
+    Returns:
+        float: The fraction of timestamps that are same within each ReconstructedBufferList.
+
+    """
+    # Edge cases
+    if timestamp_lists is None or len(timestamp_lists) == 0:
+        return 0.0
+
+    base_timestamp_list = timestamp_lists[0]
+    match_count = 0
+    for timestamp in base_timestamp_list:
+        if all(timestamp in timestamp_list for timestamp_list in timestamp_lists):
+            match_count += 1
+
+    maximum_timestamp_length = max(len(timestamp_list) for timestamp_list in timestamp_lists)
+    return match_count / maximum_timestamp_length
+
+
 @dataclass
 class RecordingData:
     """Container for a single stream's data."""
