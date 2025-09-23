@@ -9,17 +9,27 @@ import sys
 from importlib.metadata import version
 from itertools import chain
 from pathlib import Path
-from typing import Any, ClassVar, List, Literal, Optional, Union, overload
+from typing import (
+    Any,
+    ClassVar,
+    Iterator,
+    List,
+    Literal,
+    Optional,
+    TypedDict,
+    Union,
+    overload,
+)
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from mio.types import ConfigID, ConfigSource, PythonIdentifier, valid_config_id
-
 if sys.version_info < (3, 11):
-    from typing_extensions import Self
+    from typing_extensions import NotRequired, Self
 else:
-    from typing import Self
+    from typing import NotRequired, Self
+
+from mio.types import ConfigID, ConfigSource, PythonIdentifier, valid_config_id
 
 
 class YamlDumper(yaml.SafeDumper):
@@ -71,6 +81,17 @@ class YAMLMixin:
     def _dump_data(self, **kwargs: Any) -> dict:
         data = self.model_dump(**kwargs) if isinstance(self, BaseModel) else self.__dict__
         return data
+
+
+class ConfigYamlHeader(TypedDict):
+    """
+    Generic container for partially-read config header data
+    """
+
+    id: Optional[ConfigID]
+    mio_model: PythonIdentifier
+    mio_version: str
+    path: NotRequired[Path]
 
 
 class ConfigYAMLMixin(BaseModel, YAMLMixin):
@@ -182,6 +203,22 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
             f"{source} - id or file not found, or type not supported"
         )
 
+    @classmethod
+    def iter_configs(cls) -> Iterator[ConfigYamlHeader]:
+        """
+        Yield headers for all configs along with their paths
+        """
+        globs = [src.rglob("*.y*ml") for src in cls.config_sources()]
+        for config_file in chain(*globs):
+            config_header = yaml_peek(ConfigYamlHeader.__required_keys__, config_file)
+            if (
+                config_header.get("mio_model", None) is None
+                or config_header.get("id", None) is None
+            ):
+                continue
+            config_header["path"] = config_file
+            yield config_header
+
     @field_validator("mio_model", mode="before")
     @classmethod
     def fill_mio_model(cls, v: Optional[str]) -> PythonIdentifier:
@@ -209,7 +246,7 @@ class ConfigYAMLMixin(BaseModel, YAMLMixin):
         return f"{cls.__module__}.{cls.__name__}"
 
     @classmethod
-    def _yaml_header(cls, instance: Union[Self, dict]) -> dict:
+    def _yaml_header(cls, instance: Union[Self, dict]) -> ConfigYamlHeader:
         if isinstance(instance, dict):
             model_id = instance.get("id", None)
             mio_model = instance.get("mio_model", cls._model_name())
@@ -282,9 +319,21 @@ def yaml_peek(
 ) -> Union[str, List[str]]: ...
 
 
+@overload
 def yaml_peek(
-    key: str, path: Union[str, Path], root: bool = True, first: bool = True
-) -> Union[str, List[str]]:
+    key: Union[list[str], tuple[str], set[str], frozenset[str]],
+    path: Union[str, Path],
+    root: bool = True,
+    first: bool = True,
+) -> dict[str, Any]: ...
+
+
+def yaml_peek(
+    key: Union[str, list[str], tuple[str], set[str], frozenset[str]],
+    path: Union[str, Path],
+    root: bool = True,
+    first: bool = True,
+) -> Union[str, List[str], dict[str, Any]]:
     """
     Peek into a yaml file without parsing the whole file to retrieve the value of a single key.
 
@@ -295,7 +344,10 @@ def yaml_peek(
     Returns a string no matter what the yaml type is so ya have to do your own casting if you want
 
     Args:
-        key (str): The key to peek for
+        key (str, list[str], tuple[str], set[str): The key to peek for.
+            If a collection (list, tuple, set-like) of keys is passed,
+            return a dictionary mapping those keys to their values,
+            (or ``None``) if no value is found for that key.
         path (:class:`pathlib.Path` , str): The yaml file to peek into
         root (bool): Only find keys at the root of the document (default ``True`` ), otherwise
             find keys at any level of nesting.
@@ -305,6 +357,15 @@ def yaml_peek(
     Returns:
         str
     """
+    if isinstance(key, (tuple, list, set, frozenset)):
+        ret = {}
+        for one_key in key:
+            try:
+                ret[one_key] = yaml_peek(one_key, path=path, root=root, first=first)
+            except KeyError:
+                ret[one_key] = None
+        return ret
+
     if root:
         pattern = re.compile(
             rf"^(?P<key>{key}):\s*\"*\'*(?P<value>\S.*?)\"*\'*$", flags=re.MULTILINE

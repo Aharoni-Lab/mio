@@ -24,6 +24,7 @@ dependencies = [
     "platformdirs>=4.3.6",
     'typing-extensions>=4.10.0; python_version<"3.13"',
     "scikit-video>=1.1.11",
+    "scipy>=1.13.0",
 ]
 
 readme = "README.md"
@@ -60,7 +61,7 @@ documentation = "https://miniscope-io.readthedocs.io/"
 plot = ["matplotlib>=3.9.2"]
 tests = [
     "pytest>=8.2.2",
-    "pytest-cov>=5.0.0",
+    "pytest-cov>=7.0.0",
     "pytest-timeout>=2.3.1",
     "mio[plot]",
     "tomli-w>=1.1.0",
@@ -117,6 +118,8 @@ addopts = [
 filterwarnings = [
     'ignore:builtin type SwigPyPacked',
     'ignore:builtin type SwigPyObject',
+    'ignore:FigureCanvasAgg is non-interactive',
+    'ignore:Animation was deleted without rendering anything', # from non-interactive agg backend
 ]
 testpaths = [
     "tests"
@@ -124,6 +127,7 @@ testpaths = [
 timeout = 60
 
 [tool.coverage.run]
+patch = ["subprocess"]
 omit = [
     "mio/vendor/*",
     "mio/devices/opalkelly.py", # can't test hardware interface directly

@@ -15,18 +15,6 @@ CONFIG_DIR = DATA_DIR / "config"
 MOCK_DIR = Path(__file__).parent / "mock"
 
 
-def pytest_sessionstart(session):
-    """
-    Allow coverage to handle multiprocessing.
-
-    References:
-        https://pytest-cov.readthedocs.io/en/latest/subprocess-support.html
-    """
-    from pytest_cov.embed import cleanup_on_sigterm
-
-    cleanup_on_sigterm()
-
-
 @pytest.fixture(autouse=True)
 def mock_okdev(monkeypatch):
     from mio.devices.mocks import okDevMock
@@ -49,6 +37,14 @@ def mock_config_source(monkeypatch_session):
         return [CONFIG_DIR, *current_sources]
 
     monkeypatch_session.setattr(ConfigYAMLMixin, "config_sources", classmethod(_config_sources))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def set_matplotlib_backend():
+    """Use headless agg backend during tests"""
+    import matplotlib
+
+    matplotlib.use("agg")
 
 
 @pytest.fixture()
