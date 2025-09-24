@@ -359,6 +359,10 @@ class StreamDaq:
             for serial_buffer in exact_iter(serial_buffer_queue.get, None):
                 header_data, serial_buffer = self._parse_header(serial_buffer)
 
+                if cur_fm_num == -1 and header_data.frame_buffer_count != 0:
+                    # discard until we see a buffer 0 to align to the start of a frame
+                    continue
+
                 try:
                     serial_buffer = self._trim(
                         serial_buffer,
@@ -384,10 +388,6 @@ class StreamDaq:
 
                 # if first buffer of a frame
                 if header_data.frame_num != cur_fm_num:
-                    # discard until we see a buffer 0 to align to the start of a frame
-                    if cur_fm_num == -1 and header_data.frame_buffer_count != 0:
-                        continue
-
                     # push previous frame_buffer into frame_buffer queue if we had one
                     if cur_fm_num != -1:
                         try:
