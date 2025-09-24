@@ -48,6 +48,19 @@ class BufferHeaderFormat(MiniscopeConfig, ConfigYAMLMixin):
     timestamp: int
     write_timestamp: int
 
+    @property
+    def header_cols(self) -> list[str]:
+        """
+        List of header column names ordered by their index in the format.
+
+        Excludes any fields listed in ``HEADER_FIELDS`` (reserved/internal fields).
+        """
+        header_items = self.model_dump(
+            exclude_none=True, exclude=set(self.HEADER_FIELDS)
+        )
+        header_items = sorted(header_items.items(), key=lambda x: x[1])
+        return [name for name, _ in header_items]
+
 
 _T = TypeVar("_T", bound="BufferHeader")
 

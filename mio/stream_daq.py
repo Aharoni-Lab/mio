@@ -645,11 +645,7 @@ class StreamDaq:
             )
 
         if metadata:
-            header_items = self.header_fmt.model_dump(
-                exclude_none=True, exclude=set(self.header_fmt.HEADER_FIELDS)
-            )
-            header_items = sorted(header_items.items(), key=lambda x: x[1])
-            header_cols = [h[0] for h in header_items]
+            header_cols = self.header_fmt.header_cols
 
             runtime_fields = list(RuntimeMetadata.model_fields.keys())
             header_cols.extend(runtime_fields)
