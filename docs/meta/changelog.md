@@ -4,6 +4,8 @@
 
 - [`#93`](https://github.com/Aharoni-Lab/mio/pull/93) - Add `mio config list` to display available configs
 - [`#103`](https://github.com/Aharoni-Lab/mio/pull/103) - Add `mio hash` to cli to hash video files
+- [`#136`](https://github.com/Aharoni-Lab/mio/pull/136) - Fix buffer misalignment during frame reconstruction
+- [`#136`](https://github.com/Aharoni-Lab/mio/pull/136) - Add runtime metadata fields for later video repair
 
 ## 0.8.*
 
