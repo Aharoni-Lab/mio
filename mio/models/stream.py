@@ -109,8 +109,10 @@ class StreamBufferHeader(BufferHeader):
     input_voltage_raw: int
     _adc_scaling: ADCScaling = None
 
-    runtime_metadata: RuntimeMetadata = RuntimeMetadata(
-        buffer_recv_index=-1, buffer_recv_unix_time=-1.0, black_padding_px=-1, frame_index=-1
+    runtime_metadata: RuntimeMetadata = Field(
+        default_factory=lambda: RuntimeMetadata(
+            buffer_recv_index=-1, buffer_recv_unix_time=-1.0, black_padding_px=-1, frame_index=-1
+        )
     )
 
     @property
