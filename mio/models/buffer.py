@@ -55,11 +55,17 @@ class BufferHeaderFormat(MiniscopeConfig, ConfigYAMLMixin):
 
         Excludes any fields listed in ``HEADER_FIELDS`` (reserved/internal fields).
         """
-        header_items = self.model_dump(
-            exclude_none=True, exclude=set(self.HEADER_FIELDS)
-        )
+        header_items = self.model_dump(exclude_none=True, exclude=set(self.HEADER_FIELDS))
         header_items = sorted(header_items.items(), key=lambda x: x[1])
         return [name for name, _ in header_items]
+
+    def header_cols_with(self, extra_fields: list[str]) -> list[str]:
+        """
+        Return `header_cols` plus the provided `extra_fields` appended.
+        """
+        cols = list(self.header_cols)
+        cols.extend(extra_fields)
+        return cols
 
 
 _T = TypeVar("_T", bound="BufferHeader")
