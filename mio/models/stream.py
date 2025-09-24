@@ -67,6 +67,35 @@ class RuntimeMetadata(MiniscopeConfig):
     Runtime metadata for data streams.
     """
 
+    buffer_recv_index: int = Field(
+        -1,
+        description=(
+            "Index of the buffer received since the start of the stream data acquisition. "
+            "Note: This is different from the device's internal buffer index, "
+            "which counts buffers from device boot. "
+            "buffer index -1 shouldn't exist in the output data as this value should always be set."
+        ),
+    )
+    buffer_recv_unix_time: float = Field(
+        -1.0,
+        description="Unix time when the buffer was received",
+    )
+    black_padding_px: int = Field(
+        -1,
+        description="Number of black padding pixels added to the end of each buffer",
+    )
+    frame_index: int = Field(
+        -1,
+        description=(
+            "Index of the frame since the start of stream data acquisition. "
+            "This value matches the frame index in the output video file. "
+            "Note: This is different from the device's internal frame_index, "
+            "which counts frames from device boot, "
+            "and also counts frames that failed to be reconstructed. "
+            "If the buffer is not part of a valid frame, this will be -1."
+        ),
+    )
+
     buffer_recv_index: int = -1
     buffer_recv_unix_time: float = -1.0
     black_padding_px: int = -1
