@@ -2,8 +2,9 @@
 Models for :mod:`mio.stream_daq`
 """
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal, Optional, Union
+from typing import Literal, Optional, Type, TypeVar, Union
 
 from pydantic import Field, computed_field, field_validator
 
@@ -68,8 +69,11 @@ class RuntimeMetadata(MiniscopeConfig):
 
     buffer_recv_index: int
     buffer_recv_unix_time: float
-    black_padding_px: int
-    frame_index: int
+    black_padding_px: int = -1
+    frame_index: int = -1
+
+
+_T = TypeVar("_T", bound="StreamBufferHeader")
 
 
 class StreamBufferHeaderFormat(BufferHeaderFormat):
@@ -139,6 +143,35 @@ class StreamBufferHeader(BufferHeader):
             return self.input_voltage_raw
         else:
             return self._adc_scaling.scale_input_voltage(self.input_voltage_raw)
+
+    @classmethod
+    def from_format(
+        cls: Type[_T],
+        vals: Sequence,
+        format: StreamBufferHeaderFormat,
+        construct: bool = False,
+        runtime_metadata: RuntimeMetadata = None,
+    ) -> _T:
+        """
+        Instantiate a stream buffer header from linearized values (eg. in an ndarray or list),
+        an associated format that tells us what index the model values are found in that data,
+        and runtime metadata container.
+
+        Args:
+            vals (list, :class:`numpy.ndarray` ): Indexable values to cast to the header model
+            format (:class:`.BufferHeaderFormat` ): Format used to index values
+            construct (bool): If ``True`` , use :meth:`~pydantic.BaseModel.model_construct`
+                to create the model instance (ie. without validation, but faster).
+                Default: ``False``
+            runtime_metadata (:class:`.RuntimeMetadata`): Runtime metadata to attach to the header.
+
+        Returns:
+            :class:`.StreamBufferHeader`
+        """
+        header = super().from_format(format=format, vals=vals, construct=construct)
+        if runtime_metadata is not None:
+            header.runtime_metadata = runtime_metadata
+        return header
 
 
 class StreamDevRuntime(MiniscopeConfig):

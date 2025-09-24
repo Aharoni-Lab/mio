@@ -314,14 +314,15 @@ class StreamDaq:
             reverse_payload_bytes=self.config.reverse_payload_bytes,
         )
 
-        header_data = StreamBufferHeader.from_format(header.astype(int), self.header_fmt)
-        header_data.adc_scaling = self.config.adc_scale
-        header_data.runtime_metadata = RuntimeMetadata(
+        runtime_metadata = RuntimeMetadata(
             buffer_recv_index=self._buffer_recv_index,
             buffer_recv_unix_time=time.time(),
-            black_padding_px=-1,
-            frame_index=-1,
         )
+        header_data = StreamBufferHeader.from_format(
+            header.astype(int), self.header_fmt, runtime_metadata
+        )
+        header_data.adc_scaling = self.config.adc_scale
+
         self._buffer_recv_index += 1
         return header_data, payload
 
