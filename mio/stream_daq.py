@@ -740,10 +740,7 @@ class StreamDaq:
                 if metadata:
                     self.logger.debug("Saving header metadata")
                     try:
-                        meta_row = header.model_dump(warnings=False)
-                        if "runtime_metadata" in meta_row and meta_row["runtime_metadata"]:
-                            runtime_data = meta_row.pop("runtime_metadata")
-                            meta_row.update(runtime_data)
+                        meta_row = header.model_dump_row()
                         self._buffered_writer.append(meta_row)
                     except Exception as e:
                         self.logger.exception(f"Exception saving headers: \n{e}")

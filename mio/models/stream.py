@@ -171,6 +171,21 @@ class StreamBufferHeader(BufferHeader):
         else:
             return self._adc_scaling.scale_input_voltage(self.input_voltage_raw)
 
+    @computed_field
+    def model_dump_row(self, warning: bool = False) -> dict:
+        """
+        Return a dictionary of the model values, including runtime metadata if available.
+
+        Returns:
+            dict: Dictionary of model values
+        """
+        meta_row = self.model_dump(warnings=warning)
+        if "runtime_metadata" in meta_row and meta_row["runtime_metadata"]:
+            runtime_data = meta_row.pop("runtime_metadata")
+            meta_row.update(runtime_data)
+
+        return meta_row
+
     @classmethod
     def from_format(
         cls: Type[_T],
