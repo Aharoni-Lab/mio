@@ -171,7 +171,7 @@ class StreamBufferHeader(BufferHeader):
         else:
             return self._adc_scaling.scale_input_voltage(self.input_voltage_raw)
 
-    def model_dump_row(self, warning: bool = False) -> dict:
+    def model_dump_all(self, warning: bool = False) -> dict:
         """
         Return a dictionary of the model values, including runtime metadata if available.
 
