@@ -463,9 +463,6 @@ class StreamDaq:
             for frame_data, header_list in exact_iter(frame_buffer_queue.get, None):
 
                 if not frame_data or len(frame_data) == 0:
-                    # Keep frame_index as -1 for empty/invalid frames
-                    for header in header_list:
-                        header.runtime_metadata.frame_index = -1
                     try:
                         imagearray.put(
                             (None, header_list),
