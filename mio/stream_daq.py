@@ -23,6 +23,7 @@ from mio.exceptions import EndOfRecordingException, StreamReadError
 from mio.io import BufferedCSVWriter, VideoWriter
 from mio.models.process import FreqencyMaskingConfig
 from mio.models.stream import (
+    RuntimeMetadata,
     StreamBufferHeader,
     StreamBufferHeaderFormat,
     StreamDevConfig,
@@ -121,6 +122,7 @@ class StreamDaq:
         self._nbuffer_per_fm: Optional[int] = None
         self._buffered_writer: Optional[BufferedCSVWriter] = None
         self._header_plotter: Optional[StreamPlotter] = None
+        self._buffer_recv_index: int = 0
 
     @property
     def buffer_npix(self) -> List[int]:
@@ -179,9 +181,15 @@ class StreamDaq:
             # trim if too long
             if data.shape[0] > expected_data_size:
                 data = data[0:expected_data_size]
+                header.runtime_metadata.black_padding_px = 0  # No padding, data was trimmed
             # pad if too short
             else:
-                data = np.pad(data, (0, expected_data_size - data.shape[0]))
+                padding_amount = expected_data_size - data.shape[0]
+                data = np.pad(data, (0, padding_amount))
+                header.runtime_metadata.black_padding_px = padding_amount
+        else:
+            # No trimming or padding needed
+            header.runtime_metadata.black_padding_px = 0
 
         return data
 
@@ -306,7 +314,13 @@ class StreamDaq:
             reverse_payload_bytes=self.config.reverse_payload_bytes,
         )
 
-        header_data = StreamBufferHeader.from_format(header.astype(int), self.header_fmt)
+        runtime_metadata = RuntimeMetadata(
+            buffer_recv_index=-1,  # will be set later in _buffer_to_frame for processed buffers
+            buffer_recv_unix_time=time.time(),
+        )
+        header_data = StreamBufferHeader.from_format(
+            header.astype(int), self.header_fmt, runtime_metadata=runtime_metadata
+        )
         header_data.adc_scaling = self.config.adc_scale
 
         return header_data, payload
@@ -343,7 +357,14 @@ class StreamDaq:
         try:
             for serial_buffer in exact_iter(serial_buffer_queue.get, None):
                 header_data, serial_buffer = self._parse_header(serial_buffer)
-                header_list.append(header_data)
+
+                if cur_fm_num == -1 and header_data.frame_buffer_count != 0:
+                    # discard until we see a buffer 0 to align to the start of a frame
+                    continue
+
+                # update buffer_recv_index only for processed buffers
+                header_data.runtime_metadata.buffer_recv_index = self._buffer_recv_index
+                self._buffer_recv_index += 1
 
                 try:
                     serial_buffer = self._trim(
@@ -370,19 +391,16 @@ class StreamDaq:
 
                 # if first buffer of a frame
                 if header_data.frame_num != cur_fm_num:
-                    # discard first incomplete frame
-                    if cur_fm_num == -1 and header_data.frame_buffer_count != 0:
-                        continue
-
-                    # push previous frame_buffer into frame_buffer queue
-                    try:
-                        frame_buffer_queue.put(
-                            (frame_buffer, header_list),
-                            block=True,
-                            timeout=self.config.runtime.queue_put_timeout,
-                        )
-                    except queue.Full:
-                        locallogs.warning("Frame buffer queue full, skipping frame.")
+                    # push previous frame_buffer into frame_buffer queue if we had one
+                    if cur_fm_num != -1:
+                        try:
+                            frame_buffer_queue.put(
+                                (frame_buffer, header_list),
+                                block=True,
+                                timeout=self.config.runtime.queue_put_timeout,
+                            )
+                        except queue.Full:
+                            locallogs.warning("Frame buffer queue full, skipping frame.")
 
                     # init new frame_buffer
                     frame_buffer = frame_buffer_prealloc.copy()
@@ -397,14 +415,10 @@ class StreamDaq:
                             f"{header_data.frame_buffer_count}"
                         )
 
-                    # update data
-                    frame_buffer[header_data.frame_buffer_count] = serial_buffer
-
-                else:
-                    frame_buffer[header_data.frame_buffer_count] = serial_buffer
-                    locallogs.debug(
-                        "----buffer #" + str(header_data.frame_buffer_count) + " stored"
-                    )
+                # update data and record header for the current (possibly new) frame
+                frame_buffer[header_data.frame_buffer_count] = serial_buffer
+                header_list.append(header_data)
+                locallogs.debug("----buffer #" + str(header_data.frame_buffer_count) + " stored")
         finally:
             try:
                 # get remaining buffers.
@@ -447,6 +461,7 @@ class StreamDaq:
             Output image array queue.
         """
         locallogs = init_logger("streamDaq.frame")
+        frame_index_counter = 0
         try:
             for frame_data, header_list in exact_iter(frame_buffer_queue.get, None):
 
@@ -459,6 +474,7 @@ class StreamDaq:
                         )
                     except queue.Full:
                         locallogs.warning("Image array queue full, skipping frame.")
+                    # Don't increment frame_index_counter for empty frames
                     continue
                 frame_data = np.concatenate(frame_data, axis=0)
 
@@ -480,6 +496,11 @@ class StreamDaq:
                     frame = np.zeros(
                         (self.config.frame_width, self.config.frame_height), dtype=np.uint8
                     )
+
+                # Populate reconstructed_frame_index for all headers in this frame
+                for header in header_list:
+                    header.runtime_metadata.reconstructed_frame_index = frame_index_counter
+
                 try:
                     imagearray.put(
                         (frame, header_list),
@@ -488,6 +509,8 @@ class StreamDaq:
                     )
                 except queue.Full:
                     locallogs.warning("Image array queue full, skipping frame.")
+
+                frame_index_counter += 1
         finally:
             locallogs.debug("Quitting, putting sentinel in queue")
             try:
@@ -625,12 +648,7 @@ class StreamDaq:
             )
 
         if metadata:
-            header_items = self.header_fmt.model_dump(
-                exclude_none=True, exclude=set(self.header_fmt.HEADER_FIELDS)
-            )
-            header_items = sorted(header_items.items(), key=lambda x: x[1])
-            header_cols = [h[0] for h in header_items]
-            header_cols.append("unix_time")
+            header_cols = StreamBufferHeader.csv_header_cols(self.header_fmt)
             self._buffered_writer = BufferedCSVWriter(
                 metadata, header=header_cols, buffer_size=self.config.runtime.csvwriter.buffer
             )
@@ -718,8 +736,7 @@ class StreamDaq:
                 if metadata:
                     self.logger.debug("Saving header metadata")
                     try:
-                        meta_row = header.model_dump(warnings=False)
-                        meta_row["unix_time"] = time.time()
+                        meta_row = header.model_dump_all()
                         self._buffered_writer.append(meta_row)
                     except Exception as e:
                         self.logger.exception(f"Exception saving headers: \n{e}")

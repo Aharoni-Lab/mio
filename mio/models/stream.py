@@ -2,6 +2,8 @@
 Models for :mod:`mio.stream_daq`
 """
 
+import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal, Optional, Union
 
@@ -12,6 +14,11 @@ from mio.models import MiniscopeConfig
 from mio.models.buffer import BufferHeader, BufferHeaderFormat
 from mio.models.mixins import ConfigYAMLMixin
 from mio.models.sinks import CSVWriterConfig, StreamPlotterConfig
+
+if sys.version_info < (3, 11):
+    from typing_extensions import Self
+else:
+    from typing import Self
 
 
 class ADCScaling(MiniscopeConfig):
@@ -61,6 +68,41 @@ class ADCScaling(MiniscopeConfig):
         return voltage_raw / 2**self.bitdepth * self.ref_voltage * self.vin_div_factor
 
 
+class RuntimeMetadata(MiniscopeConfig):
+    """
+    Runtime metadata for data streams.
+    """
+
+    buffer_recv_index: int = Field(
+        -1,
+        description=(
+            "Index of the buffer received since the start of the stream data acquisition. "
+            "Note: This is different from the device's internal buffer index, "
+            "which counts buffers from device boot. "
+            "buffer index -1 shouldn't exist in the output data as this value should always be set."
+        ),
+    )
+    buffer_recv_unix_time: float = Field(
+        -1.0,
+        description="Unix time when the buffer was received",
+    )
+    black_padding_px: int = Field(
+        -1,
+        description="Number of black padding pixels added to the end of each buffer",
+    )
+    reconstructed_frame_index: int = Field(
+        -1,
+        description=(
+            "Index of the frame since the start of stream data acquisition. "
+            "This value matches the frame index in the output video file. "
+            "Note: This is different from the device's internal frame_index, "
+            "which counts frames from device boot, "
+            "and also counts frames that failed to be reconstructed. "
+            "If the buffer is not part of a valid frame, this will be -1."
+        ),
+    )
+
+
 class StreamBufferHeaderFormat(BufferHeaderFormat):
     """
     Refinements of :class:`.BufferHeaderFormat` for
@@ -94,6 +136,8 @@ class StreamBufferHeader(BufferHeader):
     input_voltage_raw: int
     _adc_scaling: ADCScaling = None
 
+    runtime_metadata: RuntimeMetadata = Field(default_factory=lambda: RuntimeMetadata())
+
     @property
     def adc_scaling(self) -> Optional[ADCScaling]:
         """
@@ -124,6 +168,76 @@ class StreamBufferHeader(BufferHeader):
             return self.input_voltage_raw
         else:
             return self._adc_scaling.scale_input_voltage(self.input_voltage_raw)
+
+    def model_dump_all(self, warning: bool = False) -> dict:
+        """
+        Return a dictionary of the model values, including runtime metadata if available.
+
+        Returns:
+            dict: Dictionary of model values
+        """
+        meta_row = self.model_dump(warnings=warning)
+        if "runtime_metadata" in meta_row and meta_row["runtime_metadata"]:
+            runtime_data = meta_row.pop("runtime_metadata")
+            meta_row.update(runtime_data)
+
+        return meta_row
+
+    @classmethod
+    def from_format(
+        cls,
+        vals: Sequence,
+        format: StreamBufferHeaderFormat,
+        construct: bool = False,
+        runtime_metadata: RuntimeMetadata = None,
+    ) -> Self:
+        """
+        Instantiate a stream buffer header from linearized values (eg. in an ndarray or list),
+        an associated format that tells us what index the model values are found in that data,
+        and runtime metadata container.
+
+        Args:
+            vals (list, :class:`numpy.ndarray` ): Indexable values to cast to the header model
+            format (:class:`.BufferHeaderFormat` ): Format used to index values
+            construct (bool): If ``True`` , use :meth:`~pydantic.BaseModel.model_construct`
+                to create the model instance (ie. without validation, but faster).
+                Default: ``False``
+            runtime_metadata (:class:`.RuntimeMetadata`, optional): Runtime metadata
+             to attach to the header.
+
+        Returns:
+            :class:`.StreamBufferHeader`
+        """
+        header = super().from_format(format=format, vals=vals, construct=construct)
+        if runtime_metadata is not None:
+            header.runtime_metadata = runtime_metadata
+        return header
+
+    @classmethod
+    def csv_header_cols(cls, header_format: StreamBufferHeaderFormat) -> list[str]:
+        """
+        Return the standardized column names for CSV output.
+
+        This ensures consistent column ordering across all StreamBufferHeader instances
+        when writing to CSV files.
+
+        Args:
+            header_format: The StreamBufferHeaderFormat instance to get column ordering from
+
+        Returns:
+            list[str]: Column names in the order they should appear in CSV output
+        """
+        # Get the base header format columns (excluding internal fields)
+        header_items = header_format.model_dump(
+            exclude_none=True, exclude=set(header_format.HEADER_FIELDS)
+        )
+        header_items = sorted(header_items.items(), key=lambda x: x[1])
+        base_cols = [name for name, _ in header_items]
+
+        # Add runtime metadata fields from the class's own runtime_metadata attribute
+        runtime_fields = list(cls.model_fields["runtime_metadata"].annotation.model_fields.keys())
+
+        return base_cols + runtime_fields
 
 
 class StreamDevRuntime(MiniscopeConfig):

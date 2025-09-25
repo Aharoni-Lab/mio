@@ -46,7 +46,7 @@ def default_streamdaq(set_okdev_input, request) -> StreamDaq:
             None,
             "stream_daq_test_fpga_raw_input_200px.bin",
             [
-                "ee7bdb97c1e98ebeefc65ae651968e3a72d099e57d1fdec5ec05a3598733db93",
+                "f7ca12006595f18922380937bf6fc28376ed48976b050dbbd5529c1803dcda2f",
             ],
             False,
         ),
@@ -55,7 +55,7 @@ def default_streamdaq(set_okdev_input, request) -> StreamDaq:
             "test_remove_stripe_example",
             "stream_daq_test_fpga_raw_input_200px.bin",
             [
-                "ee7bdb97c1e98ebeefc65ae651968e3a72d099e57d1fdec5ec05a3598733db93",
+                "f7ca12006595f18922380937bf6fc28376ed48976b050dbbd5529c1803dcda2f",
             ],
             False,
         )
@@ -128,21 +128,40 @@ def test_csv_output(tmp_path, default_streamdaq, write_metadata, caplog):
         # actually not sure what we should be looking for here, for now we just check for shape
         # this should be the same as long as the test data stays the same,
         # but it's a pretty weak test.
-        assert df.shape == (910, 12)
+        assert df.shape == (907, 15)
 
         # the underlying csv should have the same number of column headers as data columsn
         # if there is a mismatch, the index will turn into a multi-index
         assert isinstance(df.index, pd.RangeIndex)
 
-        # we should have the same columns in the same order as our header format
+        # we should have the same columns in the same order as our header format plus reconstruction metadata
         col_names = df.columns.to_list()
         expected = default_streamdaq.header_fmt.model_dump(exclude_none=True, exclude=set(default_streamdaq.header_fmt.HEADER_FIELDS))
-        expected = [h[0] for h in sorted(expected.items(), key=lambda x: x[1])] + ['unix_time']
+        expected = [h[0] for h in sorted(expected.items(), key=lambda x: x[1])]
+        
+        # Add runtime_metadata fields
+        from mio.models.stream import RuntimeMetadata
+        runtime_fields = list(RuntimeMetadata.model_fields.keys())
+        expected.extend(runtime_fields)
         assert col_names == expected
 
         # ensure there were no errors during capture
         for record in caplog.records:
             assert "Exception saving headers" not in record.msg
+
+        # ensure the buffer_recv_index increments from 0 to the number of buffers in the data file as an array
+        buffer_recv_index = df.buffer_recv_index.to_numpy()
+        assert np.all(buffer_recv_index == np.arange(0, len(buffer_recv_index)))
+        
+        # ensure the reconstructed frame index array that excludes -1 monotonically increases from 0
+        reconstructed_frame_index = df.reconstructed_frame_index.to_numpy()
+        reconstructed_frame_index = reconstructed_frame_index[reconstructed_frame_index != -1]
+        assert np.all(np.diff(reconstructed_frame_index) >= 0)
+        
+        # ensure that reconstructed frame index contains all values from 0 to the number of frames in the data file
+        unique_reconstructed_frame_index = np.unique(reconstructed_frame_index)
+        assert np.all(unique_reconstructed_frame_index == np.arange(0, len(unique_reconstructed_frame_index)))
+    
     else:
         default_streamdaq.capture(source="fpga", metadata=None, show_video=False)
         assert not output_csv.exists()
@@ -161,8 +180,8 @@ def test_processing_speed(tmp_path, default_streamdaq):
 
     df = pd.read_csv(output_csv)
 
-    unix_time_first = df.iloc[0]['unix_time']
-    unix_time_last = df.iloc[-1]['unix_time']
+    unix_time_first = df.iloc[0]['buffer_recv_unix_time']
+    unix_time_last = df.iloc[-1]['buffer_recv_unix_time']
     time_taken = unix_time_last - unix_time_first
 
     frame_index_first = df.iloc[0]['frame_num']
