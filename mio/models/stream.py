@@ -4,7 +4,7 @@ Models for :mod:`mio.stream_daq`
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal, Optional, Type, TypeVar, Union
+from typing import Literal, Optional, Self, TypeVar, Union
 
 from pydantic import Field, computed_field, field_validator
 
@@ -96,10 +96,6 @@ class RuntimeMetadata(MiniscopeConfig):
         ),
     )
 
-
-_T = TypeVar("_T", bound="StreamBufferHeader")
-
-
 class StreamBufferHeaderFormat(BufferHeaderFormat):
     """
     Refinements of :class:`.BufferHeaderFormat` for
@@ -182,12 +178,12 @@ class StreamBufferHeader(BufferHeader):
 
     @classmethod
     def from_format(
-        cls: Type[_T],
+        cls,
         vals: Sequence,
         format: StreamBufferHeaderFormat,
         construct: bool = False,
         runtime_metadata: RuntimeMetadata = None,
-    ) -> _T:
+    ) -> Self:
         """
         Instantiate a stream buffer header from linearized values (eg. in an ndarray or list),
         an associated format that tells us what index the model values are found in that data,
@@ -199,7 +195,8 @@ class StreamBufferHeader(BufferHeader):
             construct (bool): If ``True`` , use :meth:`~pydantic.BaseModel.model_construct`
                 to create the model instance (ie. without validation, but faster).
                 Default: ``False``
-            runtime_metadata (:class:`.RuntimeMetadata`): Runtime metadata to attach to the header.
+            runtime_metadata (:class:`.RuntimeMetadata`, optional): Runtime metadata
+             to attach to the header.
 
         Returns:
             :class:`.StreamBufferHeader`
