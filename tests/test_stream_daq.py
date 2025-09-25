@@ -148,6 +148,11 @@ def test_csv_output(tmp_path, default_streamdaq, write_metadata, caplog):
         # ensure there were no errors during capture
         for record in caplog.records:
             assert "Exception saving headers" not in record.msg
+
+        # ensure the buffer_recv_index increments from 1 to the number of buffers in the data file as an array
+        buffer_recv_index = df.buffer_recv_index.to_numpy()
+        assert np.all(buffer_recv_index == np.arange(0, len(buffer_recv_index)))
+
     else:
         default_streamdaq.capture(source="fpga", metadata=None, show_video=False)
         assert not output_csv.exists()

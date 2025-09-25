@@ -315,15 +315,14 @@ class StreamDaq:
         )
 
         runtime_metadata = RuntimeMetadata(
-            buffer_recv_index=self._buffer_recv_index,
+            buffer_recv_index=-1,  # will be set later in _buffer_to_frame for processed buffers
             buffer_recv_unix_time=time.time(),
         )
         header_data = StreamBufferHeader.from_format(
-            header.astype(int), self.header_fmt, runtime_metadata
+            header.astype(int), self.header_fmt, runtime_metadata=runtime_metadata
         )
         header_data.adc_scaling = self.config.adc_scale
 
-        self._buffer_recv_index += 1
         return header_data, payload
 
     def _buffer_to_frame(
@@ -362,6 +361,10 @@ class StreamDaq:
                 if cur_fm_num == -1 and header_data.frame_buffer_count != 0:
                     # discard until we see a buffer 0 to align to the start of a frame
                     continue
+                
+                # update buffer_recv_index only for processed buffers
+                header_data.runtime_metadata.buffer_recv_index = self._buffer_recv_index
+                self._buffer_recv_index += 1
 
                 try:
                     serial_buffer = self._trim(
