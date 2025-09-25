@@ -361,7 +361,7 @@ class StreamDaq:
                 if cur_fm_num == -1 and header_data.frame_buffer_count != 0:
                     # discard until we see a buffer 0 to align to the start of a frame
                     continue
-                
+
                 # update buffer_recv_index only for processed buffers
                 header_data.runtime_metadata.buffer_recv_index = self._buffer_recv_index
                 self._buffer_recv_index += 1
