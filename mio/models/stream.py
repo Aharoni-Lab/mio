@@ -4,7 +4,7 @@ Models for :mod:`mio.stream_daq`
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal, Optional, Self, TypeVar, Union
+from typing import Literal, Optional, Self, Union
 
 from pydantic import Field, computed_field, field_validator
 
@@ -95,6 +95,7 @@ class RuntimeMetadata(MiniscopeConfig):
             "If the buffer is not part of a valid frame, this will be -1."
         ),
     )
+
 
 class StreamBufferHeaderFormat(BufferHeaderFormat):
     """
@@ -205,6 +206,32 @@ class StreamBufferHeader(BufferHeader):
         if runtime_metadata is not None:
             header.runtime_metadata = runtime_metadata
         return header
+
+    @classmethod
+    def csv_header_cols(cls, header_format: StreamBufferHeaderFormat) -> list[str]:
+        """
+        Return the standardized column names for CSV output.
+
+        This ensures consistent column ordering across all StreamBufferHeader instances
+        when writing to CSV files.
+
+        Args:
+            header_format: The StreamBufferHeaderFormat instance to get column ordering from
+
+        Returns:
+            list[str]: Column names in the order they should appear in CSV output
+        """
+        # Get the base header format columns (excluding internal fields)
+        header_items = header_format.model_dump(
+            exclude_none=True, exclude=set(header_format.HEADER_FIELDS)
+        )
+        header_items = sorted(header_items.items(), key=lambda x: x[1])
+        base_cols = [name for name, _ in header_items]
+
+        # Add runtime metadata fields from the class's own runtime_metadata attribute
+        runtime_fields = list(cls.model_fields["runtime_metadata"].annotation.model_fields.keys())
+
+        return base_cols + runtime_fields
 
 
 class StreamDevRuntime(MiniscopeConfig):

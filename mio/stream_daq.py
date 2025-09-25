@@ -648,9 +648,7 @@ class StreamDaq:
             )
 
         if metadata:
-            header_cols = self.header_fmt.header_cols_with(
-                list(RuntimeMetadata.model_fields.keys())
-            )
+            header_cols = StreamBufferHeader.csv_header_cols(self.header_fmt)
             self._buffered_writer = BufferedCSVWriter(
                 metadata, header=header_cols, buffer_size=self.config.runtime.csvwriter.buffer
             )
