@@ -2,9 +2,10 @@
 Models for :mod:`mio.stream_daq`
 """
 
+import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal, Optional, Self, Union
+from typing import Literal, Optional, Union
 
 from pydantic import Field, computed_field, field_validator
 
@@ -13,6 +14,11 @@ from mio.models import MiniscopeConfig
 from mio.models.buffer import BufferHeader, BufferHeaderFormat
 from mio.models.mixins import ConfigYAMLMixin
 from mio.models.sinks import CSVWriterConfig, StreamPlotterConfig
+
+if sys.version_info < (3, 11):
+    from typing_extensions import Self
+else:
+    from typing import Self
 
 
 class ADCScaling(MiniscopeConfig):
