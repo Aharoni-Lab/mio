@@ -497,9 +497,9 @@ class StreamDaq:
                         (self.config.frame_width, self.config.frame_height), dtype=np.uint8
                     )
 
-                # Populate frame_index for all headers in this frame
+                # Populate reconstructed_frame_index for all headers in this frame
                 for header in header_list:
-                    header.runtime_metadata.frame_index = frame_index_counter
+                    header.runtime_metadata.reconstructed_frame_index = frame_index_counter
 
                 try:
                     imagearray.put(

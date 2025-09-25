@@ -84,7 +84,7 @@ class RuntimeMetadata(MiniscopeConfig):
         -1,
         description="Number of black padding pixels added to the end of each buffer",
     )
-    frame_index: int = Field(
+    reconstructed_frame_index: int = Field(
         -1,
         description=(
             "Index of the frame since the start of stream data acquisition. "

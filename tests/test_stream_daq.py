@@ -149,18 +149,18 @@ def test_csv_output(tmp_path, default_streamdaq, write_metadata, caplog):
         for record in caplog.records:
             assert "Exception saving headers" not in record.msg
 
-        # ensure the buffer_recv_index increments from 1 to the number of buffers in the data file as an array
+        # ensure the buffer_recv_index increments from 0 to the number of buffers in the data file as an array
         buffer_recv_index = df.buffer_recv_index.to_numpy()
         assert np.all(buffer_recv_index == np.arange(0, len(buffer_recv_index)))
         
-        # ensure the frame index array that excludes -1 monotonically increases from 0
-        frame_index = df.frame_index.to_numpy()
-        frame_index = frame_index[frame_index != -1]
-        assert np.all(np.diff(frame_index) >= 0)
+        # ensure the reconstructed frame index array that excludes -1 monotonically increases from 0
+        reconstructed_frame_index = df.reconstructed_frame_index.to_numpy()
+        reconstructed_frame_index = reconstructed_frame_index[reconstructed_frame_index != -1]
+        assert np.all(np.diff(reconstructed_frame_index) >= 0)
         
-        # ensure that frame index contains all values from 0 to the number of frames in the data file
-        unique_frame_index = np.unique(frame_index)
-        assert np.all(unique_frame_index == np.arange(0, len(unique_frame_index)))
+        # ensure that reconstructed frame index contains all values from 0 to the number of frames in the data file
+        unique_reconstructed_frame_index = np.unique(reconstructed_frame_index)
+        assert np.all(unique_reconstructed_frame_index == np.arange(0, len(unique_reconstructed_frame_index)))
     
     else:
         default_streamdaq.capture(source="fpga", metadata=None, show_video=False)
