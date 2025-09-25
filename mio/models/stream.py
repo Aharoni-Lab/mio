@@ -96,11 +96,6 @@ class RuntimeMetadata(MiniscopeConfig):
         ),
     )
 
-    buffer_recv_index: int = -1
-    buffer_recv_unix_time: float = -1.0
-    black_padding_px: int = -1
-    frame_index: int = -1
-
 
 _T = TypeVar("_T", bound="StreamBufferHeader")
 
