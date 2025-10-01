@@ -47,14 +47,21 @@ class VideoWriter:
 
         self.writer = FFmpegWriter(filename=str(path), outputdict=output_dict)
 
-    def write_frame(self, frame: np.ndarray) -> None:
+    def write_frame(self, frame: np.ndarray) -> bool:
         """
         Write a frame to the video file.
 
         Parameters:
         frame (np.ndarray): The frame to write.
+
+        Returns:
+        bool: True if the frame write was attempted and did not raise, False otherwise.
         """
-        self.writer.writeFrame(frame)
+        try:
+            self.writer.writeFrame(frame)
+            return True
+        except Exception:
+            return False
 
     def close(self) -> None:
         """
