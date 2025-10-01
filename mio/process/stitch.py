@@ -7,25 +7,88 @@ the best buffers from each stream using gradient noise detection.
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Union
 
 import cv2
 import numpy as np
 import pandas as pd
+from pydantic import BaseModel
 
-from mio.process.metadata_helper import linearity_mse, make_combined_list
+from mio.io import VideoWriter
+from mio.logging import init_logger
+from mio.models.stream import StreamDevConfig
+from mio.process.metadata_helper import make_combined_list
 from mio.stream_daq import StreamDaq
 
+logger = init_logger(name="stitch")
 
-@dataclass
-class ReconstructedBufferList:
+
+class BufferInfo(BaseModel):
     """
-    Container containing a single frame as lists of buffers, timestamps, and buffer frame indices
+    Container containing information about a single buffer.
+    This container is oriented around the buffer receive index.
     """
 
-    buffer_list: List[np.ndarray]
-    timestamp_list: List[int]
-    buffer_frame_index_list: List[int]
+    buffer_recv_index: int
+    buffer_count: int
+    frame_buffer_count: int
+    timestamp: int
+    pixel_count: int
+    black_padding_px: int
+    buffer_recv_unix_time: float
+    pixel_data: Optional[np.ndarray] = None
+
+
+class FrameInfo(BaseModel):
+    """
+    Container containing information about a single frame.
+    This container is oriented around the reconstructed frame index.
+    """
+
+    reconstructed_frame_index: int
+    frame_num: int
+
+    buffer_info_list: List[BufferInfo] = []
+
+    def __init__(self, frame_num: int, metadata: pd.DataFrame):
+        self.frame_num = frame_num
+        # Find all buffer entries for this frame_num
+        frame_metadata = metadata[metadata["frame_num"] == self.frame_num]
+
+        if frame_metadata.empty:
+            raise ValueError(f"No metadata found for frame_num {self.frame_num}")
+
+        if all(
+            frame_metadata["reconstructed_frame_index"].iloc[0] == x
+            for x in frame_metadata["reconstructed_frame_index"]
+        ):
+            self.reconstructed_frame_index = frame_metadata["reconstructed_frame_index"].iloc[0]
+        else:
+            # Get the majority reconstructed_frame_index
+            self.reconstructed_frame_index = frame_metadata["reconstructed_frame_index"].mode()[0]
+            logger.warning(
+                f"Reconstructed frame index is not the same "
+                f"for all buffers in frame {self.frame_num}. "
+                f"Using the majority reconstructed_frame_index: {self.reconstructed_frame_index}"
+            )
+
+        self.buffer_info_list = []
+
+        # Iterate through all buffer entries for this frame
+        # sort based on buffer_recv_index
+        frame_metadata = frame_metadata.sort_values(by="buffer_recv_index")
+        for i in range(len(frame_metadata)):
+            self.buffer_info_list.append(
+                BufferInfo(
+                    buffer_recv_index=frame_metadata["buffer_recv_index"].iloc[i],
+                    buffer_count=frame_metadata["buffer_count"].iloc[i],
+                    frame_buffer_count=frame_metadata["frame_buffer_count"].iloc[i],
+                    timestamp=frame_metadata["timestamp"].iloc[i],
+                    pixel_count=frame_metadata["pixel_count"].iloc[i],
+                    black_padding_px=frame_metadata["black_padding_px"].iloc[i],
+                    buffer_recv_unix_time=frame_metadata["buffer_recv_unix_time"].iloc[i],
+                )
+            )
 
 
 @dataclass
@@ -38,6 +101,7 @@ class RecordingData:
     metadata: pd.DataFrame
     _daq: StreamDaq = None
     _buffer_npix: List[int] = None
+    _device_config: Optional[StreamDevConfig] = None
 
     def __post_init__(self):
         self.video_cap = cv2.VideoCapture(str(self.video_path))
@@ -61,10 +125,10 @@ class RecordingData:
         .. todo::
             Re-think this, though it is probablynot critical.
             We just need the buffer_npix list to reconstruct the buffers from the frame.
-            It could make sense to just make buffer_npix an independent helper.
+            It could make sense to just make buffer_npix static method on StreamDaq.
         """
         if self._daq is None:
-            self._daq = StreamDaq(self.device_config)
+            self._daq = StreamDaq(self._device_config)
         return self._daq
 
     @property
@@ -104,7 +168,7 @@ class RecordingData:
             )
         return timestamp_list, buffer_frame_index_list
 
-    def get_frame_as_buffer_time_array(self, timestamp: int) -> ReconstructedBufferList:
+    def get_frame_as_buffer_time_array(self, timestamp: int) -> FrameInfo:
         """
         Get the frame as a list of buffers and a list of timestamps.
 
@@ -124,10 +188,28 @@ class RecordingData:
         )
         for i in range(len(self.buffer_npix)):
             buffer_list.append(frame[i * self.buffer_npix[i] : (i + 1) * self.buffer_npix[i]])
-        return ReconstructedBufferList(
+        return FrameInfo(
             buffer_list=buffer_list,
             timestamp_list=timestamp_list,
             buffer_frame_index_list=buffer_frame_index_list,
+        )
+
+    def get_frame_info_from_frame_num(self, frame_num: int) -> FrameInfo:
+        """
+        Get the frame info from the frame num.
+        """
+        # Get the FrameInfo from the frame num
+        frame_info = self.metadata[self.metadata["frame_num"] == frame_num]
+        buffer_info_list = []
+        for i in range(len(self.buffer_npix)):
+            buffer_info_list.append(
+                BufferInfo(
+                    buffer_recv_index=frame_info["buffer_recv_index"].iloc[i],
+                )
+            )
+        return FrameInfo(
+            reconstructed_frame_index=frame_info["reconstructed_frame_index"].iloc[0],
+            frame_num=frame_info["frame_num"].iloc[0],
         )
 
 
@@ -137,10 +219,12 @@ class RecordingDataBundle:
 
     recordings: List[RecordingData]
     _combined_buffer_index: List[int] = None
+    _combined_frame_num: List[int] = None
     combined_metadata: pd.DataFrame = None
-    combined_video: List[np.ndarray] = None
+    combined_video_writer: Optional[VideoWriter] = None
 
-    def __init__(self, recordings: List[RecordingData]):
+    def __init__(self, recordings: List[RecordingData], path: Union[Path, str], fps: int):
+        self.combined_video_writer = VideoWriter(path=Path(path), fps=fps)
         self.recordings = recordings
 
     @property
@@ -155,41 +239,25 @@ class RecordingDataBundle:
             )
         return self._combined_buffer_index
 
+    @property
+    def combined_frame_num(self) -> List[int]:
+        """
+        Get the combined frame_num.
+        This is a list of unique frame_nums across all recordings.
+        """
+        if self._combined_frame_num is None:
+            self._combined_frame_num = make_combined_list(
+                [recording.metadata["frame_num"].tolist() for recording in self.recordings]
+            )
+        return self._combined_frame_num
+
     def stitch_recordings(self) -> None:
         """
         Stitch the videos together and store the result in the combined_metadata and combined_video
         """
-        current_frame_index = -1
-
-        for buffer_index in self.combined_buffer_index:
-            if (
-                self.recordings[0]
-                .metadata[self.recordings[0].metadata["buffer_index"] == buffer_index][
-                    "frame_index"
-                ]
-                .values
-                == current_frame_index
-            ):
-                # skip if the frame index is the same as the previous one
-                continue
-            timestamp_lists = []
+        for frame_num in self.combined_frame_num:
+            frame_info_list = []
             for recording in self.recordings:
-                if buffer_index in recording.metadata["buffer_index"].values:
-                    timestamp_lists.append(
-                        recording.metadata[recording.metadata["buffer_index"] == buffer_index][
-                            "timestamp"
-                        ].values
-                    )
-            # if timestamps don't match, find the best candidate
-            if all(np.array_equal(timestamp_lists[0], ts) for ts in timestamp_lists):
-                selected_timestamp = timestamp_lists[0][0]
-            else:
-                mse_list = []
-                for recording in self.recordings:
-                    if buffer_index in recording.metadata["buffer_index"].values:
-                        ts = recording.metadata[recording.metadata["buffer_index"] == buffer_index][
-                            "timestamp"
-                        ].values
-                        frame_indices = [recording.get_frame_index_from_timestamp(t) for t in ts]
-                        mse = linearity_mse(frame_indices, 0)
-                        mse_list.append((mse, ts[0]))
+                if frame_num in recording.metadata["frame_num"].values:
+                    frame_info_list.append(recording.get_frame_info_from_frame_num(frame_num))
+            self.combined_metadata = pd.concat(frame_info_list)
