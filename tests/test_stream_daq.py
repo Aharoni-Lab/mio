@@ -366,7 +366,6 @@ def test_writer_returns_match_avi_frame_count(tmp_path: Path, set_okdev_input, m
 
     assert output_video.exists()
 
-    import cv2
     cap = cv2.VideoCapture(str(output_video))
     avi_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
