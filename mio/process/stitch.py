@@ -3,6 +3,7 @@ Buffer-wise stitching of multiple data streams based on device timestamps.
 
 This module combines multiple recordings (AVI video + metadata CSV) by selecting
 the best buffers from each stream using gradient noise detection.
+This is still hardcoded around the StreamDevConfig metadata fields.
 """
 
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from typing import List, Optional, Union
 import cv2
 import numpy as np
 import pandas as pd
+from numpydantic import NDArray
 from pydantic import BaseModel
 
 from mio.io import VideoWriter
@@ -36,7 +38,7 @@ class BufferInfo(BaseModel):
     pixel_count: int
     black_padding_px: int
     buffer_recv_unix_time: float
-    pixel_data: Optional[np.ndarray] = None
+    pixel_data: Optional[NDArray] = None
 
 
 class FrameInfo(BaseModel):
@@ -50,35 +52,36 @@ class FrameInfo(BaseModel):
 
     buffer_info_list: List[BufferInfo] = []
 
-    def __init__(self, frame_num: int, metadata: pd.DataFrame):
-        self.frame_num = frame_num
+    @classmethod
+    def from_metadata(cls, frame_num: int, metadata: pd.DataFrame) -> "FrameInfo":
+        """Create a FrameInfo instance from frame_num and metadata."""
         # Find all buffer entries for this frame_num
-        frame_metadata = metadata[metadata["frame_num"] == self.frame_num]
+        frame_metadata = metadata[metadata["frame_num"] == frame_num]
 
         if frame_metadata.empty:
-            raise ValueError(f"No metadata found for frame_num {self.frame_num}")
+            raise ValueError(f"No metadata found for frame_num {frame_num}")
 
         if all(
             frame_metadata["reconstructed_frame_index"].iloc[0] == x
             for x in frame_metadata["reconstructed_frame_index"]
         ):
-            self.reconstructed_frame_index = frame_metadata["reconstructed_frame_index"].iloc[0]
+            reconstructed_frame_index = frame_metadata["reconstructed_frame_index"].iloc[0]
         else:
             # Get the majority reconstructed_frame_index
-            self.reconstructed_frame_index = frame_metadata["reconstructed_frame_index"].mode()[0]
+            reconstructed_frame_index = frame_metadata["reconstructed_frame_index"].mode()[0]
             logger.warning(
                 f"Reconstructed frame index is not the same "
-                f"for all buffers in frame {self.frame_num}. "
-                f"Using the majority reconstructed_frame_index: {self.reconstructed_frame_index}"
+                f"for all buffers in frame {frame_num}. "
+                f"Using the majority reconstructed_frame_index: {reconstructed_frame_index}"
             )
 
-        self.buffer_info_list = []
+        buffer_info_list = []
 
         # Iterate through all buffer entries for this frame
         # sort based on buffer_recv_index
         frame_metadata = frame_metadata.sort_values(by="buffer_recv_index")
         for i in range(len(frame_metadata)):
-            self.buffer_info_list.append(
+            buffer_info_list.append(
                 BufferInfo(
                     buffer_recv_index=frame_metadata["buffer_recv_index"].iloc[i],
                     buffer_count=frame_metadata["buffer_count"].iloc[i],
@@ -90,6 +93,12 @@ class FrameInfo(BaseModel):
                 )
             )
 
+        return cls(
+            frame_num=frame_num,
+            reconstructed_frame_index=reconstructed_frame_index,
+            buffer_info_list=buffer_info_list,
+        )
+
 
 @dataclass
 class RecordingData:
@@ -97,8 +106,8 @@ class RecordingData:
 
     video_path: Path
     csv_path: Path
-    video_cap: cv2.VideoCapture
-    metadata: pd.DataFrame
+    video_cap: cv2.VideoCapture = None
+    metadata: pd.DataFrame = None
     _daq: StreamDaq = None
     _buffer_npix: List[int] = None
     _device_config: Optional[StreamDevConfig] = None
@@ -198,19 +207,8 @@ class RecordingData:
         """
         Get the frame info from the frame num.
         """
-        # Get the FrameInfo from the frame num
-        frame_info = self.metadata[self.metadata["frame_num"] == frame_num]
-        buffer_info_list = []
-        for i in range(len(self.buffer_npix)):
-            buffer_info_list.append(
-                BufferInfo(
-                    buffer_recv_index=frame_info["buffer_recv_index"].iloc[i],
-                )
-            )
-        return FrameInfo(
-            reconstructed_frame_index=frame_info["reconstructed_frame_index"].iloc[0],
-            frame_num=frame_info["frame_num"].iloc[0],
-        )
+        # Use the FrameInfo class method which handles the metadata parsing
+        return FrameInfo.from_metadata(frame_num=frame_num, metadata=self.metadata)
 
 
 @dataclass
@@ -255,9 +253,41 @@ class RecordingDataBundle:
         """
         Stitch the videos together and store the result in the combined_metadata and combined_video
         """
+        all_frame_info = []
         for frame_num in self.combined_frame_num:
             frame_info_list = []
             for recording in self.recordings:
                 if frame_num in recording.metadata["frame_num"].values:
-                    frame_info_list.append(recording.get_frame_info_from_frame_num(frame_num))
-            self.combined_metadata = pd.concat(frame_info_list)
+                    frame_info = recording.get_frame_info_from_frame_num(frame_num)
+                    frame_info_list.append(frame_info)
+
+            if frame_info_list:
+                all_frame_info.extend(frame_info_list)
+                logger.debug(
+                    f"Frame {frame_num}: Collected {len(frame_info_list)} frame_info objects"
+                )
+
+        logger.info(f"Total collected {len(all_frame_info)} frame_info objects")
+        # TODO: Implement actual stitching logic here
+        # For now, just create an empty DataFrame
+        self.combined_metadata = pd.DataFrame()
+
+
+# script run for development
+if __name__ == "__main__":
+    recordings = [
+        RecordingData(
+            video_path=Path("user_data/stitch_test/stream1.avi"),
+            csv_path=Path("user_data/stitch_test/stream1.csv"),
+        ),
+        RecordingData(
+            video_path=Path("user_data/stitch_test/stream2.avi"),
+            csv_path=Path("user_data/stitch_test/stream2.csv"),
+        ),
+    ]
+    recording_bundle = RecordingDataBundle(
+        recordings=recordings, path=Path("user_data/stitch_test/stitched.avi"), fps=20
+    )
+    # list of imported recordings (video filenames)
+    logger.info(f"Imported recordings: {[recording.video_path for recording in recordings]}")
+    recording_bundle.stitch_recordings()
