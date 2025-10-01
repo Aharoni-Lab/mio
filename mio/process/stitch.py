@@ -16,7 +16,7 @@ import pandas as pd
 from numpydantic import NDArray
 from pydantic import BaseModel
 
-from mio.io import VideoWriter
+from mio.io import VideoReader, VideoWriter
 from mio.logging import init_logger
 from mio.models.stream import StreamDevConfig
 from mio.process.metadata_helper import make_combined_list
@@ -106,16 +106,14 @@ class RecordingData:
 
     video_path: Path
     csv_path: Path
-    video_cap: cv2.VideoCapture = None
+    video_reader: VideoReader = None
     metadata: pd.DataFrame = None
     _daq: StreamDaq = None
     _buffer_npix: List[int] = None
     _device_config: Optional[StreamDevConfig] = None
 
     def __post_init__(self):
-        self.video_cap = cv2.VideoCapture(str(self.video_path))
-        if not self.video_cap.isOpened():
-            raise ValueError(f"Could not open video file: {self.video_path}")
+        self.video_reader = VideoReader(str(self.video_path))
         self.metadata = pd.read_csv(self.csv_path)
 
     def get_frame_index_from_timestamp(self, timestamp: int) -> int:
@@ -253,24 +251,32 @@ class RecordingDataBundle:
         """
         Stitch the videos together and store the result in the combined_metadata and combined_video
         """
-        all_frame_info = []
         for frame_num in self.combined_frame_num:
-            frame_info_list = []
+            recording_frame_pairs = []
+            
             for recording in self.recordings:
                 if frame_num in recording.metadata["frame_num"].values:
-                    frame_info = recording.get_frame_info_from_frame_num(frame_num)
-                    frame_info_list.append(frame_info)
-
-            if frame_info_list:
-                all_frame_info.extend(frame_info_list)
-                logger.debug(
-                    f"Frame {frame_num}: Collected {len(frame_info_list)} frame_info objects"
-                )
-
-        logger.info(f"Total collected {len(all_frame_info)} frame_info objects")
-        # TODO: Implement actual stitching logic here
-        # For now, just create an empty DataFrame
-        self.combined_metadata = pd.DataFrame()
+                    frame_info = FrameInfo.from_metadata(frame_num=frame_num, metadata=recording.metadata)
+                    recording_frame_pairs.append((recording, frame_info))
+            
+            # if there are multiple recordings with this frame_num, compare frames
+            if len(recording_frame_pairs) > 1:
+                try:
+                    frames = []
+                    for recording, frame_info in recording_frame_pairs:
+                        # Use reconstructed_frame_index to get the correct frame
+                        frame = recording.video_reader.read_frame(frame_info.reconstructed_frame_index)
+                        if frame is not None:
+                            frames.append(frame)
+                    
+                    # check if frames are the same (only if we got valid frames)
+                    if len(frames) > 1:
+                        if not all(np.array_equal(frames[0], frame) for frame in frames[1:]):
+                            logger.info(f"Frames are not the same for frame {frame_num}")
+                        else:
+                            logger.debug(f"Frames are the same for frame {frame_num}")
+                except Exception as e:
+                    logger.debug(f"Error comparing frames for frame {frame_num}: {e}")
 
 
 # script run for development

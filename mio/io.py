@@ -133,6 +133,14 @@ class VideoReader:
 
             yield index, frame
 
+    def read_frame(self, index: int) -> np.ndarray:
+        """
+        Read a frame from the video file.
+        """
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, index)
+        ret, frame = self.cap.read()
+        return frame
+
     def release(self) -> None:
         """
         Release the video capture object.
