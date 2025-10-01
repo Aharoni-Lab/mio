@@ -19,6 +19,7 @@ from mio import BASE_DIR
 from mio.stream_daq import StreamDevConfig, StreamDaq, iter_buffers
 from mio.models.process import FreqencyMaskingConfig
 from mio.utils import hash_video, hash_file
+from mio.io import VideoWriter
 from .conftest import DATA_DIR, CONFIG_DIR
 
 
@@ -336,3 +337,41 @@ def test_iter_buffers(read_size: int, tmp_path: Path):
         got_buffers.append(buf)
 
     assert all([buf == buffer for buf in got_buffers])
+
+
+def test_writer_returns_match_avi_frame_count(tmp_path: Path, set_okdev_input, monkeypatch):
+    """
+    Count write_frame calls and True returns from VideoWriter and compare the number of True returns against the number of frames reported in the AVI.
+    """
+    call_count = {"calls": 0, "ok": 0}
+    original = VideoWriter.write_frame
+
+    def wrapped(self, frame):  # type: ignore[no-redef]
+        call_count["calls"] += 1
+        ok = original(self, frame)
+        if ok:
+            call_count["ok"] += 1
+        return ok
+
+    monkeypatch.setattr(VideoWriter, "write_frame", wrapped, raising=True)
+
+    output_video = tmp_path / "out.avi"
+
+    daqConfig = StreamDevConfig.from_id("test-wireless-200px")
+    data_file = DATA_DIR / "stream_daq_test_fpga_raw_input_200px.bin"
+    set_okdev_input(data_file)
+
+    daq = StreamDaq(device_config=daqConfig)
+    daq.capture(source="fpga", video=output_video, metadata=None, show_video=False)
+
+    assert output_video.exists()
+
+    import cv2
+    cap = cv2.VideoCapture(str(output_video))
+    avi_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    cap.release()
+
+    # Successes should equal the frames counted by AVI?
+    assert call_count["ok"] == avi_frames, (
+        f"write_frame True returns ({call_count['ok']}) != AVI frames ({avi_frames})"
+    )
