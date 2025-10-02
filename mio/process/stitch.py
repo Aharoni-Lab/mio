@@ -7,7 +7,7 @@ This is still hardcoded around the StreamDevConfig metadata fields.
 """
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -147,6 +147,23 @@ class RecordingData:
         return FrameInfo.from_metadata(frame_num=frame_num, metadata=self.metadata)
 
 
+def most_proper_frame(frame_list: List[np.ndarray]) -> Tuple[int, List[float]]:
+    """
+    Score the frame brokenness and return the index of the most proper frame.
+    Currently, it is a placeholder function.
+
+    Args:
+        frame_list: List of frames to score.
+
+    Returns:
+        Tuple[int, List[float]]: The index of the most proper frame and the list of scores.
+    """
+    score_list = []
+    for _frame in frame_list:
+        pass
+    return 0, score_list
+
+
 class RecordingDataBundle:
     """Class for a bundle of recording data."""
 
@@ -194,6 +211,8 @@ class RecordingDataBundle:
         """
         Stitch the videos together and store the result in the combined_metadata and combined_video
         """
+        stitched_writes = 0
+        debug_writes = 0
         for frame_num in self.combined_frame_num:
             recording_frame_pairs = []
 
@@ -212,11 +231,14 @@ class RecordingDataBundle:
                     if frame is not None:
                         frames.append(frame)
 
-                # If multiple recordings exist, write debug composite(s)
+                # If multiple recordings exist, select the most proper frame.
                 if len(frames) > 1:
                     base_idx = 0  # This is arbitrary. Just for comparison.
                     base = frames[base_idx]
                     if not all(np.array_equal(base, frame) for frame in frames[1:]):
+                        # Detect the most proper frame.
+                        # This is currently a placeholder that always returns the first frame.
+                        most_proper_idx, _ = most_proper_frame(frames)
                         for idx, frame in enumerate(frames[1:], start=1):
                             if base.shape != frame.shape:
                                 logger.debug(
@@ -233,25 +255,30 @@ class RecordingDataBundle:
 
                             if self.debug_video_writer is not None:
                                 try:
-                                    composite = np.hstack([base, frame, diff_mask])
+                                    composite = np.vstack([base, frame, diff_mask])
                                     self.debug_video_writer.write_frame(composite)
+                                    debug_writes += 1
                                 except Exception as e:
-                                    logger.debug(
+                                    logger.warning(
                                         f"Failed to write composite for frame {frame_num}: {e}"
                                     )
                 # For one or more recordings, select one of the recordings for stitched outputs
                 if len(frames) >= 1:
                     try:
-                        selected_idx = 0  # This will be based on a selection function later.
-                        selected_frame = frames[selected_idx]
+                        selected_frame = frames[most_proper_idx]
                         self.combined_video_writer.write_frame(selected_frame)
+                        stitched_writes += 1
                     except Exception as e:
-                        logger.debug(f"Failed to write stitched frame {frame_num}: {e}")
+                        logger.warning(
+                            f"Failed to write stitched frame {frame_num}: {e}"
+                            f" (shape={getattr(selected_frame,'shape',None)}"
+                            f" dtype={getattr(selected_frame,'dtype',None)})"
+                        )
 
                     # Append metadata rows for the selected recording
                     # Align reconstructed_frame_index
                     try:
-                        selected_recording = recording_frame_pairs[selected_idx][0]
+                        selected_recording = recording_frame_pairs[most_proper_idx][0]
                         rows = selected_recording.metadata[
                             selected_recording.metadata["frame_num"] == frame_num
                         ].copy()
@@ -278,6 +305,9 @@ class RecordingDataBundle:
         finally:
             if self.combined_csv_path is not None and self.combined_metadata is not None:
                 self.combined_metadata.to_csv(self.combined_csv_path, index=False)
+        logger.info(
+            f"Stitch completed: stitched_writes={stitched_writes}, debug_writes={debug_writes}"
+        )
 
 
 # script run for development
