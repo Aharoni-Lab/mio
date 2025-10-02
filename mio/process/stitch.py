@@ -6,18 +6,16 @@ the best buffers from each stream using gradient noise detection.
 This is still hardcoded around the StreamDevConfig metadata fields.
 """
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional
 
 import cv2
 import numpy as np
 import pandas as pd
-from numpydantic import NDArray
-from pydantic import BaseModel
 
 from mio.io import VideoReader, VideoWriter
 from mio.logging import init_logger
+from mio.models.stitch import FrameInfo
 from mio.models.stream import StreamDevConfig
 from mio.process.metadata_helper import make_combined_list
 from mio.stream_daq import StreamDaq
@@ -25,104 +23,36 @@ from mio.stream_daq import StreamDaq
 logger = init_logger(name="stitch")
 
 
-class BufferInfo(BaseModel):
-    """
-    Container containing information about a single buffer.
-    This container is oriented around the buffer receive index.
-    """
-
-    buffer_recv_index: int
-    buffer_count: int
-    frame_buffer_count: int
-    timestamp: int
-    pixel_count: int
-    black_padding_px: int
-    buffer_recv_unix_time: float
-    pixel_data: Optional[NDArray] = None
-
-
-class FrameInfo(BaseModel):
-    """
-    Container containing information about a single frame.
-    This container is oriented around the reconstructed frame index.
-    """
-
-    reconstructed_frame_index: int
-    frame_num: int
-
-    buffer_info_list: List[BufferInfo] = []
-
-    @classmethod
-    def from_metadata(cls, frame_num: int, metadata: pd.DataFrame) -> "FrameInfo":
-        """Create a FrameInfo instance from frame_num and metadata."""
-        # Find all buffer entries for this frame_num
-        frame_metadata = metadata[metadata["frame_num"] == frame_num]
-
-        if frame_metadata.empty:
-            raise ValueError(f"No metadata found for frame_num {frame_num}")
-
-        if all(
-            frame_metadata["reconstructed_frame_index"].iloc[0] == x
-            for x in frame_metadata["reconstructed_frame_index"]
-        ):
-            reconstructed_frame_index = frame_metadata["reconstructed_frame_index"].iloc[0]
-        else:
-            # Get the majority reconstructed_frame_index
-            reconstructed_frame_index = frame_metadata["reconstructed_frame_index"].mode()[0]
-            logger.warning(
-                f"Reconstructed frame index is not the same "
-                f"for all buffers in frame {frame_num}. "
-                f"Using the majority reconstructed_frame_index: {reconstructed_frame_index}"
-            )
-
-        buffer_info_list = []
-
-        # Iterate through all buffer entries for this frame
-        # sort based on buffer_recv_index
-        frame_metadata = frame_metadata.sort_values(by="buffer_recv_index")
-        for i in range(len(frame_metadata)):
-            buffer_info_list.append(
-                BufferInfo(
-                    buffer_recv_index=frame_metadata["buffer_recv_index"].iloc[i],
-                    buffer_count=frame_metadata["buffer_count"].iloc[i],
-                    frame_buffer_count=frame_metadata["frame_buffer_count"].iloc[i],
-                    timestamp=frame_metadata["timestamp"].iloc[i],
-                    pixel_count=frame_metadata["pixel_count"].iloc[i],
-                    black_padding_px=frame_metadata["black_padding_px"].iloc[i],
-                    buffer_recv_unix_time=frame_metadata["buffer_recv_unix_time"].iloc[i],
-                )
-            )
-
-        return cls(
-            frame_num=frame_num,
-            reconstructed_frame_index=reconstructed_frame_index,
-            buffer_info_list=buffer_info_list,
-        )
-
-
-@dataclass
 class RecordingData:
-    """Container for a single stream's data."""
+    """Class for a single stream's data (video + metadata)."""
 
-    video_path: Path
-    csv_path: Path
-    video_reader: VideoReader = None
-    metadata: pd.DataFrame = None
-    _daq: StreamDaq = None
-    _buffer_npix: List[int] = None
-    _device_config: Optional[StreamDevConfig] = None
+    def __init__(
+        self,
+        video_path: Path,
+        csv_path: Path,
+        device_config: Optional[StreamDevConfig] = None,
+    ) -> None:
+        self.video_path: Path = video_path
+        self.csv_path: Path = csv_path
+        self._device_config: Optional[StreamDevConfig] = device_config
+        self._daq: Optional[StreamDaq] = None
+        self._buffer_npix: Optional[List[int]] = None
+        self._video_reader: Optional[VideoReader] = None
+        self._metadata: Optional[pd.DataFrame] = None
 
-    def __post_init__(self):
-        self.video_reader = VideoReader(str(self.video_path))
-        self.metadata = pd.read_csv(self.csv_path)
+    @property
+    def video_reader(self) -> VideoReader:
+        """Get or create the video reader."""
+        if self._video_reader is None:
+            self._video_reader = VideoReader(str(self.video_path))
+        return self._video_reader
 
-    def get_frame_index_from_timestamp(self, timestamp: int) -> int:
-        """
-        Get the frame index from the timestamp
-        """
-        if timestamp not in self.metadata["timestamp"].values:
-            raise ValueError(f"Timestamp {timestamp} not found in metadata")
-        return self.metadata[self.metadata["timestamp"] == timestamp]["frame_index"].iloc[0]
+    @property
+    def metadata(self) -> pd.DataFrame:
+        """Get or load metadata CSV as DataFrame."""
+        if self._metadata is None:
+            self._metadata = pd.read_csv(self.csv_path)
+        return self._metadata
 
     @property
     def daq(self) -> StreamDaq:
@@ -148,6 +78,14 @@ class RecordingData:
         if self._buffer_npix is None:
             self._buffer_npix = self.daq.buffer_npix
         return self._buffer_npix
+
+    def get_frame_index_from_timestamp(self, timestamp: int) -> int:
+        """
+        Get the frame index from the timestamp
+        """
+        if timestamp not in self.metadata["timestamp"].values:
+            raise ValueError(f"Timestamp {timestamp} not found in metadata")
+        return self.metadata[self.metadata["timestamp"] == timestamp]["frame_index"].iloc[0]
 
     def get_frame_from_timestamp(self, timestamp: int) -> np.ndarray:
         """
@@ -209,19 +147,19 @@ class RecordingData:
         return FrameInfo.from_metadata(frame_num=frame_num, metadata=self.metadata)
 
 
-@dataclass
 class RecordingDataBundle:
-    """Container for a bundle of recording data."""
+    """Class for a bundle of recording data."""
 
-    recordings: List[RecordingData]
-    _combined_buffer_index: List[int] = None
-    _combined_frame_num: List[int] = None
-    combined_metadata: pd.DataFrame = None
-    combined_video_writer: Optional[VideoWriter] = None
-
-    def __init__(self, recordings: List[RecordingData], path: Union[Path, str], fps: int):
-        self.combined_video_writer = VideoWriter(path=Path(path), fps=fps)
-        self.recordings = recordings
+    def __init__(
+        self,
+        recordings: List[RecordingData],
+        combined_video_writer: VideoWriter,
+    ) -> None:
+        self.recordings: List[RecordingData] = recordings
+        self.combined_video_writer: VideoWriter = combined_video_writer
+        self.combined_metadata: Optional[pd.DataFrame] = None
+        self._combined_buffer_index: Optional[List[int]] = None
+        self._combined_frame_num: Optional[List[int]] = None
 
     @property
     def combined_buffer_index(self) -> List[int]:
@@ -287,8 +225,8 @@ class RecordingDataBundle:
                                     continue
                                 diff_pixels = int(np.count_nonzero(base != frame))
                                 logger.info(
-                                    f"Frames are not the same for frame {frame_num}"
-                                    f"(comparison {idx}): {diff_pixels} pixels differ"
+                                    f"Frames are not the same for frame {frame_num} "
+                                    f"(Rec {0} vs Rec {idx}): {diff_pixels} px differ"
                                 )
                         else:
                             logger.debug(f"Frames are the same for frame {frame_num}")
@@ -309,7 +247,8 @@ if __name__ == "__main__":
         ),
     ]
     recording_bundle = RecordingDataBundle(
-        recordings=recordings, path=Path("user_data/stitch_test/stitched.avi"), fps=20
+        recordings=recordings,
+        combined_video_writer=VideoWriter(path=Path("user_data/stitch_test/stitched.avi"), fps=20),
     )
     # list of imported recordings (video filenames)
     logger.info(f"Imported recordings: {[recording.video_path for recording in recordings]}")
