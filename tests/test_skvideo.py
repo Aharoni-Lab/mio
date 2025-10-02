@@ -17,7 +17,8 @@ def test_write_video(tmp_path):
     output_dict = {
         "-vcodec": "rawvideo",
         "-f": "avi",
-        "-filter:v": "format=gray",
+        "-pix_fmt": "gray",
+        "-vsync": "0", # probably not necessary but for safety
     }
 
     out = tmp_path / "test.avi"
