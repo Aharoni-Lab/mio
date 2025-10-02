@@ -253,26 +253,43 @@ class RecordingDataBundle:
         """
         for frame_num in self.combined_frame_num:
             recording_frame_pairs = []
-            
+
             for recording in self.recordings:
                 if frame_num in recording.metadata["frame_num"].values:
-                    frame_info = FrameInfo.from_metadata(frame_num=frame_num, metadata=recording.metadata)
+                    frame_info = FrameInfo.from_metadata(
+                        frame_num=frame_num, metadata=recording.metadata
+                    )
                     recording_frame_pairs.append((recording, frame_info))
-            
+
             # if there are multiple recordings with this frame_num, compare frames
             if len(recording_frame_pairs) > 1:
                 try:
                     frames = []
                     for recording, frame_info in recording_frame_pairs:
                         # Use reconstructed_frame_index to get the correct frame
-                        frame = recording.video_reader.read_frame(frame_info.reconstructed_frame_index)
+                        frame = recording.video_reader.read_frame(
+                            frame_info.reconstructed_frame_index
+                        )
                         if frame is not None:
                             frames.append(frame)
-                    
-                    # check if frames are the same (only if we got valid frames)
+
+                    # check if frames are the same (only if we got multiple valid frames)
                     if len(frames) > 1:
                         if not all(np.array_equal(frames[0], frame) for frame in frames[1:]):
-                            logger.info(f"Frames are not the same for frame {frame_num}")
+                            # Count differing pixels against the first frame (grayscale)
+                            base = frames[0]
+                            for idx, frame in enumerate(frames[1:], start=1):
+                                if base.shape != frame.shape:
+                                    logger.info(
+                                        f"Frames differ for frame {frame_num}"
+                                        f": shape {base.shape} vs {frame.shape}"
+                                    )
+                                    continue
+                                diff_pixels = int(np.count_nonzero(base != frame))
+                                logger.info(
+                                    f"Frames are not the same for frame {frame_num}"
+                                    f"(comparison {idx}): {diff_pixels} pixels differ"
+                                )
                         else:
                             logger.debug(f"Frames are the same for frame {frame_num}")
                 except Exception as e:
