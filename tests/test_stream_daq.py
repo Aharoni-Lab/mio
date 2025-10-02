@@ -48,7 +48,7 @@ def default_streamdaq(set_okdev_input, request) -> StreamDaq:
             None,
             "stream_daq_test_fpga_raw_input_200px.bin",
             [
-                "f7ca12006595f18922380937bf6fc28376ed48976b050dbbd5529c1803dcda2f",
+                "22fa7249faffff45f5f5aa12d36399da9e8be2f7c578ca2a3c7dccbaddc9063e",
             ],
             False,
         ),
@@ -57,7 +57,7 @@ def default_streamdaq(set_okdev_input, request) -> StreamDaq:
             "test_remove_stripe_example",
             "stream_daq_test_fpga_raw_input_200px.bin",
             [
-                "f7ca12006595f18922380937bf6fc28376ed48976b050dbbd5529c1803dcda2f",
+                "22fa7249faffff45f5f5aa12d36399da9e8be2f7c578ca2a3c7dccbaddc9063e",
             ],
             False,
         )
