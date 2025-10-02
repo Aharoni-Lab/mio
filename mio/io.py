@@ -57,7 +57,7 @@ class VideoWriter:
         frame (np.ndarray): The frame to write.
 
         Returns:
-        bool: True if the frame write was attempted and did not raise, False otherwise.
+        bool: True if the frame write was attempted and did not raise anything.
         """
         self.writer.writeFrame(frame)
         return True

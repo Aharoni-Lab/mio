@@ -479,8 +479,6 @@ class StreamDaq:
                 frame_data = np.concatenate(frame_data, axis=0)
 
                 try:
-                    # ensure dtype is uint8 before reshape
-                    frame_data = frame_data.astype(np.uint8, copy=False)
                     frame = np.reshape(
                         frame_data, (self.config.frame_width, self.config.frame_height)
                     )
