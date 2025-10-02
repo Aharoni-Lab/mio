@@ -154,12 +154,17 @@ class RecordingDataBundle:
         self,
         recordings: List[RecordingData],
         combined_video_writer: VideoWriter,
+        debug_video_writer: Optional[VideoWriter] = None,
+        combined_csv_path: Optional[Path] = None,
     ) -> None:
         self.recordings: List[RecordingData] = recordings
         self.combined_video_writer: VideoWriter = combined_video_writer
+        self.debug_video_writer: Optional[VideoWriter] = debug_video_writer
+        self.combined_csv_path: Optional[Path] = combined_csv_path
         self.combined_metadata: Optional[pd.DataFrame] = None
         self._combined_buffer_index: Optional[List[int]] = None
         self._combined_frame_num: Optional[List[int]] = None
+        self._out_frame_index: int = 0
 
     @property
     def combined_buffer_index(self) -> List[int]:
@@ -199,39 +204,80 @@ class RecordingDataBundle:
                     )
                     recording_frame_pairs.append((recording, frame_info))
 
-            # if there are multiple recordings with this frame_num, compare frames
-            if len(recording_frame_pairs) > 1:
-                try:
-                    frames = []
-                    for recording, frame_info in recording_frame_pairs:
-                        # Use reconstructed_frame_index to get the correct frame
-                        frame = recording.video_reader.read_frame(
-                            frame_info.reconstructed_frame_index
-                        )
-                        if frame is not None:
-                            frames.append(frame)
+            # Build frames list for all recordings that have this frame_num
+            try:
+                frames: List[np.ndarray] = []
+                for recording, frame_info in recording_frame_pairs:
+                    frame = recording.video_reader.read_frame(frame_info.reconstructed_frame_index)
+                    if frame is not None:
+                        frames.append(frame)
 
-                    # check if frames are the same (only if we got multiple valid frames)
-                    if len(frames) > 1:
-                        if not all(np.array_equal(frames[0], frame) for frame in frames[1:]):
-                            # Count differing pixels against the first frame (grayscale)
-                            base = frames[0]
-                            for idx, frame in enumerate(frames[1:], start=1):
-                                if base.shape != frame.shape:
-                                    logger.info(
-                                        f"Frames differ for frame {frame_num}"
-                                        f": shape {base.shape} vs {frame.shape}"
-                                    )
-                                    continue
-                                diff_pixels = int(np.count_nonzero(base != frame))
-                                logger.info(
-                                    f"Frames are not the same for frame {frame_num} "
-                                    f"(Rec {0} vs Rec {idx}): {diff_pixels} px differ"
+                # If multiple recordings exist, write debug composite(s)
+                if len(frames) > 1:
+                    base_idx = 0  # This is arbitrary. Just for comparison.
+                    base = frames[base_idx]
+                    if not all(np.array_equal(base, frame) for frame in frames[1:]):
+                        for idx, frame in enumerate(frames[1:], start=1):
+                            if base.shape != frame.shape:
+                                logger.debug(
+                                    f"Frames differ for frame {frame_num}"
+                                    f": shape {base.shape} vs {frame.shape}"
                                 )
+                                continue
+                            diff_mask = (base != frame).astype(np.uint8) * 255
+                            diff_pixels = int(np.count_nonzero(diff_mask))
+                            logger.info(
+                                f"Frames are not the same for frame {frame_num} "
+                                f"(Rec {base_idx} vs Rec {idx}): {diff_pixels} px differ"
+                            )
+
+                            if self.debug_video_writer is not None:
+                                try:
+                                    composite = np.hstack([base, frame, diff_mask])
+                                    self.debug_video_writer.write_frame(composite)
+                                except Exception as e:
+                                    logger.debug(
+                                        f"Failed to write composite for frame {frame_num}: {e}"
+                                    )
+                # For one or more recordings, select one of the recordings for stitched outputs
+                if len(frames) >= 1:
+                    try:
+                        selected_idx = 0  # This will be based on a selection function later.
+                        selected_frame = frames[selected_idx]
+                        self.combined_video_writer.write_frame(selected_frame)
+                    except Exception as e:
+                        logger.debug(f"Failed to write stitched frame {frame_num}: {e}")
+
+                    # Append metadata rows for the selected recording
+                    # Align reconstructed_frame_index
+                    try:
+                        selected_recording = recording_frame_pairs[selected_idx][0]
+                        rows = selected_recording.metadata[
+                            selected_recording.metadata["frame_num"] == frame_num
+                        ].copy()
+                        # Align reconstructed_frame_index with stitched video index
+                        rows["reconstructed_frame_index"] = self._out_frame_index
+                        if self.combined_metadata is None:
+                            self.combined_metadata = rows
                         else:
-                            logger.debug(f"Frames are the same for frame {frame_num}")
-                except Exception as e:
-                    logger.debug(f"Error comparing frames for frame {frame_num}: {e}")
+                            self.combined_metadata = pd.concat(
+                                [self.combined_metadata, rows], ignore_index=True
+                            )
+                        self._out_frame_index += 1
+                    except Exception as e:
+                        logger.debug(f"Failed to collect metadata for frame {frame_num}: {e}")
+            except Exception as e:
+                logger.debug(f"Error processing frame_num {frame_num}: {e}")
+
+        # finalize writers and csv
+        try:
+            if hasattr(self.combined_video_writer, "close"):
+                self.combined_video_writer.close()
+            if self.debug_video_writer is not None:
+                self.debug_video_writer.close()
+        finally:
+            if self.combined_csv_path is not None and self.combined_metadata is not None:
+                self.combined_metadata.to_csv(self.combined_csv_path, index=False)
 
 
 # script run for development
@@ -249,6 +295,8 @@ if __name__ == "__main__":
     recording_bundle = RecordingDataBundle(
         recordings=recordings,
         combined_video_writer=VideoWriter(path=Path("user_data/stitch_test/stitched.avi"), fps=20),
+        debug_video_writer=VideoWriter(path=Path("user_data/stitch_test/debug.avi"), fps=20),
+        combined_csv_path=Path("user_data/stitch_test/stitched.csv"),
     )
     # list of imported recordings (video filenames)
     logger.info(f"Imported recordings: {[recording.video_path for recording in recordings]}")
