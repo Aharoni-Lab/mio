@@ -59,8 +59,18 @@ class VideoWriter:
         Returns:
         bool: True if the frame write was attempted and did not raise anything.
         """
+        # Enforce grayscale uint8 (no implicit conversion)
+        self._assert_gray_uint8(frame, "VideoWriter")
+
         self.writer.writeFrame(frame)
         return True
+
+    def _assert_gray_uint8(self, frame: np.ndarray, where: str) -> None:
+        if not isinstance(frame, np.ndarray) or frame.ndim != 2 or frame.dtype != np.uint8:
+            raise ValueError(
+                f"{where} expects 2D uint8 grayscale; got shape={getattr(frame, 'shape', None)} "
+                f"dtype={getattr(frame, 'dtype', None)}"
+            )
 
     def close(self) -> None:
         """
@@ -114,6 +124,9 @@ class VideoReader:
         """
         if self._cap is None:
             self._cap = cv2.VideoCapture(str(self.video_path))
+            # Prefer native output when available (avoid implicit BGR conversion)
+            with contextlib.suppress(Exception):
+                self._cap.set(cv2.CAP_PROP_CONVERT_RGB, False)
         return self._cap
 
     def read_frames(self) -> Iterator[Tuple[int, np.ndarray]]:
@@ -128,6 +141,8 @@ class VideoReader:
             if not ret:
                 break
 
+            self._assert_gray_uint8(frame, "VideoReader")
+
             index = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
             self.logger.debug(f"Reading frame {index}")
 
@@ -139,7 +154,17 @@ class VideoReader:
         """
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, index)
         ret, frame = self.cap.read()
+        if not ret or frame is None:
+            return frame
+        self._assert_gray_uint8(frame, "VideoReader")
         return frame
+
+    def _assert_gray_uint8(self, frame: np.ndarray, where: str) -> None:
+        if not isinstance(frame, np.ndarray) or frame.ndim != 2 or frame.dtype != np.uint8:
+            raise ValueError(
+                f"{where} expects 2D uint8 grayscale; got shape={getattr(frame, 'shape', None)} "
+                f"dtype={getattr(frame, 'dtype', None)}"
+            )
 
     def release(self) -> None:
         """
