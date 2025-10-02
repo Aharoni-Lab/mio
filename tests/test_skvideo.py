@@ -13,15 +13,15 @@ def test_write_video(tmp_path):
     """
 
     width, height, num_frames, fps = 200, 200, 200, 20
+    input_dict = {"-framerate": str(fps)}
     output_dict = {
         "-vcodec": "rawvideo",
         "-f": "avi",
         "-filter:v": "format=gray",
-        "-r": str(fps),
     }
 
     out = tmp_path / "test.avi"
-    writer = FFmpegWriter(str(out), outputdict=output_dict)
+    writer = FFmpegWriter(str(out), inputdict=input_dict, outputdict=output_dict)
     for _ in range(num_frames):
         frame = np.random.randint(0, 256, (height, width), dtype=np.uint8)
         writer.writeFrame(frame)
