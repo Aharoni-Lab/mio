@@ -17,10 +17,70 @@ from mio.io import VideoReader, VideoWriter
 from mio.logging import init_logger
 from mio.models.stitch import FrameInfo
 from mio.models.stream import StreamDevConfig
-from mio.process.metadata_helper import make_combined_list
+from mio.process.stitch_helper import make_combined_list
 from mio.stream_daq import StreamDaq
 
 logger = init_logger(name="stitch")
+
+
+def most_proper_metadata(
+    valid_pairs: List[Tuple["RecordingData", np.ndarray, int, int]]
+) -> Tuple[int, List[int], bool]:
+    """
+    Select less broken frames using metadata first. Selection is done by:
+    - Highest num_buffers
+    - Lowest sum_black_padding
+    - If tied, return tie so that frame selection is done by image-based scoring
+
+    Returns:
+        (best_idx, candidate_indices, is_tie)
+    """
+    if not valid_pairs:
+        return 0, [], False
+    max_buffers = max(v[2] for v in valid_pairs)
+    candidates = [i for i, v in enumerate(valid_pairs) if v[2] == max_buffers]
+    if len(candidates) > 1:
+        min_black = min(valid_pairs[i][3] for i in candidates)
+        candidates = [i for i in candidates if valid_pairs[i][3] == min_black]
+    best_idx = candidates[0]
+    is_tie = len(candidates) > 1
+    return best_idx, candidates, is_tie
+
+
+def most_proper_frame(frame_list: List[np.ndarray]) -> Tuple[int, List[float]]:
+    """
+    Select the best frame by computing edge strength and selecting frames with less edge strength.
+    This is assuming sandstorm-like noise has many edges.
+    For each frame, compute Sobel gradients and select frame with least edge strength.
+
+    Parameters:
+        frame_list: List[np.ndarray] - List of frames to select from
+
+    Returns:
+        Tuple[int, List[float]] - The index of the best frame and the edge strength of all frames
+    """
+    if not frame_list:
+        return 0, []
+
+    # Ensure all frames are 2D arrays with identical shapes
+    shapes = [f.shape for f in frame_list if isinstance(f, np.ndarray)]
+    if len(shapes) != len(frame_list) or len(set(shapes)) != 1:
+        return 0, [float("-inf")] * len(frame_list)
+
+    scores: List[float] = []
+    for frame in frame_list:
+        f = frame
+        if not isinstance(f, np.ndarray) or f.ndim != 2:
+            scores.append(float("-inf"))
+            continue
+        # Sobel gradients; 16-bit to avoid overflow, then absolute and sum
+        gx = cv2.Sobel(f, cv2.CV_16S, 1, 0, ksize=3)
+        gy = cv2.Sobel(f, cv2.CV_16S, 0, 1, ksize=3)
+        total_grad = int(np.abs(gx).sum() + np.abs(gy).sum())
+        scores.append(-float(total_grad))
+
+    best_idx = int(np.argmax(scores))
+    return best_idx, scores
 
 
 class RecordingData:
@@ -147,23 +207,6 @@ class RecordingData:
         return FrameInfo.from_metadata(frame_num=frame_num, metadata=self.metadata)
 
 
-def most_proper_frame(frame_list: List[np.ndarray]) -> Tuple[int, List[float]]:
-    """
-    Score the frame brokenness and return the index of the most proper frame.
-    Currently, it is a placeholder function.
-
-    Args:
-        frame_list: List of frames to score.
-
-    Returns:
-        Tuple[int, List[float]]: The index of the most proper frame and the list of scores.
-    """
-    score_list = []
-    for _frame in frame_list:
-        pass
-    return 0, score_list
-
-
 class RecordingDataBundle:
     """Class for a bundle of recording data."""
 
@@ -225,21 +268,37 @@ class RecordingDataBundle:
 
             # Build frames list for all recordings that have this frame_num
             try:
-                frames: List[np.ndarray] = []
+                # Collect valid (recording, frame, num_buffers, sum_black_padding) tuples
+                valid_pairs: List[Tuple[RecordingData, np.ndarray, int, int]] = []
                 for recording, frame_info in recording_frame_pairs:
                     frame = recording.video_reader.read_frame(frame_info.reconstructed_frame_index)
                     if frame is not None:
-                        frames.append(frame)
+                        rows = recording.metadata[recording.metadata["frame_num"] == frame_num]
+                        num_buffers = int(len(rows))
+                        sum_black = (
+                            int(rows["black_padding_px"].fillna(0).sum())
+                            if "black_padding_px" in rows.columns
+                            else 0
+                        )
+                        valid_pairs.append((recording, frame, num_buffers, sum_black))
 
-                # If multiple recordings exist, select the most proper frame.
+                frames: List[np.ndarray] = [vp[1] for vp in valid_pairs]
+
+                # Determine most proper index by metadata first: more buffers, then less padding
+                most_proper_idx, candidates, is_tie = most_proper_metadata(valid_pairs)
+                # If metadata is tied, break tie using image-based scoring
+                if is_tie:
+                    candidate_frames = [frames[i] for i in candidates]
+                    rel_idx, _scores = most_proper_frame(candidate_frames)
+                    most_proper_idx = candidates[int(rel_idx)]
+
+                # If multiple recordings exist, write debug composites comparing to selected
                 if len(frames) > 1:
-                    base_idx = 0  # This is arbitrary. Just for comparison.
+                    base_idx = most_proper_idx
                     base = frames[base_idx]
-                    if not all(np.array_equal(base, frame) for frame in frames[1:]):
-                        # Detect the most proper frame.
-                        # This is currently a placeholder that always returns the first frame.
-                        most_proper_idx, _ = most_proper_frame(frames)
-                        for idx, frame in enumerate(frames[1:], start=1):
+                    others = [(i, f) for i, f in enumerate(frames) if i != base_idx]
+                    if not all(np.array_equal(base, f) for (_i, f) in others):
+                        for idx, frame in others:
                             if base.shape != frame.shape:
                                 logger.debug(
                                     f"Frames differ for frame {frame_num}"
@@ -278,7 +337,7 @@ class RecordingDataBundle:
                     # Append metadata rows for the selected recording
                     # Align reconstructed_frame_index
                     try:
-                        selected_recording = recording_frame_pairs[most_proper_idx][0]
+                        selected_recording = valid_pairs[most_proper_idx][0]
                         rows = selected_recording.metadata[
                             selected_recording.metadata["frame_num"] == frame_num
                         ].copy()
