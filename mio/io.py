@@ -57,11 +57,8 @@ class VideoWriter:
         Returns:
         bool: True if the frame write was attempted and did not raise, False otherwise.
         """
-        try:
-            self.writer.writeFrame(frame)
-            return True
-        except Exception:
-            return False
+        self.writer.writeFrame(frame)
+        return True
 
     def close(self) -> None:
         """

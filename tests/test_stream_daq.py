@@ -343,7 +343,7 @@ def test_writer_returns_match_avi_frame_count(tmp_path: Path, set_okdev_input, m
     """
     Count write_frame calls and True returns from VideoWriter and compare the number of True returns against the number of frames reported in the AVI.
     """
-    call_count = {"calls": 0, "ok": 0}
+    call_count = {"calls": 0, "ok": 0, "failed": 0}
     original = VideoWriter.write_frame
 
     def wrapped(self, frame):  # type: ignore[no-redef]
@@ -351,6 +351,8 @@ def test_writer_returns_match_avi_frame_count(tmp_path: Path, set_okdev_input, m
         ok = original(self, frame)
         if ok:
             call_count["ok"] += 1
+        else:
+            call_count["failed"] += 1 # This shouldn't happen but just in case
         return ok
 
     monkeypatch.setattr(VideoWriter, "write_frame", wrapped, raising=True)
@@ -369,6 +371,9 @@ def test_writer_returns_match_avi_frame_count(tmp_path: Path, set_okdev_input, m
     cap = cv2.VideoCapture(str(output_video))
     avi_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
+
+    # No false returns
+    assert call_count["failed"] == 0, f"write_frame False returns ({call_count['failed']})"
 
     # Successes should equal the frames counted by AVI?
     assert call_count["ok"] == avi_frames, (
