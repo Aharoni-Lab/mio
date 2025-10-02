@@ -86,3 +86,30 @@ class FrameInfo(BaseModel):
             reconstructed_frame_index=reconstructed_frame_index,
             buffer_info_list=buffer_info_list,
         )
+
+
+class DebugRecord(BaseModel):
+    """
+    Row schema for debug metadata emitted during stitching.
+
+    The field order defines the CSV header order.
+    """
+
+    debug_frame_index: int
+    stitched_frame_index: int
+    frame_num: int
+    selected_video: str
+    compare_video: str
+    selected_num_buffers: int
+    selected_black_padding: int
+    compare_num_buffers: int
+    compare_black_padding: int
+    diff_pixels: int
+    selected_edge_score: float
+    compare_edge_score: float
+    metadata_tie: bool
+
+    @classmethod
+    def header(cls) -> List[str]:
+        """Return CSV header preserving declared field order."""
+        return list(cls.model_fields.keys())

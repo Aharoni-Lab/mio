@@ -13,9 +13,9 @@ import cv2
 import numpy as np
 import pandas as pd
 
-from mio.io import VideoReader, VideoWriter
+from mio.io import BufferedCSVWriter, VideoReader, VideoWriter
 from mio.logging import init_logger
-from mio.models.stitch import FrameInfo
+from mio.models.stitch import DebugRecord, FrameInfo
 from mio.models.stream import StreamDevConfig
 from mio.process.stitch_helper import make_combined_list
 from mio.stream_daq import StreamDaq
@@ -23,25 +23,40 @@ from mio.stream_daq import StreamDaq
 logger = init_logger(name="stitch")
 
 
+def score_metadata(num_buffers: int, sum_black_padding: int) -> Tuple[int, int]:
+    """Return a tuple score for metadata (higher is better lexicographically)."""
+    return (num_buffers, -sum_black_padding)
+
+
+def score_edges(frame: np.ndarray) -> float:
+    """Negative of total Sobel gradient magnitude (higher is better)."""
+    gx = cv2.Sobel(frame, cv2.CV_16S, 1, 0, ksize=3)
+    gy = cv2.Sobel(frame, cv2.CV_16S, 0, 1, ksize=3)
+    total_grad = int(np.abs(gx).sum() + np.abs(gy).sum())
+    return -float(total_grad)
+
+
 def most_proper_metadata(
-    valid_pairs: List[Tuple["RecordingData", np.ndarray, int, int]]
+    valid_pairs: List[Tuple["RecordingData", np.ndarray, int, int]],
 ) -> Tuple[int, List[int], bool]:
     """
-    Select less broken frames using metadata first. Selection is done by:
-    - Highest num_buffers
-    - Lowest sum_black_padding
-    - If tied, return tie so that frame selection is done by image-based scoring
+    Select less broken frames using metadata scoring.
 
-    Returns:
-        (best_idx, candidate_indices, is_tie)
+    Uses score_metadata(num_buffers, sum_black_padding) and returns the
+    index of a best-scoring candidate, the list of tied candidate indices,
+    and whether there was a tie.
     """
     if not valid_pairs:
         return 0, [], False
-    max_buffers = max(v[2] for v in valid_pairs)
-    candidates = [i for i, v in enumerate(valid_pairs) if v[2] == max_buffers]
-    if len(candidates) > 1:
-        min_black = min(valid_pairs[i][3] for i in candidates)
-        candidates = [i for i in candidates if valid_pairs[i][3] == min_black]
+
+    scored = [
+        (i, score_metadata(num_buffers=v[2], sum_black_padding=v[3]))
+        for i, v in enumerate(valid_pairs)
+    ]
+    # Sort descending by score tuple
+    scored.sort(key=lambda t: t[1], reverse=True)
+    top_score = scored[0][1]
+    candidates = [i for i, s in scored if s == top_score]
     best_idx = candidates[0]
     is_tie = len(candidates) > 1
     return best_idx, candidates, is_tie
@@ -49,15 +64,8 @@ def most_proper_metadata(
 
 def most_proper_frame(frame_list: List[np.ndarray]) -> Tuple[int, List[float]]:
     """
-    Select the best frame by computing edge strength and selecting frames with less edge strength.
-    This is assuming sandstorm-like noise has many edges.
-    For each frame, compute Sobel gradients and select frame with least edge strength.
-
-    Parameters:
-        frame_list: List[np.ndarray] - List of frames to select from
-
-    Returns:
-        Tuple[int, List[float]] - The index of the best frame and the edge strength of all frames
+    Select using the edge-based scoring function score_edges(frame).
+    Returns the best index and the list of scores.
     """
     if not frame_list:
         return 0, []
@@ -68,16 +76,11 @@ def most_proper_frame(frame_list: List[np.ndarray]) -> Tuple[int, List[float]]:
         return 0, [float("-inf")] * len(frame_list)
 
     scores: List[float] = []
-    for frame in frame_list:
-        f = frame
+    for f in frame_list:
         if not isinstance(f, np.ndarray) or f.ndim != 2:
             scores.append(float("-inf"))
-            continue
-        # Sobel gradients; 16-bit to avoid overflow, then absolute and sum
-        gx = cv2.Sobel(f, cv2.CV_16S, 1, 0, ksize=3)
-        gy = cv2.Sobel(f, cv2.CV_16S, 0, 1, ksize=3)
-        total_grad = int(np.abs(gx).sum() + np.abs(gy).sum())
-        scores.append(-float(total_grad))
+        else:
+            scores.append(score_edges(f))
 
     best_idx = int(np.argmax(scores))
     return best_idx, scores
@@ -216,6 +219,7 @@ class RecordingDataBundle:
         combined_video_writer: VideoWriter,
         debug_video_writer: Optional[VideoWriter] = None,
         combined_csv_path: Optional[Path] = None,
+        debug_csv_path: Optional[Path] = None,
     ) -> None:
         self.recordings: List[RecordingData] = recordings
         self.combined_video_writer: VideoWriter = combined_video_writer
@@ -225,6 +229,13 @@ class RecordingDataBundle:
         self._combined_buffer_index: Optional[List[int]] = None
         self._combined_frame_num: Optional[List[int]] = None
         self._out_frame_index: int = 0
+        # Debug CSV writer
+        self.debug_csv_writer: Optional[BufferedCSVWriter] = None
+        self._debug_frame_index: int = 0
+        if debug_csv_path is not None:
+            self.debug_csv_writer = BufferedCSVWriter(
+                debug_csv_path, header=DebugRecord.header(), buffer_size=100
+            )
 
     @property
     def combined_buffer_index(self) -> List[int]:
@@ -321,6 +332,27 @@ class RecordingDataBundle:
                                     logger.warning(
                                         f"Failed to write composite for frame {frame_num}: {e}"
                                     )
+                            # Write debug metadata row if configured
+                            if self.debug_csv_writer is not None:
+                                base_rec, _, base_buffers, base_black = valid_pairs[base_idx]
+                                rec_i, _, nbuff_i, nblack_i = valid_pairs[idx]
+                                record = DebugRecord(
+                                    debug_frame_index=self._debug_frame_index,
+                                    stitched_frame_index=self._out_frame_index,
+                                    frame_num=frame_num,
+                                    selected_video=base_rec.video_path.name,
+                                    compare_video=rec_i.video_path.name,
+                                    selected_num_buffers=base_buffers,
+                                    selected_black_padding=base_black,
+                                    compare_num_buffers=nbuff_i,
+                                    compare_black_padding=nblack_i,
+                                    diff_pixels=diff_pixels,
+                                    selected_edge_score=score_edges(base),
+                                    compare_edge_score=score_edges(frame),
+                                    metadata_tie=bool(is_tie),
+                                )
+                                self.debug_csv_writer.append(record.model_dump())
+                                self._debug_frame_index += 1
                 # For one or more recordings, select one of the recordings for stitched outputs
                 if len(frames) >= 1:
                     try:
@@ -361,6 +393,8 @@ class RecordingDataBundle:
                 self.combined_video_writer.close()
             if self.debug_video_writer is not None:
                 self.debug_video_writer.close()
+            if self.debug_csv_writer is not None:
+                self.debug_csv_writer.close()
         finally:
             if self.combined_csv_path is not None and self.combined_metadata is not None:
                 self.combined_metadata.to_csv(self.combined_csv_path, index=False)
@@ -386,6 +420,7 @@ if __name__ == "__main__":
         combined_video_writer=VideoWriter(path=Path("user_data/stitch_test/stitched.avi"), fps=20),
         debug_video_writer=VideoWriter(path=Path("user_data/stitch_test/debug.avi"), fps=20),
         combined_csv_path=Path("user_data/stitch_test/stitched.csv"),
+        debug_csv_path=Path("user_data/stitch_test/debug.csv"),
     )
     # list of imported recordings (video filenames)
     logger.info(f"Imported recordings: {[recording.video_path for recording in recordings]}")
