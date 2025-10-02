@@ -13,11 +13,13 @@ from contextlib import contextmanager
 from bitstring import BitArray, Bits
 from typing import Generator
 import warnings
+import cv2
 
 from mio import BASE_DIR
 from mio.stream_daq import StreamDevConfig, StreamDaq, iter_buffers
 from mio.models.process import FreqencyMaskingConfig
 from mio.utils import hash_video, hash_file
+from mio.io import VideoWriter
 from .conftest import DATA_DIR, CONFIG_DIR
 
 
@@ -46,7 +48,7 @@ def default_streamdaq(set_okdev_input, request) -> StreamDaq:
             None,
             "stream_daq_test_fpga_raw_input_200px.bin",
             [
-                "f7ca12006595f18922380937bf6fc28376ed48976b050dbbd5529c1803dcda2f",
+                "22fa7249faffff45f5f5aa12d36399da9e8be2f7c578ca2a3c7dccbaddc9063e",
             ],
             False,
         ),
@@ -55,7 +57,7 @@ def default_streamdaq(set_okdev_input, request) -> StreamDaq:
             "test_remove_stripe_example",
             "stream_daq_test_fpga_raw_input_200px.bin",
             [
-                "f7ca12006595f18922380937bf6fc28376ed48976b050dbbd5529c1803dcda2f",
+                "22fa7249faffff45f5f5aa12d36399da9e8be2f7c578ca2a3c7dccbaddc9063e",
             ],
             False,
         )
@@ -65,6 +67,7 @@ def test_video_output(
     device_config, filter_config, data, video_hash_list, tmp_path, show_video, set_okdev_input, buffer_size
 ):
     output_video = tmp_path / "output.avi"
+    output_csv = tmp_path / "output.csv"
 
     daqConfig = StreamDevConfig.from_id(device_config)
     daqConfig.runtime.frame_buffer_queue_size = buffer_size
@@ -80,13 +83,27 @@ def test_video_output(
     set_okdev_input(data_file)
 
     daq_inst = StreamDaq(device_config=daqConfig)
-    daq_inst.capture(source="fpga", video=output_video, show_video=show_video, freq_mask_config=processor_for_visualization)
+    daq_inst.capture(source="fpga", video=output_video, metadata=output_csv, show_video=show_video, freq_mask_config=processor_for_visualization)
 
     assert output_video.exists()
+    assert output_csv.exists()
 
     output_video_hash = hash_video(output_video)
-
     assert output_video_hash in video_hash_list
+
+    # Regression test: metadata indices must align with AVI frames
+    df = pd.read_csv(output_csv)
+    
+    cap = cv2.VideoCapture(str(output_video))
+    avi_frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    cap.release()
+
+    valid_indices = df[df['reconstructed_frame_index'] != -1]['reconstructed_frame_index']
+    expected_max_index = avi_frame_count - 1
+    actual_max_index = int(valid_indices.max()) if len(valid_indices) > 0 else -1
+
+    # Max index should match AVI frame count
+    assert actual_max_index == expected_max_index, f"Max index {actual_max_index} != AVI max {expected_max_index}"
 
 
 @pytest.mark.parametrize(
@@ -320,3 +337,45 @@ def test_iter_buffers(read_size: int, tmp_path: Path):
         got_buffers.append(buf)
 
     assert all([buf == buffer for buf in got_buffers])
+
+
+def test_writer_returns_match_avi_frame_count(tmp_path: Path, set_okdev_input, monkeypatch):
+    """
+    Count write_frame calls and True returns from VideoWriter and compare the number of True returns against the number of frames reported in the AVI.
+    """
+    call_count = {"calls": 0, "ok": 0, "failed": 0}
+    original = VideoWriter.write_frame
+
+    def wrapped(self, frame):  # type: ignore[no-redef]
+        call_count["calls"] += 1
+        ok = original(self, frame)
+        if ok:
+            call_count["ok"] += 1
+        else:
+            call_count["failed"] += 1 # This shouldn't happen but just in case
+        return ok
+
+    monkeypatch.setattr(VideoWriter, "write_frame", wrapped, raising=True)
+
+    output_video = tmp_path / "out.avi"
+
+    daqConfig = StreamDevConfig.from_id("test-wireless-200px")
+    data_file = DATA_DIR / "stream_daq_test_fpga_raw_input_200px.bin"
+    set_okdev_input(data_file)
+
+    daq = StreamDaq(device_config=daqConfig)
+    daq.capture(source="fpga", video=output_video, metadata=None, show_video=False)
+
+    assert output_video.exists()
+
+    cap = cv2.VideoCapture(str(output_video))
+    avi_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    cap.release()
+
+    # No false returns
+    assert call_count["failed"] == 0, f"write_frame False returns ({call_count['failed']})"
+
+    # Successes should equal the frames counted by AVI?
+    assert call_count["ok"] == avi_frames, (
+        f"write_frame True returns ({call_count['ok']}) != AVI frames ({avi_frames})"
+    )

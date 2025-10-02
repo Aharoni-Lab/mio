@@ -142,7 +142,7 @@ def test_cli_config_list():
 @pytest.mark.parametrize(
     "freq_mask_config, video_hash",
     [
-        (None, "f7ca12006595f18922380937bf6fc28376ed48976b050dbbd5529c1803dcda2f"),
+        (None, "22fa7249faffff45f5f5aa12d36399da9e8be2f7c578ca2a3c7dccbaddc9063e"),
     ],
 )
 def test_cli_capture(

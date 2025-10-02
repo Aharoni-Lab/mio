@@ -28,7 +28,8 @@ class VideoWriter:
     DEFAULT_OUTPUT = {
         "-vcodec": "rawvideo",
         "-f": "avi",
-        "-filter:v": "format=gray",
+        "-pix_fmt": "gray",
+        "-vsync": "0",
     }
 
     def __init__(
@@ -43,18 +44,23 @@ class VideoWriter:
         if output_dict is None:
             output_dict = {}
         output_dict = {**self.DEFAULT_OUTPUT, **output_dict}
-        output_dict["-r"] = str(fps)
 
-        self.writer = FFmpegWriter(filename=str(path), outputdict=output_dict)
+        input_dict = {"-framerate": str(fps)}
 
-    def write_frame(self, frame: np.ndarray) -> None:
+        self.writer = FFmpegWriter(filename=str(path), inputdict=input_dict, outputdict=output_dict)
+
+    def write_frame(self, frame: np.ndarray) -> bool:
         """
         Write a frame to the video file.
 
         Parameters:
         frame (np.ndarray): The frame to write.
+
+        Returns:
+        bool: True if the frame write was attempted and did not raise anything.
         """
         self.writer.writeFrame(frame)
+        return True
 
     def close(self) -> None:
         """
